@@ -59,13 +59,13 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.PACKAGE_TOKEN }}
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.actor }}/nodeserver:cibuild
-            ghcr.io/${{ github.actor }}/nodeserver:cibuild-${{ github.sha }}
+            ghcr.io/${{ github.repository }}/fhirsmith:cibuild
+            ghcr.io/${{ github.repository }}/fhirsmith:cibuild-${{ github.sha }}

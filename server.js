@@ -61,10 +61,11 @@ app.use(express.json({ limit: '50mb' }));
 // Module instances
 const modules = {};
 
-const stats = new ServerStats();
+const stats;
 
 // Initialize modules based on configuration
 async function initializeModules() {
+  stats = new ServerStats();
 
   // Initialize SHL module
   if (config.modules.shl.enabled) {
@@ -505,7 +506,7 @@ process.on('SIGINT', async () => {
       serverLog.error(`Error shutting down ${moduleName} module:`, error);
     }
   }
-
+  stats.finishStats();
   serverLog.info('Server shutdown complete');
   process.exit(0);
 });

@@ -8,9 +8,10 @@ class ServerStats {
   requestCountSnapshot = 0;
   startMem = 0;
   startTime = Date.now();
+  timer;
 
   constructor() {
-    setInterval(() => {
+    this.timer = setInterval(() => {
       this.recordMetrics();
     }, this.intervalMs);
   }
@@ -59,6 +60,10 @@ class ServerStats {
     this.startMem = process.memoryUsage().heapUsed;
     this.startTime = Date.now();
     this.recordMetrics();
+  }
+
+  finishStats() {
+    clearInterval(this.timer);
   }
 }
 module.exports = ServerStats;

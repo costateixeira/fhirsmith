@@ -37,6 +37,8 @@ const {Renderer} = require("./library/renderer");
 const {OperationsWorker} = require("./workers/operations");
 
 class TXModule {
+  timers = [];
+
   constructor(stats) {
     this.config = null;
     this.library = null;
@@ -184,18 +186,18 @@ class TXModule {
     // cacheTimeout is in minutes, default to 30 minutes
     const cacheTimeoutMs = cacheTimeoutMinutes * 60 * 1000;
     const pruneIntervalMs = 5 * 60 * 1000; // Run every 5 minutes
-    setInterval(() => {
+    this.timers.push(setInterval(() => {
       endpointInfo.resourceCache.prune(cacheTimeoutMs);
-    }, pruneIntervalMs);
+    }, pruneIntervalMs));
     this.log.info(`Resource cache pruning enabled for ${endpointPath}: timeout ${cacheTimeoutMinutes} minutes, check interval 5 minutes`);
 
     // Set up periodic memory pressure check for expansion cache (if threshold configured)
     if (expansionCacheMemoryThreshold > 0) {
-      setInterval(() => {
+      this.timers.push(setInterval(() => {
         if (endpointInfo.expansionCache.checkMemoryPressure()) {
           this.log.info(`Expansion cache memory pressure detected for ${endpointPath}, evicted oldest half`);
         }
-      }, pruneIntervalMs);
+      }, pruneIntervalMs));
       this.log.info(`Expansion cache for ${endpointPath}: max ${expansionCacheSize} entries, memory threshold ${expansionCacheMemoryThreshold}MB`);
     } else {
       this.log.info(`Expansion cache for ${endpointPath}: max ${expansionCacheSize} entries, no memory threshold`);
@@ -690,6 +692,10 @@ class TXModule {
    */
   async shutdown() {
     this.log.info('Shutting down TX module');
+    for (const timer of this.timers) {
+      clearInterval(timer);
+    }
+    this.timers = [];
     // Clean up any resources if needed
     this.log.info('TX module shut down');
   }
@@ -747,7 +753,9 @@ class TXModule {
   }
 
   countRequest() {
-    this.stats.requestCount++;
+    if (this.stats) {
+      this.stats.requestCount++;
+    }
   }
 }
 

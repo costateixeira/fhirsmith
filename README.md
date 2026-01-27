@@ -20,9 +20,9 @@ This server provides a set of server-side services that are useful for the FHIR 
 * (Coming) Token services 
 
 ## Build Status
-![CI Build](https://github.com/HealthIntersections/nodeserver/actions/workflows/ci.yml/badge.svg)
-[![Release](https://img.shields.io/github/v/release/HealthIntersections/nodeserver?include_prereleases)](https://github.com/HealthIntersections/nodeserver/releases)
-[![Docker](https://img.shields.io/badge/docker-ghcr.io-blue)](https://github.com/HealthIntersections/nodeserver/pkgs/container/nodeserver)
+![CI Build](https://github.com/HealthIntersections/fhirsmith/actions/workflows/ci.yml/badge.svg)
+[![Release](https://img.shields.io/github/v/release/HealthIntersections/fhirsmith?include_prereleases)](https://github.com/HealthIntersections/fhirsmith/releases)
+[![Docker](https://img.shields.io/badge/docker-ghcr.io-blue)](https://github.com/HealthIntersections/fhirsmith/pkgs/container/fhirsmith)
 
 Note: In production, this server always runs behind an nginx reverse proxy, so there's no
 in-build support for SSL, rate limiting etc. 
@@ -104,14 +104,14 @@ The server is available as a Docker image:
 
 ```bash
 # Pull the latest image
-docker pull ghcr.io/healthintersections/nodeserver:latest
+docker pull ghcr.io/healthintersections/fhirsmith:latest
 
 # Run with mounted volumes
 docker run -d --name fhir-server \
   -p 3000:3000 \
   -v /path/to/config.json:/app/config.json \
   -v /path/to/data:/app/data \
-  ghcr.io/healthintersections/nodeserver:v1.0.0
+  ghcr.io/healthintersections/fhirsmith:v1.0.0
 ```
 
 Available tags:
