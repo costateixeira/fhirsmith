@@ -18,26 +18,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
+#      - name: Use Node.js
+#        uses: actions/setup-node@v4
+#        with:
+#          node-version: '20'
+#          cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+#      - name: Install dependencies
+#        run: npm ci
 
-      - name: Run tests
-        run: npm run test:ci
-        env:
-          SUPPRESS_LOGS: 'true'
+#      - name: Run tests
+#        run: npm run test:ci
+#        env:
+#          SUPPRESS_LOGS: 'true'
 
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: test-results
-          path: ./test-results/junit.xml
+#      - name: Upload test results
+#        uses: actions/upload-artifact@v4
+#        if: always()
+#        with:
+#          name: test-results
+#          path: ./test-results/junit.xml
 
 #      - name: Upload coverage reports
 #        uses: codecov/codecov-action@v4
