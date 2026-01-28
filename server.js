@@ -61,11 +61,10 @@ app.use(express.json({ limit: '50mb' }));
 // Module instances
 const modules = {};
 
-const stats;
+const stats = new ServerStats();
 
 // Initialize modules based on configuration
 async function initializeModules() {
-  stats = new ServerStats();
 
   // Initialize SHL module
   if (config.modules.shl.enabled) {
