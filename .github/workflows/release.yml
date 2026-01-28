@@ -100,6 +100,13 @@ jobs:
         echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
         echo "VERSION_NO_V=${VERSION#v}" >> $GITHUB_OUTPUT
     
+
+    - name: Set image name (lowercase)
+      id: image
+      run: |
+        IMAGE="ghcr.io/${GITHUB_REPOSITORY}"
+        echo "IMAGE_LC=$(echo "$IMAGE" | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
     
@@ -116,9 +123,9 @@ jobs:
         context: .
         push: true
         tags: |
-          ghcr.io/${{ github.repository }}:latest
-          ghcr.io/${{ github.repository }}:${{ steps.get_version.outputs.VERSION }}
-          ghcr.io/${{ github.repository }}:${{ steps.get_version.outputs.VERSION_NO_V }}
+          ${{ steps.image.outputs.IMAGE_LC }}:latest
+          ${{ steps.image.outputs.IMAGE_LC }}:${{ steps.get_version.outputs.VERSION }}
+          ${{ steps.image.outputs.IMAGE_LC }}:${{ steps.get_version.outputs.VERSION_NO_V }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
         build-args: |
