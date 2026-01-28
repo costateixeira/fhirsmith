@@ -290,6 +290,8 @@ class TxHtmlRenderer {
             return await this.renderConceptMap(json, inBundle);
           case 'CapabilityStatement':
             return await this.renderCapabilityStatement(json, inBundle);
+          case 'TerminologyCapabilities':
+            return await this.renderTerminologyCapabilities(json, inBundle);
           case 'Bundle':
             return await this.renderBundle(json, req, inBundle);
           case 'OperationOutcome':
@@ -627,7 +629,12 @@ class TxHtmlRenderer {
    */
   // eslint-disable-next-line no-unused-vars
   async renderCapabilityStatement(json, inBundle) {
-    return this.renderResourceWithNarrative(json);
+    return await this.renderResourceWithNarrative(json, await this.renderer.renderCapabilityStatement(json));
+  }
+
+  // eslint-disable-next-line no-unused-vars
+  async renderTerminologyCapabilities(json, inBundle) {
+    return await this.renderResourceWithNarrative(json, await this.renderer.renderTerminologyCapabilities(json));
   }
 
   /**

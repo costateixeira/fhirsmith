@@ -149,6 +149,19 @@ class Renderer {
     this.renderProperty(tbl, 'EXT_FMM_LEVEL', Extensions.readString(res, 'http://hl7.org/fhir/StructureDefinition/structuredefinition-fmm'));
     this.renderProperty(tbl, 'PAT_PERIOD', res.effectivePeriod);
 
+    // capability statement things
+    this.renderProperty(tbl, 'Kind', res.kind);
+    if (res.software?.name) {
+      let s = res.software.name;
+      if (res.software.version) {
+        s = s+" v"+res.software.version;
+        this.renderProperty(tbl, 'Software', s);
+      }
+    }
+    this.renderProperty(tbl, 'GENERAL_URL', res.implementation?.url);
+    this.renderProperty(tbl, 'Kind', res.kind);
+    this.renderProperty(tbl, 'EX_SCEN_FVER', res.fhirVersion);
+
     if (res.content === 'supplement' && res.supplements) {
       const tr = tbl.tr();
       tr.td().b().tx(this.translate('CODESYSTEM_SUPPLEMENTS'));
@@ -1229,6 +1242,317 @@ class Renderer {
     if (!a && !b) return true;
     if (!a || !b) return false;
     return (a.system || '') === (b.system || '') && (a.code || '') === (b.code || '');
+  }
+
+  async renderCapabilityStatement(cs) {
+    if (cs.json) {
+      cs = cs.json;
+    }
+
+    let div_ = div();
+
+    // Metadata table
+    div_.h3().tx("Properties");
+    await this.renderMetadataTable(cs, div_.table("grid"));
+
+    // Formats
+    if (cs.format && cs.format.length > 0) {
+      div_.h3().tx(this.translate('Formats') || 'Formats');
+      div_.para().tx(cs.format.join(', '));
+    }
+
+    // Implementation Guides
+    if (cs.implementationGuide && cs.implementationGuide.length > 0) {
+      div_.h3().tx(this.translate('CAPABILITY_IMP_GUIDES') || 'Implementation Guides');
+      const ul = div_.ul();
+      for (const ig of cs.implementationGuide) {
+        await this.renderLink(ul.li(), ig);
+      }
+    }
+
+    // REST definitions
+    if (cs.rest && cs.rest.length > 0) {
+      for (const rest of cs.rest) {
+        await this.renderCapabilityRest(div_, rest, cs);
+      }
+    }
+
+    return div_.toString();
+  }
+
+  async renderCapabilityRest(x, rest, cs) {
+    x.h3().tx(`REST ${rest.mode || 'server'} Definition`);
+
+    if (rest.documentation) {
+      x.para().markdown(rest.documentation);
+    }
+
+    // Security
+    if (rest.security) {
+      await this.renderCapabilitySecurity(x, rest.security);
+    }
+
+    // Resources table
+    if (rest.resource && rest.resource.length > 0) {
+      await this.renderCapabilityResources(x, rest);
+    }
+
+    // System-level operations
+    if (rest.operation && rest.operation.length > 0) {
+      x.h4().tx(this.translate('CAPABILITY_OP') || 'System Operations');
+      const ul = x.ul();
+      for (const op of rest.operation) {
+        const li = ul.li();
+        if (op.definition) {
+          li.ah(op.definition).tx(op.name);
+        } else {
+          li.tx(op.name);
+        }
+        if (op.documentation) {
+          li.tx(': ');
+          li.tx(op.documentation);
+        }
+      }
+    }
+
+    // Compartments
+    if (rest.compartment && rest.compartment.length > 0) {
+      x.h4().tx(this.translate('CAPABILITY_COMPARTMENTS') || 'Compartments');
+      const ul = x.ul();
+      for (const comp of rest.compartment) {
+        await this.renderLink(ul.li(), comp);
+      }
+    }
+  }
+
+  async renderCapabilitySecurity(x, security) {
+    x.h4().tx('Security');
+
+    const tbl = x.table("grid");
+
+    if (security.cors !== undefined) {
+      const tr = tbl.tr();
+      tr.td().b().tx('CORS');
+      tr.td().tx(security.cors ? 'enabled' : 'disabled');
+    }
+
+    if (security.service && security.service.length > 0) {
+      const tr = tbl.tr();
+      tr.td().b().tx(this.translate('CAPABILITY_SEC_SERVICES') || 'Security Services');
+      const td = tr.td();
+      let first = true;
+      for (const svc of security.service) {
+        if (!first) {
+          td.tx(', ');
+        }
+        first = false;
+        // Render CodeableConcept - prefer text, then first coding display, then first coding code
+        if (svc.text) {
+          td.tx(svc.text);
+        } else if (svc.coding && svc.coding.length > 0) {
+          const coding = svc.coding[0];
+          td.tx(coding.display || coding.code || '');
+        }
+      }
+    }
+
+    if (security.description) {
+      const tr = tbl.tr();
+      tr.td().b().tx(this.translate('GENERAL_DESC') || 'Description');
+      tr.td().markdown(security.description);
+    }
+  }
+
+  async renderCapabilityResources(x, rest) {
+    x.h4().tx('Resources');
+
+    // Analyze what columns we need
+    const columnInfo = this.analyzeCapabilityResourceColumns(rest.resource);
+
+    const tbl = x.table("grid");
+
+    // Header row
+    const headerRow = tbl.tr();
+    headerRow.th().tx(this.translate('GENERAL_TYPE') || 'Type');
+
+    if (columnInfo.hasProfile) {
+      headerRow.th().tx(this.translate('GENERAL_PROF') || 'Profile');
+    }
+
+    // Interaction columns
+    for (const intCode of columnInfo.interactions) {
+      headerRow.th().tx(intCode);
+    }
+
+    if (columnInfo.hasSearchParams) {
+      headerRow.th().tx(this.translate('CAPABILITY_SEARCH_PARS') || 'Search Parameters');
+    }
+
+    if (columnInfo.hasOperations) {
+      headerRow.th().tx(this.translate('CAPABILITY_OP') || 'Operations');
+    }
+
+    // Resource rows
+    for (const resource of rest.resource) {
+      await this.addCapabilityResourceRow(tbl, resource, columnInfo);
+    }
+  }
+
+  analyzeCapabilityResourceColumns(resources) {
+    const info = {
+      hasProfile: false,
+      interactions: new Set(),
+      hasSearchParams: false,
+      hasOperations: false
+    };
+
+    for (const res of resources) {
+      if (res.profile) {
+        info.hasProfile = true;
+      }
+
+      if (res.interaction) {
+        for (const int of res.interaction) {
+          info.interactions.add(int.code);
+        }
+      }
+
+      if (res.searchParam && res.searchParam.length > 0) {
+        info.hasSearchParams = true;
+      }
+
+      if (res.operation && res.operation.length > 0) {
+        info.hasOperations = true;
+      }
+    }
+
+    // Convert interactions to sorted array for consistent column ordering
+    const interactionOrder = ['read', 'vread', 'update', 'patch', 'delete', 'history-instance', 'history-type', 'create', 'search-type'];
+    info.interactions = interactionOrder.filter(i => info.interactions.has(i));
+
+    // Add any other interactions not in our predefined order
+    for (const res of resources) {
+      if (res.interaction) {
+        for (const int of res.interaction) {
+          if (!info.interactions.includes(int.code)) {
+            info.interactions.push(int.code);
+          }
+        }
+      }
+    }
+
+    return info;
+  }
+
+  async addCapabilityResourceRow(tbl, resource, columnInfo) {
+    const tr = tbl.tr();
+
+    // Type column
+    tr.td().b().tx(resource.type);
+
+    // Profile column
+    if (columnInfo.hasProfile) {
+      const td = tr.td();
+      if (resource.profile) {
+        await this.renderLink(td, resource.profile);
+      }
+      // Also show supportedProfile if present
+      if (resource.supportedProfile && resource.supportedProfile.length > 0) {
+        if (resource.profile) {
+          td.br();
+          td.tx('Also: ');
+        }
+        let first = true;
+        for (const sp of resource.supportedProfile) {
+          if (!first) {
+            td.tx(', ');
+          }
+          first = false;
+          await this.renderLink(td, sp);
+        }
+      }
+    }
+
+    // Interaction columns - render checkmarks
+    const supportedInteractions = new Set(
+        (resource.interaction || []).map(i => i.code)
+    );
+
+    for (const intCode of columnInfo.interactions) {
+      const td = tr.td();
+      td.style("text-align: center");
+      if (supportedInteractions.has(intCode)) {
+        td.tx('✓');
+      }
+    }
+
+    // Search parameters column
+    if (columnInfo.hasSearchParams) {
+      const td = tr.td();
+      if (resource.searchParam && resource.searchParam.length > 0) {
+        const paramNames = resource.searchParam.map(sp => sp.name);
+        td.tx(paramNames.join(', '));
+      }
+    }
+
+    // Operations column
+    if (columnInfo.hasOperations) {
+      const td = tr.td();
+      if (resource.operation && resource.operation.length > 0) {
+        let first = true;
+        for (const op of resource.operation) {
+          if (!first) {
+            td.tx(', ');
+          }
+          first = false;
+          if (op.definition) {
+            td.ah(op.definition).tx(op.name);
+          } else {
+            td.tx(op.name);
+          }
+        }
+      }
+    }
+  }
+
+  async renderTerminologyCapabilities(tc) {
+    if (tc.json) {
+      tc = tc.json;
+    }
+
+    let div_ = div();
+
+    // Metadata table
+    div_.h3().tx("Properties");
+    await this.renderMetadataTable(tc, div_.table("grid"));
+
+    // Code Systems
+    if (tc.codeSystem && tc.codeSystem.length > 0) {
+      div_.h3().tx('Code Systems');
+      const ul = div_.ul();
+      for (const cs of tc.codeSystem) {
+        if (cs.uri) {
+          const li = ul.li();
+          if (cs.version && cs.version.length > 0) {
+            // List each version
+            let first = true;
+            for (const v of cs.version) {
+              if (!first) {
+                li.tx(', ');
+              }
+              first = false;
+              const versionedUri = v.code ? `${cs.uri}|${v.code}` : cs.uri;
+              await this.renderLink(li, versionedUri);
+            }
+          } else {
+            // No versions specified
+            await this.renderLink(li, cs.uri);
+          }
+        }
+      }
+    }
+
+    return div_.toString();
   }
 }
 

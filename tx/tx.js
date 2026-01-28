@@ -15,6 +15,7 @@ const { I18nSupport } = require('../library/i18nsupport');
 const { CodeSystemXML } = require('./xml/codesystem-xml');
 const txHtml = require('./tx-html');
 const { Liquid } = require('liquidjs');
+const packageJson = require("../package.json");
 
 // Import workers
 const ReadWorker = require('./workers/read');
@@ -114,8 +115,8 @@ class TXModule {
     // Initialize metadata handler with config
     this.metadataHandler = new MetadataHandler({
       baseUrl: config.baseUrl,
-      serverVersion: config.serverVersion || '1.0.0',
-      softwareName: config.softwareName || 'FHIR Terminology Server',
+      serverVersion: packageJson.version,
+      softwareName: config.softwareName || 'FHIRsmith',
       name: config.name || 'FHIRTerminologyServer',
       title: config.title || 'FHIR Terminology Server',
       description: config.description || 'FHIR Terminology Server',
