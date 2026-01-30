@@ -21,10 +21,9 @@ class ServerStats {
       const now = Date.now();
       const cutoff = now - (24 * 60 * 60 * 1000); // 24 hours ago
 
-      // Record memory (limit to 0 minimum)
+      // Record memory
       const currentMem = process.memoryUsage().heapUsed;
-      const memDelta = Math.max(0, currentMem - this.startMem);
-      this.memoryHistory.push({time: now, mem: memDelta});
+      this.memoryHistory.push({time: now, mem: currentMem - this.startMem});
 
       const requestsDelta = this.requestCount - this.requestCountSnapshot;
       const minutesSinceStart = this.memoryHistory.length > 1
