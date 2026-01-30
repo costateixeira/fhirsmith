@@ -444,9 +444,9 @@ class TxParameters {
   }
 
   langSummary() {
-    if (this.FDisplayLanguages && this.FDisplayLanguages.source) {
+    if (this.FDisplayLanguages) {
       return this.FDisplayLanguages.asString(false);
-    } else if (this.FHTTPLanguages && this.FHTTPLanguages.source) {
+    } else if (this.FHTTPLanguages) {
       return this.FHTTPLanguages.asString(false);
     } else {
       return '--';

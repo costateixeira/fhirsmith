@@ -164,9 +164,6 @@ class TXModule {
 
     this.log.info(`Setting up endpoint: ${endpointPath} (FHIR v${fhirVersion}, context: ${context || 'none'})`);
 
-    // Create the provider once for this endpoint
-    this.provider = await this.library.cloneWithFhirVersion(fhirVersion, context, endpointPath);
-
     const router = express.Router();
 
     // Get cache configuration
@@ -182,6 +179,8 @@ class TXModule {
       resourceCache: new ResourceCache(),
       expansionCache: new ExpansionCache(expansionCacheSize, expansionCacheMemoryThreshold)
     };
+    // Create the provider once for this endpoint
+    endpointInfo.provider = await this.library.cloneWithFhirVersion(fhirVersion, context, endpointPath);
 
     // Set up periodic pruning of the resource cache
     // cacheTimeout is in minutes, default to 30 minutes
@@ -207,7 +206,7 @@ class TXModule {
     // Middleware to attach provider, context, and timing to request, and wrap res.json for HTML
     router.use((req, res, next) => {
       // Increment request count
-      this.provider.requestCount++;
+      endpointInfo.provider.requestCount++;
 
       // Generate unique request ID
       const requestId = this.generateRequestId();
@@ -222,7 +221,7 @@ class TXModule {
       );
 
       // Attach everything to request
-      req.txProvider = this.provider;
+      req.txProvider = endpointInfo.provider;
       req.txEndpoint = endpointInfo;
       req.txStartTime = Date.now();
       req.txOpContext = opContext;
@@ -236,7 +235,7 @@ class TXModule {
       // Wrap res.json to intercept and convert to HTML if browser requests it, and log the request
       const originalJson = res.json.bind(res);
 
-      let txhtml = new TxHtmlRenderer(new Renderer(opContext, this.provider), this.liquid);
+      let txhtml = new TxHtmlRenderer(new Renderer(opContext, endpointInfo.provider), this.liquid);
       res.json = async (data) => {
         try {
           const duration = Date.now() - req.txStartTime;

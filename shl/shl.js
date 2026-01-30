@@ -397,7 +397,7 @@ class SHLModule {
       
       shlLog.info('Starting FHIR Validator with config:', validatorConfig);
       
-      const validatorJarPath = path.join(__dirname, '../validator_cli.jar');
+      const validatorJarPath = path.join(__dirname, '../bin/validator_cli.jar');
       this.fhirValidator = new FhirValidator(validatorJarPath, shlLog);
       await this.fhirValidator.start(validatorConfig);
       

@@ -696,7 +696,7 @@ class ValueSetDatabase {
         default:
           // For unknown parameters, try to search in the JSON content
           conditions.push('v.content LIKE ?');
-          params.push(`%"${name}"%${value}%`);
+          params.push(`%${value}%`);
           break;
       }
     }

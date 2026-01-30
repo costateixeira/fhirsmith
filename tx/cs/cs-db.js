@@ -5,31 +5,22 @@ const { Language, Languages} = require('../../library/languages');
 const { CodeSystemProvider, CodeSystemFactoryProvider} = require('./cs-api');
 const { validateOptionalParameter, validateArrayParameter} = require("../../library/utilities");
 
-// Context kinds matching Pascal enum
-const LoincProviderContextKind = {
-  CODE: 0,    // lpckCode
-  PART: 1,    // lpckPart
-  LIST: 2,    // lpckList
-  ANSWER: 3   // lpckAnswer
-};
-
-class DescriptionCacheEntry {
-  constructor(display, lang, value, dtype) {
+class CachedDesignation {
+  constructor(display, language, use) {
     this.display = display;
-    this.lang = lang;
-    this.value = value;
-    this.dtype = dtype;
+    this.language = language;
+    this.use = use;
   }
 }
 
-class LoincProviderContext {
-  constructor(key, kind, code, desc, status) {
+class CodeDBProviderContext {
+  constructor(key, code, display, definition, status) {
     this.key = key;
-    this.kind = kind;
     this.code = code;
-    this.desc = desc;
+    this.display = display;
+    this.definition = definition;
     this.status = status;
-    this.displays = []; // Array of DescriptionCacheEntry
+    this.designations = null; // Array of CachedDesignation
     this.children = null; // Will be Set of keys if this has children
   }
 
@@ -41,14 +32,8 @@ class LoincProviderContext {
   }
 }
 
-class LoincDisplay {
-  constructor(language, value) {
-    this.language = language;
-    this.value = value;
-  }
-}
 
-class LoincIteratorContext {
+class CodeDBIteratorContext {
   constructor(context, keys) {
     this.context = context;
     this.keys = keys || [];
@@ -65,7 +50,7 @@ class LoincIteratorContext {
   }
 }
 
-class LoincFilterHolder {
+class CodeDBFilterHolder {
   constructor() {
     this.keys = [];
     this.cursor = 0;
@@ -73,7 +58,7 @@ class LoincFilterHolder {
   }
 
   hasKey(key) {
-    // Binary search since keys should be sorted
+    // Binary search since keys are sorted
     let l = 0;
     let r = this.keys.length - 1;
     while (l <= r) {
@@ -90,13 +75,13 @@ class LoincFilterHolder {
   }
 }
 
-class LoincPrep {
+class CodeDBPrep {
   constructor() {
     this.filters = [];
   }
 }
 
-class LoincServices extends CodeSystemProvider {
+class CodeDBServices extends CodeSystemProvider {
   constructor(opContext, supplements, db, sharedData) {
     super(opContext, supplements);
     this.db = db;
@@ -105,7 +90,7 @@ class LoincServices extends CodeSystemProvider {
     this.langs = sharedData.langs;
     this.codes = sharedData.codes;
     this.codeList = sharedData.codeList;
-    this._version = sharedData._version;
+    this.codeSystem = sharedData.codeSystem;
     this.root = sharedData.root;
     this.firstCodeKey = sharedData.firstCodeKey;
     this.relationships = sharedData.relationships;
@@ -123,19 +108,19 @@ class LoincServices extends CodeSystemProvider {
 
   // Metadata methods
   system() {
-    return 'http://loinc.org';
+    return this.codeSystem.url;
   }
 
   version() {
-    return this._version;
+    return this.codeSystem.version;
   }
 
   name() {
-    return 'LOINC';
+    return this.codeSystem.name;
   }
 
   description() {
-    return 'LOINC';
+    return this.codeSystem.description;
   }
 
   async totalCount() {
@@ -143,7 +128,7 @@ class LoincServices extends CodeSystemProvider {
   }
 
   hasParents() {
-    return true; // LOINC has hierarchical relationships
+    return this.codeSystem.hierarchical;
   }
 
   hasAnyDisplays(languages) {
@@ -154,11 +139,11 @@ class LoincServices extends CodeSystemProvider {
       return true;
     }
 
-    // Check if any requested languages are available in LOINC data
+    // Check if any requested languages are available in code system data
     for (const requestedLang of langs.languages) {
-      for (const [loincLangCode] of this.langs) {
-        const loincLang = new Language(loincLangCode);
-        if (loincLang.matchesForDisplay(requestedLang)) {
+      for (const [codeDBLangCode] of this.langs) {
+        const codeDBLang = new Language(codeDBLangCode);
+        if (codeDBLang.matchesForDisplay(requestedLang)) {
           return true;
         }
       }
@@ -189,11 +174,11 @@ class LoincServices extends CodeSystemProvider {
 
     // Use language-aware display logic
     if (this.opContext.langs && !this.opContext.langs.isEnglishOrNothing()) {
-      const displays = await this.#getDisplaysForContext(ctxt, this.opContext.langs);
+      await this.#loadDesignationsForContext(ctxt);
 
       // Try to find exact language match
       for (const lang of this.opContext.langs.langs) {
-        for (const display of displays) {
+        for (const display of ctxt.designations) {
           if (lang.matches(display.language, true)) {
             return display.value;
           }
@@ -202,7 +187,7 @@ class LoincServices extends CodeSystemProvider {
 
       // Try partial language match
       for (const lang of this.opContext.langs.langs) {
-        for (const display of displays) {
+        for (const display of ctxt.designations) {
           if (lang.matches(display.language, false)) {
             return display.value;
           }
@@ -210,53 +195,53 @@ class LoincServices extends CodeSystemProvider {
       }
     }
 
-    return ctxt.desc || '';
+    return ctxt.display || '';
   }
 
   async definition(context) {
-    await this.#ensureContext(context);
-    return null; // LOINC doesn't provide definitions
+    const ctxt = await this.#ensureContext(context);
+    return ctxt.definition;
   }
 
   async isAbstract(context) {
-    await this.#ensureContext(context);
-    return false; // LOINC codes are not abstract
+    const ctxt = await this.#ensureContext(context);
+    return ctxt.abstract;
   }
 
   async isInactive(context) {
-    await this.#ensureContext(context);
-    return context.status == 'DISCOURAGED'; // Handle via status if needed
+    const ctxt = await this.#ensureContext(context);
+    return ctxt.status == 'inactive';
   }
 
   async getStatus(context) {
-    await this.#ensureContext(context);
-    return context.status == 'NotStated' ? null : context.status; // Handle via status if needed
+    const ctxt = await this.#ensureContext(context);
+    return ctxt.status;
   }
 
   async isDeprecated(context) {
-    await this.#ensureContext(context);
-    return false; // Handle via status if needed
+    const ctxt = await this.#ensureContext(context);
+    return ctxt.status == 'deprecated';
   }
 
   async designations(context, displays) {
-    
     const ctxt = await this.#ensureContext(context);
     if (ctxt) {
+      await this.#loadDesignationsForContext(ctxt);
+      ctxt.designations
       // Add main display
-      displays.addDesignation(true, 'active', 'en-US', CodeSystem.makeUseForDisplay(), ctxt.desc.trim());
+      displays.addDesignation(true, 'active', this.codeSystem.language, CodeSystem.makeUseForDisplay(), ctxt.desc.trim());
 
       // Add cached designations
       if (ctxt.displays.length === 0) {
         await this.#loadDesignationsForContext(ctxt);
       }
 
-      for (const entry of ctxt.displays) {
+      for (const entry of ctxt.designations) {
         let use = undefined;
-        if (entry.dtype) {
+        if (entry.type) {
           use = {
-            system: 'http://loinc.org',
-            code: entry.dtype,
-            display: entry.dtype
+            system: this.codeSystem.url,
+            code: entry.type
           }
         }
         if (!use) {
@@ -284,59 +269,12 @@ class LoincServices extends CodeSystemProvider {
       ctxt = located.context;
     }
 
-    if (!(ctxt instanceof LoincProviderContext)) {
-      throw new Error('Invalid context for LOINC lookup');
+    if (!(ctxt instanceof CodeDBProviderContext)) {
+      throw new Error('Invalid context for CodeDB lookup');
     }
 
-    // Add relationships
-    await this.#addRelationshipProperties(ctxt, params);
-
-    // Add properties
     await this.#addConceptProperties(ctxt, params);
-
-    // Add status
     await this.#addStatusProperty(ctxt, params);
-    await this.#addRelatedNames(ctxt, params);
-    // // Add designations based on context kind
-    // const designationUse = this.#getDesignationUse(ctxt.kind);
-    // this.#addProperty(params, 'designation', designationUse, ctxt.desc, 'en-US');
-    //
-    // // Add all other designations
-    // await this.#addAllDesignations(ctxt, params);
-  }
-
-  #getDesignationUse(kind) {
-    switch (kind) {
-      case LoincProviderContextKind.CODE:
-        return 'LONG_COMMON_NAME';
-      case LoincProviderContextKind.PART:
-        return 'PartDisplayName';
-      default:
-        return 'LONG_COMMON_NAME';
-    }
-  }
-
-  async #addRelationshipProperties(ctxt, params) {
-    return new Promise((resolve, reject) => {
-      const sql = `
-          SELECT RelationshipTypes.Description as Relationship, Codes.Code, Codes.Description as Value
-          FROM Relationships, RelationshipTypes, Codes
-          WHERE Relationships.SourceKey = ?
-            AND Relationships.RelationshipTypeKey = RelationshipTypes.RelationshipTypeKey
-            AND Relationships.TargetKey = Codes.CodeKey
-      `;
-
-      this.db.all(sql, [ctxt.key], (err, rows) => {
-        if (err) {
-          reject(err);
-        } else {
-          for (const row of rows) {
-            this.#addCodeProperty(params, 'property', row.Relationship, row.Code);
-          }
-          resolve();
-        }
-      });
-    });
   }
 
   async #addConceptProperties(ctxt, params) {
@@ -363,56 +301,9 @@ class LoincServices extends CodeSystemProvider {
   }
 
   async #addStatusProperty(ctxt, params) {
-    return new Promise((resolve, reject) => {
-      const sql = 'SELECT StatusKey FROM Codes WHERE CodeKey = ? AND StatusKey != 0';
-
-      this.db.get(sql, [ctxt.key], (err, row) => {
-        if (err) {
-          reject(err);
-        } else if (row) {
-          const statusDesc = this.statusCodes.get(row.StatusKey.toString());
-          if (row.StatusKey && statusDesc) {
-            this.#addStringProperty(params, 'property', 'STATUS', statusDesc);
-          }
-          resolve();
-        } else {
-          resolve();
-        }
-      });
-    });
-  }
-
-  async #addRelatedNames(ctxt, params) {
-    if (!ctxt.relatedNames) {
-      await this.#loadRelatedNames(ctxt);
+    if (ctxt.status) {
+      this.#addStringProperty(params, 'property', 'STATUS', ctxt.status);
     }
-    for (let d of ctxt.relatedNames) {
-      this.#addProperty(params, 'property', 'RELATEDNAMES2', d.value, d.lang);
-    }
-  }
-
-  async #addAllDesignations(ctxt, params) {
-    return new Promise((resolve, reject) => {
-      const sql = `
-          SELECT Languages.Code as Lang, DescriptionTypes.Description as DType, Descriptions.Value
-          FROM Descriptions, Languages, DescriptionTypes
-          WHERE Descriptions.CodeKey = ?
-            AND Descriptions.DescriptionTypeKey != 4 
-          AND Descriptions.DescriptionTypeKey = DescriptionTypes.DescriptionTypeKey 
-          AND Descriptions.LanguageKey = Languages.LanguageKey
-      `;
-
-      this.db.all(sql, [ctxt.key], (err, rows) => {
-        if (err) {
-          reject(err);
-        } else {
-          for (const row of rows) {
-            this.#addProperty(params, 'designation', row.dtype, row.value, row.lang);
-          }
-          resolve();
-        }
-      });
-    });
   }
 
   #addProperty(params, type, name, value, language = null) {
@@ -466,37 +357,6 @@ class LoincServices extends CodeSystemProvider {
     params.push(property);
   }
 
-  async #getDisplaysForContext(ctxt, langs) {
-    validateOptionalParameter(langs, "langs", Languages);
-    const displays = [new LoincDisplay('en-US', ctxt.desc)];
-
-    return new Promise((resolve, reject) => {
-      const sql = `
-          SELECT Languages.Code as Lang, Descriptions.Value
-          FROM Descriptions, Languages
-          WHERE Descriptions.CodeKey = ?
-            AND Descriptions.DescriptionTypeKey IN (1,2,5)
-            AND Descriptions.LanguageKey = Languages.LanguageKey
-          ORDER BY DescriptionTypeKey
-      `;
-
-      this.db.all(sql, [ctxt.key], (err, rows) => {
-        if (err) {
-          reject(err);
-        } else {
-          for (const row of rows) {
-            displays.push(new LoincDisplay(row.Lang, row.Value));
-          }
-
-          // Add supplement displays
-          this.#addSupplementDisplays(displays, ctxt.code);
-
-          resolve(displays);
-        }
-      });
-    });
-  }
-
   #addSupplementDisplays(displays, code) {
     if (this.supplements) {
       for (const supplement of this.supplements) {
@@ -517,56 +377,33 @@ class LoincServices extends CodeSystemProvider {
   }
 
   async #loadDesignationsForContext(ctxt) {
-    return new Promise((resolve, reject) => {
-      const sql = `
-          SELECT Languages.Code as Lang, DescriptionTypes.Description as DType, Descriptions.Value
-          FROM Descriptions, Languages, DescriptionTypes
-          WHERE Descriptions.CodeKey = ?
-            AND Descriptions.DescriptionTypeKey != 4
+    if (!ctxt.designations) {
+      ctxt.designations = [];
+      return new Promise((resolve, reject) => {
+        const sql = `
+            SELECT Languages.Code as Lang, DescriptionTypes.Description as DType, Descriptions.Value
+            FROM Descriptions,
+                 Languages,
+                 DescriptionTypes
+            WHERE Descriptions.CodeKey = ?
+              AND Descriptions.DescriptionTypeKey != 4
             AND Descriptions.DescriptionTypeKey = DescriptionTypes.DescriptionTypeKey
             AND Descriptions.LanguageKey = Languages.LanguageKey
-      `;
+        `;
 
-      this.db.all(sql, [ctxt.key], (err, rows) => {
-        if (err) {
-          reject(err);
-        } else {
-          for (const row of rows) {
-            const isDisplay = row.DType === 'LONG_COMMON_NAME';
-            ctxt.displays.push(new DescriptionCacheEntry(isDisplay, row.Lang, row.Value, row.DType));
+        this.db.all(sql, [ctxt.key], (err, rows) => {
+          if (err) {
+            reject(err);
+          } else {
+            for (const row of rows) {
+              const isDisplay = row.DType === 'LONG_COMMON_NAME';
+              ctxt.designations.push(new CachedDesignation(row.Value, , row.Lang, row.DType));
+            }
+            resolve();
           }
-          resolve();
-        }
+        });
       });
-    });
-  }
-
-  async #loadRelatedNames(ctxt) {
-    if (!ctxt.relatedNames) {
-      ctxt.relatedNames = [];
     }
-    return new Promise((resolve, reject) => {
-      const sql = `
-          SELECT Languages.Code as Lang, DescriptionTypes.Description as DType, Descriptions.Value
-          FROM Descriptions, Languages, DescriptionTypes
-          WHERE Descriptions.CodeKey = ?
-            AND Descriptions.DescriptionTypeKey != 4
-            AND Descriptions.DescriptionTypeKey = DescriptionTypes.DescriptionTypeKey
-            AND Descriptions.LanguageKey = Languages.LanguageKey
-      `;
-
-      this.db.all(sql, [ctxt.key], (err, rows) => {
-        if (err) {
-          reject(err);
-        } else {
-          for (const row of rows) {
-            const isDisplay = row.DType === 'LONG_COMMON_NAME';
-            ctxt.relatedNames.push(new DescriptionCacheEntry(isDisplay, row.Lang, row.Value, row.DType));
-          }
-          resolve();
-        }
-      });
-    });
   }
 
   async #ensureContext(context) {
@@ -581,7 +418,7 @@ class LoincServices extends CodeSystemProvider {
         return ctxt.context;
       }
     }
-    if (context instanceof LoincProviderContext) {
+    if (context instanceof CodeDBProviderContext) {
       return context;
     }
     throw new Error("Unknown Type at #ensureContext: " + (typeof context));

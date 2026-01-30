@@ -37,3 +37,5 @@ tests/vs/.vsac-last-run
 shl/private-key.pem
 
 shl/public-key.pem
+
+bin/validator_cli.jar.version

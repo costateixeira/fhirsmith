@@ -8,7 +8,7 @@ describe('Tx Tests', () => {
 
   beforeAll(async () => {
     await startTxTests();
-  });
+  }, 600000);
   afterAll(async () => {
     await finishTxTests();
   });
@@ -74,6 +74,10 @@ describe('simple-cases', () => {
 
   it('simple-expand-regex2', async () => {
     await runTest({"suite":"simple-cases","test":"simple-expand-regex2"});
+  });
+
+  it('simple-expand-regexp-prop', async () => {
+    await runTest({"suite":"simple-cases","test":"simple-expand-regexp-prop"});
   });
 
   it('simple-lookup-1', async () => {
@@ -359,6 +363,10 @@ describe('language2', () => {
     await runTest({"suite":"language2","test":"validation-wrong-de-en"});
   });
 
+  it('validation-wrong-de-en-bad', async () => {
+    await runTest({"suite":"language2","test":"validation-wrong-de-en-bad"});
+  });
+
   it('validation-wrong-de-ende-N', async () => {
     await runTest({"suite":"language2","test":"validation-wrong-de-ende-N"});
   });
@@ -412,10 +420,6 @@ describe('extensions', () => {
     await runTest({"suite":"extensions","test":"extensions-echo-all"});
   });
 
-  it('extensions-echo-all-alt', async () => {
-    await runTest({"suite":"extensions","test":"extensions-echo-all-alt"});
-  });
-
   it('extensions-echo-enumerated', async () => {
     await runTest({"suite":"extensions","test":"extensions-echo-enumerated"});
   });
@@ -446,6 +450,14 @@ describe('extensions', () => {
 
   it('validate-coding-good2-supplement', async () => {
     await runTest({"suite":"extensions","test":"validate-coding-good2-supplement"});
+  });
+
+  it('validate-code-inactive-display', async () => {
+    await runTest({"suite":"extensions","test":"validate-code-inactive-display"});
+  });
+
+  it('validate-code-inactive', async () => {
+    await runTest({"suite":"extensions","test":"validate-code-inactive"});
   });
 
 });
@@ -535,34 +547,6 @@ describe('validation', () => {
 
   it('validation-simple-codeableconcept-bad-system', async () => {
     await runTest({"suite":"validation","test":"validation-simple-codeableconcept-bad-system"});
-  });
-
-  it('validation-simple-code-bad-version1', async () => {
-    await runTest({"suite":"validation","test":"validation-simple-code-bad-version1"});
-  });
-
-  it('validation-simple-coding-bad-version1', async () => {
-    await runTest({"suite":"validation","test":"validation-simple-coding-bad-version1"});
-  });
-
-  it('validation-simple-codeableconcept-bad-version1', async () => {
-    await runTest({"suite":"validation","test":"validation-simple-codeableconcept-bad-version1"});
-  });
-
-  it('validation-simple-codeableconcept-bad-version2', async () => {
-    await runTest({"suite":"validation","test":"validation-simple-codeableconcept-bad-version2"});
-  });
-
-  it('validation-simple-code-good-version', async () => {
-    await runTest({"suite":"validation","test":"validation-simple-code-good-version"});
-  });
-
-  it('validation-simple-coding-good-version', async () => {
-    await runTest({"suite":"validation","test":"validation-simple-coding-good-version"});
-  });
-
-  it('validation-simple-codeableconcept-good-version', async () => {
-    await runTest({"suite":"validation","test":"validation-simple-codeableconcept-good-version"});
   });
 
   it('validation-simple-code-good-display', async () => {
@@ -657,24 +641,866 @@ describe('validation', () => {
     await runTest({"suite":"validation","test":"validation-complex-codeableconcept-vsonly"});
   });
 
-  it('validation-version-profile-none', async () => {
-    await runTest({"suite":"validation","test":"validation-version-profile-none"});
-  });
-
-  it('validation-version-profile-default', async () => {
-    await runTest({"suite":"validation","test":"validation-version-profile-default"});
-  });
-
-  it('validation-version-profile-coding', async () => {
-    await runTest({"suite":"validation","test":"validation-version-profile-coding"});
-  });
-
   it('validation-cs-code-good', async () => {
     await runTest({"suite":"validation","test":"validation-cs-code-good"});
   });
 
   it('validation-cs-code-bad-code', async () => {
     await runTest({"suite":"validation","test":"validation-cs-code-bad-code"});
+  });
+
+});
+
+describe('version', () => {
+  // Testing various version issues. There's two versions of a code system, and three value sets that select different versions
+
+  it('version-simple-code-bad-version1', async () => {
+    await runTest({"suite":"version","test":"version-simple-code-bad-version1"});
+  });
+
+  it('version-simple-coding-bad-version1', async () => {
+    await runTest({"suite":"version","test":"version-simple-coding-bad-version1"});
+  });
+
+  it('version-simple-codeableconcept-bad-version1', async () => {
+    await runTest({"suite":"version","test":"version-simple-codeableconcept-bad-version1"});
+  });
+
+  it('version-simple-codeableconcept-bad-version2', async () => {
+    await runTest({"suite":"version","test":"version-simple-codeableconcept-bad-version2"});
+  });
+
+  it('version-simple-code-good-version', async () => {
+    await runTest({"suite":"version","test":"version-simple-code-good-version"});
+  });
+
+  it('version-simple-coding-good-version', async () => {
+    await runTest({"suite":"version","test":"version-simple-coding-good-version"});
+  });
+
+  it('version-simple-codeableconcept-good-version', async () => {
+    await runTest({"suite":"version","test":"version-simple-codeableconcept-good-version"});
+  });
+
+  it('version-version-profile-none', async () => {
+    await runTest({"suite":"version","test":"version-version-profile-none"});
+  });
+
+  it('version-version-profile-default', async () => {
+    await runTest({"suite":"version","test":"version-version-profile-default"});
+  });
+
+  it('validation-version-profile-coding', async () => {
+    await runTest({"suite":"version","test":"validation-version-profile-coding"});
+  });
+
+  it('coding-vnn-vsnn', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vsnn"});
+  });
+
+  it('coding-v10-vs1w', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vs1w"});
+  });
+
+  it('coding-v10-vs1wb', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vs1wb"});
+  });
+
+  it('coding-v10-vs10', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vs10"});
+  });
+
+  it('coding-v10-vs20', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vs20"});
+  });
+
+  it('coding-v10-vsbb', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vsbb"});
+  });
+
+  it('coding-v10-vsbb', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vsbb"});
+  });
+
+  it('coding-v10-vsnn', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vsnn"});
+  });
+
+  it('coding-vbb-vs10', async () => {
+    await runTest({"suite":"version","test":"coding-vbb-vs10"});
+  });
+
+  it('coding-vbb-vsnn', async () => {
+    await runTest({"suite":"version","test":"coding-vbb-vsnn"});
+  });
+
+  it('coding-vnn-vs1w', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vs1w"});
+  });
+
+  it('coding-vnn-vs1wb', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vs1wb"});
+  });
+
+  it('coding-vnn-vs10', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vs10"});
+  });
+
+  it('coding-vnn-vsbb', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vsbb"});
+  });
+
+  it('coding-vnn-vsnn-default', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vsnn-default"});
+  });
+
+  it('coding-v10-vs1w-default', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vs1w-default"});
+  });
+
+  it('coding-v10-vs1wb-default', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vs1wb-default"});
+  });
+
+  it('coding-v10-vs10-default', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vs10-default"});
+  });
+
+  it('coding-v10-vs20-default', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vs20-default"});
+  });
+
+  it('coding-v10-vsbb-default', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vsbb-default"});
+  });
+
+  it('coding-v10-vsnn-default', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vsnn-default"});
+  });
+
+  it('coding-vbb-vs10-default', async () => {
+    await runTest({"suite":"version","test":"coding-vbb-vs10-default"});
+  });
+
+  it('coding-vbb-vsnn-default', async () => {
+    await runTest({"suite":"version","test":"coding-vbb-vsnn-default"});
+  });
+
+  it('coding-vnn-vs1w-default', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vs1w-default"});
+  });
+
+  it('coding-vnn-vs1wb-default', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vs1wb-default"});
+  });
+
+  it('coding-vnn-vs10-default', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vs10-default"});
+  });
+
+  it('coding-vnn-vsbb-default', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vsbb-default"});
+  });
+
+  it('coding-vnn-vsnn-check', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vsnn-check"});
+  });
+
+  it('coding-v10-vs1w-check', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vs1w-check"});
+  });
+
+  it('coding-v10-vs1wb-check', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vs1wb-check"});
+  });
+
+  it('coding-v10-vs10-check', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vs10-check"});
+  });
+
+  it('coding-v10-vs20-check', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vs20-check"});
+  });
+
+  it('coding-v10-vsbb-check', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vsbb-check"});
+  });
+
+  it('coding-v10-vsnn-check', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vsnn-check"});
+  });
+
+  it('coding-vbb-vs10-check', async () => {
+    await runTest({"suite":"version","test":"coding-vbb-vs10-check"});
+  });
+
+  it('coding-vbb-vsnn-check', async () => {
+    await runTest({"suite":"version","test":"coding-vbb-vsnn-check"});
+  });
+
+  it('coding-vnn-vs1w-check', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vs1w-check"});
+  });
+
+  it('coding-vnn-vs1wb-check', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vs1wb-check"});
+  });
+
+  it('coding-vnn-vs10-check', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vs10-check"});
+  });
+
+  it('coding-vnn-vsbb-check', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vsbb-check"});
+  });
+
+  it('coding-vnn-vsnn-force', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vsnn-force"});
+  });
+
+  it('coding-v10-vs1w-force', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vs1w-force"});
+  });
+
+  it('coding-v10-vs1wb-force', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vs1wb-force"});
+  });
+
+  it('coding-v10-vs10-force', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vs10-force"});
+  });
+
+  it('coding-v10-vs20-force', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vs20-force"});
+  });
+
+  it('coding-v10-vsbb-force', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vsbb-force"});
+  });
+
+  it('coding-v10-vsnn-force', async () => {
+    await runTest({"suite":"version","test":"coding-v10-vsnn-force"});
+  });
+
+  it('coding-vbb-vs10-force', async () => {
+    await runTest({"suite":"version","test":"coding-vbb-vs10-force"});
+  });
+
+  it('coding-vbb-vsnn-force', async () => {
+    await runTest({"suite":"version","test":"coding-vbb-vsnn-force"});
+  });
+
+  it('coding-vnn-vs1w-force', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vs1w-force"});
+  });
+
+  it('coding-vnn-vs1wb-force', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vs1wb-force"});
+  });
+
+  it('coding-vnn-vs10-force', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vs10-force"});
+  });
+
+  it('coding-vnn-vsbb-force', async () => {
+    await runTest({"suite":"version","test":"coding-vnn-vsbb-force"});
+  });
+
+  it('codeableconcept-vnn-vsnn', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vsnn"});
+  });
+
+  it('codeableconcept-v10-vs1w', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vs1w"});
+  });
+
+  it('codeableconcept-v10-vs1wb', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vs1wb"});
+  });
+
+  it('codeableconcept-v10-vs10', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vs10"});
+  });
+
+  it('codeableconcept-v10-vs20', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vs20"});
+  });
+
+  it('codeableconcept-v10-vsbb', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vsbb"});
+  });
+
+  it('codeableconcept-v10-vsbb', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vsbb"});
+  });
+
+  it('codeableconcept-v10-vsnn', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vsnn"});
+  });
+
+  it('codeableconcept-vbb-vs10', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vbb-vs10"});
+  });
+
+  it('codeableconcept-vbb-vsnn', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vbb-vsnn"});
+  });
+
+  it('codeableconcept-vnn-vs1w', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vs1w"});
+  });
+
+  it('codeableconcept-vnn-vs1wb', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vs1wb"});
+  });
+
+  it('codeableconcept-vnn-vs10', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vs10"});
+  });
+
+  it('codeableconcept-vnn-vsbb', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vsbb"});
+  });
+
+  it('codeableconcept-vnn-vsnn-default', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vsnn-default"});
+  });
+
+  it('codeableconcept-v10-vs1w-default', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vs1w-default"});
+  });
+
+  it('codeableconcept-v10-vs1wb-default', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vs1wb-default"});
+  });
+
+  it('codeableconcept-v10-vs10-default', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vs10-default"});
+  });
+
+  it('codeableconcept-v10-vs20-default', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vs20-default"});
+  });
+
+  it('codeableconcept-v10-vsbb-default', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vsbb-default"});
+  });
+
+  it('codeableconcept-v10-vsnn-default', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vsnn-default"});
+  });
+
+  it('codeableconcept-vbb-vs10-default', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vbb-vs10-default"});
+  });
+
+  it('codeableconcept-vbb-vsnn-default', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vbb-vsnn-default"});
+  });
+
+  it('codeableconcept-vnn-vs1w-default', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vs1w-default"});
+  });
+
+  it('codeableconcept-vnn-vs1wb-default', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vs1wb-default"});
+  });
+
+  it('codeableconcept-vnn-vs10-default', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vs10-default"});
+  });
+
+  it('codeableconcept-vnn-vsbb-default', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vsbb-default"});
+  });
+
+  it('codeableconcept-vnn-vsnn-check', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vsnn-check"});
+  });
+
+  it('codeableconcept-v10-vs1w-check', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vs1w-check"});
+  });
+
+  it('codeableconcept-v10-vs1wb-check', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vs1wb-check"});
+  });
+
+  it('codeableconcept-v10-vs10-check', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vs10-check"});
+  });
+
+  it('codeableconcept-v10-vs20-check', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vs20-check"});
+  });
+
+  it('codeableconcept-v10-vsbb-check', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vsbb-check"});
+  });
+
+  it('codeableconcept-v10-vsnn-check', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vsnn-check"});
+  });
+
+  it('codeableconcept-vbb-vs10-check', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vbb-vs10-check"});
+  });
+
+  it('codeableconcept-vbb-vsnn-check', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vbb-vsnn-check"});
+  });
+
+  it('codeableconcept-vnn-vs1w-check', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vs1w-check"});
+  });
+
+  it('codeableconcept-vnn-vs1wb-check', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vs1wb-check"});
+  });
+
+  it('codeableconcept-vnn-vs10-check', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vs10-check"});
+  });
+
+  it('codeableconcept-vnn-vsbb-check', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vsbb-check"});
+  });
+
+  it('codeableconcept-vnn-vsnn-force', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vsnn-force"});
+  });
+
+  it('codeableconcept-v10-vs1w-force', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vs1w-force"});
+  });
+
+  it('codeableconcept-v10-vs1wb-force', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vs1wb-force"});
+  });
+
+  it('codeableconcept-v10-vs10-force', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vs10-force"});
+  });
+
+  it('codeableconcept-v10-vs20-force', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vs20-force"});
+  });
+
+  it('codeableconcept-v10-vsbb-force', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vsbb-force"});
+  });
+
+  it('codeableconcept-v10-vsnn-force', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-v10-vsnn-force"});
+  });
+
+  it('codeableconcept-vbb-vs10-force', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vbb-vs10-force"});
+  });
+
+  it('codeableconcept-vbb-vsnn-force', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vbb-vsnn-force"});
+  });
+
+  it('codeableconcept-vnn-vs1w-force', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vs1w-force"});
+  });
+
+  it('codeableconcept-vnn-vs1wb-force', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vs1wb-force"});
+  });
+
+  it('codeableconcept-vnn-vs10-force', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vs10-force"});
+  });
+
+  it('codeableconcept-vnn-vsbb-force', async () => {
+    await runTest({"suite":"version","test":"codeableconcept-vnn-vsbb-force"});
+  });
+
+  it('code-vnn-vsnn', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vsnn"});
+  });
+
+  it('code-v10-vs1w', async () => {
+    await runTest({"suite":"version","test":"code-v10-vs1w"});
+  });
+
+  it('code-v10-vs1wb', async () => {
+    await runTest({"suite":"version","test":"code-v10-vs1wb"});
+  });
+
+  it('code-v10-vs10', async () => {
+    await runTest({"suite":"version","test":"code-v10-vs10"});
+  });
+
+  it('code-v10-vs20', async () => {
+    await runTest({"suite":"version","test":"code-v10-vs20"});
+  });
+
+  it('code-v10-vsbb', async () => {
+    await runTest({"suite":"version","test":"code-v10-vsbb"});
+  });
+
+  it('code-v10-vsnn', async () => {
+    await runTest({"suite":"version","test":"code-v10-vsnn"});
+  });
+
+  it('code-vbb-vs10', async () => {
+    await runTest({"suite":"version","test":"code-vbb-vs10"});
+  });
+
+  it('code-vbb-vsnn', async () => {
+    await runTest({"suite":"version","test":"code-vbb-vsnn"});
+  });
+
+  it('code-vnn-vs1w', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vs1w"});
+  });
+
+  it('code-vnn-vs1wb', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vs1wb"});
+  });
+
+  it('code-vnn-vs10', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vs10"});
+  });
+
+  it('code-vnn-vsbb', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vsbb"});
+  });
+
+  it('code-vnn-vsnn-default', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vsnn-default"});
+  });
+
+  it('code-v10-vs1w-default', async () => {
+    await runTest({"suite":"version","test":"code-v10-vs1w-default"});
+  });
+
+  it('code-v10-vs1wb-default', async () => {
+    await runTest({"suite":"version","test":"code-v10-vs1wb-default"});
+  });
+
+  it('code-v10-vs10-default', async () => {
+    await runTest({"suite":"version","test":"code-v10-vs10-default"});
+  });
+
+  it('code-v10-vs20-default', async () => {
+    await runTest({"suite":"version","test":"code-v10-vs20-default"});
+  });
+
+  it('code-v10-vsbb-default', async () => {
+    await runTest({"suite":"version","test":"code-v10-vsbb-default"});
+  });
+
+  it('code-v10-vsnn-default', async () => {
+    await runTest({"suite":"version","test":"code-v10-vsnn-default"});
+  });
+
+  it('code-vbb-vs10-default', async () => {
+    await runTest({"suite":"version","test":"code-vbb-vs10-default"});
+  });
+
+  it('code-vbb-vsnn-default', async () => {
+    await runTest({"suite":"version","test":"code-vbb-vsnn-default"});
+  });
+
+  it('code-vnn-vs1wb-default', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vs1wb-default"});
+  });
+
+  it('code-vnn-vs10-default', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vs10-default"});
+  });
+
+  it('code-vnn-vsbb-default', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vsbb-default"});
+  });
+
+  it('code-vnn-vsnn-check', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vsnn-check"});
+  });
+
+  it('code-v10-vs1w-check', async () => {
+    await runTest({"suite":"version","test":"code-v10-vs1w-check"});
+  });
+
+  it('code-v10-vs1wb-check', async () => {
+    await runTest({"suite":"version","test":"code-v10-vs1wb-check"});
+  });
+
+  it('code-v10-vs10-check', async () => {
+    await runTest({"suite":"version","test":"code-v10-vs10-check"});
+  });
+
+  it('code-v10-vs20-check', async () => {
+    await runTest({"suite":"version","test":"code-v10-vs20-check"});
+  });
+
+  it('code-v10-vsbb-check', async () => {
+    await runTest({"suite":"version","test":"code-v10-vsbb-check"});
+  });
+
+  it('code-v10-vsnn-check', async () => {
+    await runTest({"suite":"version","test":"code-v10-vsnn-check"});
+  });
+
+  it('code-vbb-vs10-check', async () => {
+    await runTest({"suite":"version","test":"code-vbb-vs10-check"});
+  });
+
+  it('code-vbb-vsnn-check', async () => {
+    await runTest({"suite":"version","test":"code-vbb-vsnn-check"});
+  });
+
+  it('code-vnn-vs1w-check', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vs1w-check"});
+  });
+
+  it('code-vnn-vs1wb-check', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vs1wb-check"});
+  });
+
+  it('code-vnn-vs10-check', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vs10-check"});
+  });
+
+  it('code-vnn-vsbb-check', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vsbb-check"});
+  });
+
+  it('code-vnn-vsnn-force', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vsnn-force"});
+  });
+
+  it('code-v10-vs1w-force', async () => {
+    await runTest({"suite":"version","test":"code-v10-vs1w-force"});
+  });
+
+  it('code-v10-vs1wb-force', async () => {
+    await runTest({"suite":"version","test":"code-v10-vs1wb-force"});
+  });
+
+  it('code-v10-vs10-force', async () => {
+    await runTest({"suite":"version","test":"code-v10-vs10-force"});
+  });
+
+  it('code-v10-vs20-force', async () => {
+    await runTest({"suite":"version","test":"code-v10-vs20-force"});
+  });
+
+  it('code-v10-vsbb-force', async () => {
+    await runTest({"suite":"version","test":"code-v10-vsbb-force"});
+  });
+
+  it('code-v10-vsnn-force', async () => {
+    await runTest({"suite":"version","test":"code-v10-vsnn-force"});
+  });
+
+  it('code-vbb-vs10-force', async () => {
+    await runTest({"suite":"version","test":"code-vbb-vs10-force"});
+  });
+
+  it('code-vbb-vsnn-force', async () => {
+    await runTest({"suite":"version","test":"code-vbb-vsnn-force"});
+  });
+
+  it('code-vnn-vs1w-force', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vs1w-force"});
+  });
+
+  it('code-vnn-vs1wb-force', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vs1wb-force"});
+  });
+
+  it('code-vnn-vs10-force', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vs10-force"});
+  });
+
+  it('code-vnn-vsbb-force', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vsbb-force"});
+  });
+
+  it('code-vnn-vsmix-1', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vsmix-1"});
+  });
+
+  it('code-vnn-vsmix-2', async () => {
+    await runTest({"suite":"version","test":"code-vnn-vsmix-2"});
+  });
+
+  it('vs-expand-all-v', async () => {
+    await runTest({"suite":"version","test":"vs-expand-all-v"});
+  });
+
+  it('vs-expand-all-v1', async () => {
+    await runTest({"suite":"version","test":"vs-expand-all-v1"});
+  });
+
+  it('vs-expand-all-v2', async () => {
+    await runTest({"suite":"version","test":"vs-expand-all-v2"});
+  });
+
+  it('vs-expand-v-mixed', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v-mixed"});
+  });
+
+  it('vs-expand-v-n-request', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v-n-request"});
+  });
+
+  it('vs-expand-v-w', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v-w"});
+  });
+
+  it('vs-expand-v-wb', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v-wb"});
+  });
+
+  it('vs-expand-v1', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v1"});
+  });
+
+  it('vs-expand-v2', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v2"});
+  });
+
+  it('vs-expand-all-v-force', async () => {
+    await runTest({"suite":"version","test":"vs-expand-all-v-force"});
+  });
+
+  it('vs-expand-all-v1-force', async () => {
+    await runTest({"suite":"version","test":"vs-expand-all-v1-force"});
+  });
+
+  it('vs-expand-all-v2-force', async () => {
+    await runTest({"suite":"version","test":"vs-expand-all-v2-force"});
+  });
+
+  it('vs-expand-v-mixed-force', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v-mixed-force"});
+  });
+
+  it('vs-expand-v-n-force-request', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v-n-force-request"});
+  });
+
+  it('vs-expand-v-w-force', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v-w-force"});
+  });
+
+  it('vs-expand-v-wb-force', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v-wb-force"});
+  });
+
+  it('vs-expand-v1-force', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v1-force"});
+  });
+
+  it('vs-expand-v2-force', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v2-force"});
+  });
+
+  it('vs-expand-all-v-default', async () => {
+    await runTest({"suite":"version","test":"vs-expand-all-v-default"});
+  });
+
+  it('vs-expand-all-v1-default', async () => {
+    await runTest({"suite":"version","test":"vs-expand-all-v1-default"});
+  });
+
+  it('vs-expand-all-v2-default', async () => {
+    await runTest({"suite":"version","test":"vs-expand-all-v2-default"});
+  });
+
+  it('vs-expand-v-mixed-default', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v-mixed-default"});
+  });
+
+  it('vs-expand-v-n-default-request', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v-n-default-request"});
+  });
+
+  it('vs-expand-v-w-default', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v-w-default"});
+  });
+
+  it('vs-expand-v-wb-default', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v-wb-default"});
+  });
+
+  it('vs-expand-v1-default', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v1-default"});
+  });
+
+  it('vs-expand-v2-default', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v2-default"});
+  });
+
+  it('vs-expand-all-v-check', async () => {
+    await runTest({"suite":"version","test":"vs-expand-all-v-check"});
+  });
+
+  it('vs-expand-all-v1-check', async () => {
+    await runTest({"suite":"version","test":"vs-expand-all-v1-check"});
+  });
+
+  it('vs-expand-all-v2-check', async () => {
+    await runTest({"suite":"version","test":"vs-expand-all-v2-check"});
+  });
+
+  it('vs-expand-v-mixed-check', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v-mixed-check"});
+  });
+
+  it('vs-expand-v-n-check-request', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v-n-check-request"});
+  });
+
+  it('vs-expand-v-w-check', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v-w-check"});
+  });
+
+  it('vs-expand-v-wb-check', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v-wb-check"});
+  });
+
+  it('vs-expand-v1-check', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v1-check"});
+  });
+
+  it('vs-expand-v2-check', async () => {
+    await runTest({"suite":"version","test":"vs-expand-v2-check"});
+  });
+
+});
+
+describe('fragment', () => {
+  // Testing handling a code system fragment
+
+  it('validation-fragment-code-good', async () => {
+    await runTest({"suite":"fragment","test":"validation-fragment-code-good"});
+  });
+
+  it('validation-fragment-coding-good', async () => {
+    await runTest({"suite":"fragment","test":"validation-fragment-coding-good"});
+  });
+
+  it('validation-fragment-codeableconcept-good', async () => {
+    await runTest({"suite":"fragment","test":"validation-fragment-codeableconcept-good"});
+  });
+
+  it('validation-fragment-code-bad-code', async () => {
+    await runTest({"suite":"fragment","test":"validation-fragment-code-bad-code"});
+  });
+
+  it('validation-fragment-coding-bad-code', async () => {
+    await runTest({"suite":"fragment","test":"validation-fragment-coding-bad-code"});
+  });
+
+  it('validation-fragment-codeableconcept-bad-code', async () => {
+    await runTest({"suite":"fragment","test":"validation-fragment-codeableconcept-bad-code"});
   });
 
 });
@@ -732,6 +1558,26 @@ describe('errors', () => {
     await runTest({"suite":"errors","test":"unknown-system2"});
   });
 
+  it('broken-filter-validate', async () => {
+    await runTest({"suite":"errors","test":"broken-filter-validate"});
+  });
+
+  it('broken-filter2-validate', async () => {
+    await runTest({"suite":"errors","test":"broken-filter2-validate"});
+  });
+
+  it('broken-filter-expand', async () => {
+    await runTest({"suite":"errors","test":"broken-filter-expand"});
+  });
+
+  it('combination-ok', async () => {
+    await runTest({"suite":"errors","test":"combination-ok"});
+  });
+
+  it('combination-bad', async () => {
+    await runTest({"suite":"errors","test":"combination-bad"});
+  });
+
 });
 
 describe('deprecated', () => {
@@ -767,6 +1613,18 @@ describe('deprecated', () => {
 
   it('draft-validate', async () => {
     await runTest({"suite":"deprecated","test":"draft-validate"});
+  });
+
+  it('vs-deprecation', async () => {
+    await runTest({"suite":"deprecated","test":"vs-deprecation"});
+  });
+
+  it('deprecating-validate', async () => {
+    await runTest({"suite":"deprecated","test":"deprecating-validate"});
+  });
+
+  it('deprecating-validate-2', async () => {
+    await runTest({"suite":"deprecated","test":"deprecating-validate-2"});
   });
 
 });
@@ -1058,57 +1916,70 @@ describe('tho', () => {
     await runTest({"suite":"tho","test":"act-class"});
   });
 
+  it('act-class-activeonly', async () => {
+    await runTest({"suite":"tho","test":"act-class-activeonly"});
+  });
+
 });
 
-describe('valueset-version', () => {
-  // Test the valueset-version parameter
+describe('exclude', () => {
+  // Tests for proper functioning of exclude
+
+  it('exclude-1', async () => {
+    await runTest({"suite":"exclude","test":"exclude-1"});
+  });
+
+});
+
+describe('default-valueset-version', () => {
+  // Test the default-valueset-version parameter
 
   it('direct-expand-one', async () => {
-    await runTest({"suite":"valueset-version","test":"direct-expand-one"});
+    await runTest({"suite":"default-valueset-version","test":"direct-expand-one"});
   });
 
   it('direct-expand-two', async () => {
-    await runTest({"suite":"valueset-version","test":"direct-expand-two"});
+    await runTest({"suite":"default-valueset-version","test":"direct-expand-two"});
   });
 
   it('indirect-expand-one', async () => {
-    await runTest({"suite":"valueset-version","test":"indirect-expand-one"});
+    await runTest({"suite":"default-valueset-version","test":"indirect-expand-one"});
   });
 
   it('indirect-expand-two', async () => {
-    await runTest({"suite":"valueset-version","test":"indirect-expand-two"});
+    await runTest({"suite":"default-valueset-version","test":"indirect-expand-two"});
   });
 
   it('indirect-expand-zero', async () => {
-    await runTest({"suite":"valueset-version","test":"indirect-expand-zero"});
+    await runTest({"suite":"default-valueset-version","test":"indirect-expand-zero"});
   });
 
   it('indirect-expand-zero-pinned', async () => {
-    await runTest({"suite":"valueset-version","test":"indirect-expand-zero-pinned"});
+    await runTest({"suite":"default-valueset-version","test":"indirect-expand-zero-pinned"});
   });
 
   it('indirect-expand-zero-pinned-wrong', async () => {
-    await runTest({"suite":"valueset-version","test":"indirect-expand-zero-pinned-wrong"});
+    await runTest({"suite":"default-valueset-version","test":"indirect-expand-zero-pinned-wrong"});
   });
 
   it('indirect-validation-one', async () => {
-    await runTest({"suite":"valueset-version","test":"indirect-validation-one"});
+    await runTest({"suite":"default-valueset-version","test":"indirect-validation-one"});
   });
 
   it('indirect-validation-two', async () => {
-    await runTest({"suite":"valueset-version","test":"indirect-validation-two"});
+    await runTest({"suite":"default-valueset-version","test":"indirect-validation-two"});
   });
 
   it('indirect-validation-zero', async () => {
-    await runTest({"suite":"valueset-version","test":"indirect-validation-zero"});
+    await runTest({"suite":"default-valueset-version","test":"indirect-validation-zero"});
   });
 
   it('indirect-validation-zero-pinned', async () => {
-    await runTest({"suite":"valueset-version","test":"indirect-validation-zero-pinned"});
+    await runTest({"suite":"default-valueset-version","test":"indirect-validation-zero-pinned"});
   });
 
   it('indirect-validation-zero-pinned-wrong', async () => {
-    await runTest({"suite":"valueset-version","test":"indirect-validation-zero-pinned-wrong"});
+    await runTest({"suite":"default-valueset-version","test":"indirect-validation-zero-pinned-wrong"});
   });
 
 });
@@ -1138,6 +2009,18 @@ describe('tx.fhir.org', () => {
 
   it('loinc-validate-code', async () => {
     await runTest({"suite":"tx.fhir.org","test":"loinc-validate-code"});
+  });
+
+  it('loinc-validate-discouraged-code', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"loinc-validate-discouraged-code"});
+  });
+
+  it('loinc-validate-code-supp1', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"loinc-validate-code-supp1"});
+  });
+
+  it('loinc-validate-code-supp2', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"loinc-validate-code-supp2"});
   });
 
   it('loinc-validate-part', async () => {
@@ -1282,6 +2165,161 @@ describe('tx.fhir.org', () => {
 
   it('loinc-validate-filter-dockind-bad', async () => {
     await runTest({"suite":"tx.fhir.org","test":"loinc-validate-filter-dockind-bad"});
+  });
+
+  it('loinc-validate-filter-classtype-good', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"loinc-validate-filter-classtype-good"});
+  });
+
+  it('loinc-validate-filter-classtype-bad', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"loinc-validate-filter-classtype-bad"});
+  });
+
+  it('loinc-expand-filter-answers-for1', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"loinc-expand-filter-answers-for1"});
+  });
+
+  it('loinc-expand-filter-answers-for2', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"loinc-expand-filter-answers-for2"});
+  });
+
+  it('loinc-expand-filter-answer-list', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"loinc-expand-filter-answer-list"});
+  });
+
+});
+
+describe('snomed', () => {
+  // This snomed tests are based on the subset distributed with the tx-ecosystem IG
+
+  it('snomed-inactive-display', async () => {
+    await runTest({"suite":"snomed","test":"snomed-inactive-display"});
+  });
+
+  it('snomed-expand-inactive', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-inactive"});
+  });
+
+});
+
+describe('batch', () => {
+  // Test Batch Validation
+
+  it('batch-validate', async () => {
+    await runTest({"suite":"batch","test":"batch-validate"});
+  });
+
+  it('batch-validate-bad', async () => {
+    await runTest({"suite":"batch","test":"batch-validate-bad"});
+  });
+
+});
+
+describe('omop', () => {
+  // Tests for OMOP implementations. Note that some servers only do OMOP (and some don't). The tests are based on a stable subset of OMOP maintained by Davera Gabriel
+
+  it('omop-basic-validation-code-good', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-code-good"});
+  });
+
+  it('omop-basic-validation-coding-good', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-coding-good"});
+  });
+
+  it('omop-basic-validation-codeableconcept-good', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-codeableconcept-good"});
+  });
+
+  it('omop-basic-validation-code-bad', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-code-bad"});
+  });
+
+  it('omop-basic-validation-coding-bad', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-coding-bad"});
+  });
+
+  it('omop-basic-validation-codeableconcept-bad', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-codeableconcept-bad"});
+  });
+
+  it('omop-basic-validation-code-bad-display', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-code-bad-display"});
+  });
+
+  it('omop-basic-validation-coding-bad-display', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-coding-bad-display"});
+  });
+
+  it('omop-basic-validation-codeableconcept-bad-display', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-codeableconcept-bad-display"});
+  });
+
+  it('omop-basic-validation-code-bad-version', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-code-bad-version"});
+  });
+
+  it('omop-basic-validation-coding-bad-version', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-coding-bad-version"});
+  });
+
+  it('omop-basic-validation-codeableconcept-bad-version', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-codeableconcept-bad-version"});
+  });
+
+  it('omop-basic-validation-code-good-vs', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-code-good-vs"});
+  });
+
+  it('omop-basic-validation-coding-good-vs', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-coding-good-vs"});
+  });
+
+  it('omop-basic-validation-codeableconcept-good-vs', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-codeableconcept-good-vs"});
+  });
+
+  it('omop-basic-validation-code-bad-vs', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-code-bad-vs"});
+  });
+
+  it('omop-basic-validation-coding-bad-vs', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-coding-bad-vs"});
+  });
+
+  it('omop-basic-validation-codeableconcept-bad-vs', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-codeableconcept-bad-vs"});
+  });
+
+  it('omop-lookup-code', async () => {
+    await runTest({"suite":"omop","test":"omop-lookup-code"});
+  });
+
+  it('omop-lookup-code2', async () => {
+    await runTest({"suite":"omop","test":"omop-lookup-code2"});
+  });
+
+  it('omop-lookup-code3', async () => {
+    await runTest({"suite":"omop","test":"omop-lookup-code3"});
+  });
+
+  it('omop-basic-validation-code-good-vs-url', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-code-good-vs-url"});
+  });
+
+  it('omop-basic-validation-code-bad-vs-url', async () => {
+    await runTest({"suite":"omop","test":"omop-basic-validation-code-bad-vs-url"});
+  });
+
+  it('omop-expand-explicit', async () => {
+    await runTest({"suite":"omop","test":"omop-expand-explicit"});
+  });
+
+  it('translate-loinc-implicit', async () => {
+    await runTest({"suite":"omop","test":"translate-loinc-implicit"});
+  });
+
+  it('translate-loinc-implicit-bad', async () => {
+    await runTest({"suite":"omop","test":"translate-loinc-implicit-bad"});
   });
 
 });
