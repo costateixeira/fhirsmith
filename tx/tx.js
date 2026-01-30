@@ -66,8 +66,26 @@ class TXModule {
   }
 
   acceptsXml(req) {
+    // Check _format query parameter first (takes precedence per FHIR spec)
+    const format = req.query._format || req.query.format;
+    if (format) {
+      const f = format.toLowerCase();
+      return f === 'xml' || f.includes('fhir+xml') || f.includes('xml+fhir');
+    }
+    // Fall back to Accept header
     const accept = req.headers.accept || '';
     return accept.includes('application/fhir+xml') || accept.includes('application/xml+fhir');
+  }
+
+  acceptsJson(req) {
+    // Check _format query parameter first
+    const format = req.query._format || req.query.format;
+    if (format) {
+      const f = format.toLowerCase();
+      return f === 'json' || f.includes('fhir+json') || f.includes('json+fhir');
+    }
+    // Default to JSON if no specific format requested
+    return true;
   }
 
 

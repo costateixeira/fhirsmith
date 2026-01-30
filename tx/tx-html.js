@@ -103,6 +103,20 @@ class TxHtmlRenderer {
    * Check if request accepts HTML
    */
   acceptsHtml(req) {
+    // Check _format query parameter first (takes precedence)
+    const format = req.query._format || req.query.format;
+    if (format) {
+      const f = format.toLowerCase();
+      // If _format specifies json or xml, don't return HTML
+      if (f === 'json' || f === 'xml' || f.includes('fhir+json') || f.includes('fhir+xml')) {
+        return false;
+      }
+      // Check if _format explicitly requests HTML
+      if (f === 'html' || f.includes('text/html')) {
+        return true;
+      }
+    }
+    // Fall back to Accept header
     const accept = req.headers.accept || '';
     return accept.includes('text/html');
   }

@@ -30,11 +30,14 @@ class SearchWorker extends TerminologyWorker {
 
   // Allowed search parameters
   static ALLOWED_PARAMS = [
-    '_offset', '_count', '_elements', '_sort',
+    '_offset', '_count', '_elements', '_sort', '_summary', '_total',
     'url', 'version', 'content-mode', 'date', 'description',
     'supplements', 'identifier', 'jurisdiction', 'name',
     'publisher', 'status', 'system', 'title', 'text'
   ];
+
+  // Summary elements per FHIR spec for terminology resources
+  static SUMMARY_ELEMENTS = ['resourceType', 'id', 'meta', 'url', 'version', 'name', 'title', 'status', 'date', 'publisher', 'description'];
 
   // Sortable fields
   static SORT_FIELDS = ['id', 'url', 'version', 'date', 'name', 'vurl'];
@@ -52,10 +55,26 @@ class SearchWorker extends TerminologyWorker {
     this.log.debug(`Search ${resourceType} with params:`, params);
 
     try {
-      // Parse pagination parameters
+      // Parse pagination and control parameters
       const offset = Math.max(0, parseInt(params._offset) || 0);
-      const elements = params._elements ? decodeURIComponent(params._elements).split(',').map(e => e.trim()) : null;
-      const count = Math.min(elements ? 2000 : 200, Math.max(1, parseInt(params._count) || 20));
+      const summary = params._summary || 'false';
+      const totalMode = params._total || 'accurate'; // accurate, estimate, none
+
+      // Handle _summary parameter - it overrides _elements
+      let elements = null;
+      if (summary === 'true') {
+        elements = SearchWorker.SUMMARY_ELEMENTS;
+      } else if (summary === 'data') {
+        // _summary=data means exclude text/narrative - for terminology resources, same as no filter
+        elements = null;
+      } else if (summary === 'text') {
+        // _summary=text means only text element - not very useful for terminology
+        elements = ['resourceType', 'id', 'meta', 'text'];
+      } else if (params._elements) {
+        elements = decodeURIComponent(params._elements).split(',').map(e => e.trim());
+      }
+
+      const count = summary === 'count' ? 0 : Math.min(elements ? 2000 : 200, Math.max(1, parseInt(params._count) || 20));
       const sort = params._sort || "id";
 
       // Get matching resources
@@ -83,9 +102,9 @@ class SearchWorker extends TerminologyWorker {
 
       // Build and return the bundle
       const bundle = this.buildSearchBundle(
-        req, resourceType, matches, offset, count, elements
+        req, resourceType, matches, offset, count, elements, summary, totalMode
       );
-      req.logInfo = `${bundle.entry.length} matches`;
+      req.logInfo = summary === 'count' ? `count: ${bundle.total}` : `${bundle.entry.length} matches`;
       return res.json(bundle);
 
     } catch (error) {
@@ -265,9 +284,26 @@ class SearchWorker extends TerminologyWorker {
 
   /**
    * Build a FHIR search Bundle with pagination
+   * @param {Object} req - Express request
+   * @param {string} resourceType - Resource type
+   * @param {Array} allMatches - All matching resources
+   * @param {number} offset - Pagination offset
+   * @param {number} count - Page size
+   * @param {Array} elements - Elements to include (or null for all)
+   * @param {string} summary - _summary parameter value
+   * @param {string} totalMode - _total parameter value (accurate, estimate, none)
    */
-  buildSearchBundle(req, resourceType, allMatches, offset, count, elements) {
+  buildSearchBundle(req, resourceType, allMatches, offset, count, elements, summary = 'false', totalMode = 'accurate') {
     const total = allMatches.length;
+
+    // Handle _summary=count - return only count, no entries
+    if (summary === 'count') {
+      return {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        total: total
+      };
+    }
 
     // Get the slice for this page
     const pageResults = allMatches.slice(offset, offset + count);
@@ -352,13 +388,20 @@ class SearchWorker extends TerminologyWorker {
       };
     });
 
-    return {
+    // Build result bundle
+    const bundle = {
       resourceType: 'Bundle',
       type: 'searchset',
-      total: total,
       link: links,
       entry: entries
     };
+
+    // Include total unless _total=none
+    if (totalMode !== 'none') {
+      bundle.total = total;
+    }
+
+    return bundle;
   }
 
   /**
