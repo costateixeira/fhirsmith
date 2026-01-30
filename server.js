@@ -65,7 +65,8 @@ let stats = null;
 
 // Initialize modules based on configuration
 async function initializeModules() {
-
+  stats = new ServerStats();
+  
   // Initialize SHL module
   if (config.modules.shl.enabled) {
     try {
