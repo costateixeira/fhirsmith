@@ -35,9 +35,9 @@ class LoincProviderContext {
 
   addChild(key) {
     if (!this.children) {
-      this.children = new Set();
+      this.children = [];
     }
-    this.children.add(key);
+    this.children.push(key);
   }
 }
 
@@ -105,6 +105,7 @@ class LoincServices extends CodeSystemProvider {
     this.langs = sharedData.langs;
     this.codes = sharedData.codes;
     this.codeList = sharedData.codeList;
+    this.allKeys = sharedData.allKeys;
     this._version = sharedData._version;
     this.root = sharedData.root;
     this.firstCodeKey = sharedData.firstCodeKey;
@@ -607,12 +608,11 @@ class LoincServices extends CodeSystemProvider {
 
     if (!context) {
       // Iterate all codes starting from first code
-      const keys = Array.from({ length: this.codeList.length - this.firstCodeKey }, (_, i) => i + this.firstCodeKey);
-      return new LoincIteratorContext(null, keys);
+      return new LoincIteratorContext(null, this.allKeys);
     } else {
       const ctxt = await this.#ensureContext(context);
       if (ctxt.kind === LoincProviderContextKind.PART && ctxt.children) {
-        return new LoincIteratorContext(ctxt, Array.from(ctxt.children));
+        return new LoincIteratorContext(ctxt, ctxt.children);
       } else {
         return new LoincIteratorContext(ctxt, []);
       }
@@ -1122,6 +1122,7 @@ class LoincServicesFactory extends CodeSystemFactoryProvider {
         langs: new Map(),
         codes: new Map(),
         codeList: [null],
+        allKeys: [],
         relationships: new Map(),
         propertyList: new Map(),
         statusKeys: new Map(),
@@ -1241,7 +1242,7 @@ class LoincServicesFactory extends CodeSystemFactoryProvider {
         this._sharedData.codeList = new Array(maxKey + 1).fill(null);
 
         // Now load all codes
-        db.all('SELECT CodeKey, Code, Type, Codes.Description, StatusCodes.Description as Status FROM Codes, StatusCodes where StatusCodes.StatusKey = Codes.StatusKey order by CodeKey Asc', (err, rows) => {
+        db.all('SELECT CodeKey, Code, Type, Codes.Description, StatusCodes.Description as Status FROM Codes, StatusCodes where StatusCodes.StatusKey = Codes.StatusKey order by Type Asc, CodeKey Asc', (err, rows) => {
           if (err) return reject(err);
 
           // Batch process rows
@@ -1256,6 +1257,7 @@ class LoincServicesFactory extends CodeSystemFactoryProvider {
 
             this._sharedData.codes.set(row.Code, context);
             this._sharedData.codeList[row.CodeKey] = context;
+            this._sharedData.allKeys.push(row.CodeKey);
 
             if (this._sharedData.firstCodeKey === 0 && context.kind === LoincProviderContextKind.CODE) {
               this._sharedData.firstCodeKey = context.key;

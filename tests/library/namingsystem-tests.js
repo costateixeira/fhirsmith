@@ -3,7 +3,7 @@
  * These tests can be run with Jest, Mocha, or any similar testing framework
  */
 
-import {NamingSystem} from "../library/namingsystem";
+import {NamingSystem} from "../../tx/library/namingsystem";
 
 describe('NamingSystem', () => {
   // Test data

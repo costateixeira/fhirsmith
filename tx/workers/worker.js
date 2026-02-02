@@ -42,7 +42,6 @@ class TerminologyWorker {
     this.i18n = i18n;
     this.noCacheThisOne = false;
     this.params = null; // Will be set by subclasses
-    this.requiredSupplements = [];
     this.renderer = new Renderer(i18n, languages, provider);
   }
 
@@ -299,7 +298,7 @@ class TerminologyWorker {
    * @param {CodeSystemProvider} cs - Code system provider
    * @param {Object} src - Source element (for extensions)
    */
-  checkSupplements(cs, src) {
+  checkSupplements(cs, src, requiredSupplements) {
     // Check for required supplements in extensions
     if (src && src.getExtensions) {
       const supplementExtensions = src.getExtensions('http://hl7.org/fhir/StructureDefinition/valueset-supplement');
@@ -312,9 +311,9 @@ class TerminologyWorker {
     }
 
     // Remove required supplements that are satisfied
-    for (let i = this.requiredSupplements.length - 1; i >= 0; i--) {
-      if (cs.hasSupplement(this.requiredSupplements[i])) {
-        this.requiredSupplements.splice(i, 1);
+    for (let i = requiredSupplements.length - 1; i >= 0; i--) {
+      if (cs.hasSupplement(requiredSupplements[i])) {
+        requiredSupplements.splice(i, 1);
       }
     }
   }

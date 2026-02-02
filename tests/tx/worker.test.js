@@ -95,7 +95,6 @@ describe('TerminologyWorker', () => {
       expect(worker.i18n).toBe(mockI18n);
       expect(worker.noCacheThisOne).toBe(false);
       expect(worker.params).toBe(null);
-      expect(worker.requiredSupplements).toEqual([]);
     });
   });
 

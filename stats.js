@@ -1,14 +1,17 @@
+const { monitorEventLoopDelay } = require('perf_hooks');
+const {cache} = require("express/lib/application");
+
 class ServerStats {
   started = false;
   requestCount = 0;
   // Collect metrics every 10 minutes
   intervalMs = 10 * 60 * 1000;
-  memoryHistory = [];
-  requestHistory = [];
+  history = [];
   requestCountSnapshot = 0;
   startMem = 0;
   startTime = Date.now();
   timer;
+  cachingModules = [];
 
   constructor() {
     this.timer = setInterval(() => {
@@ -21,44 +24,40 @@ class ServerStats {
       const now = Date.now();
       const cutoff = now - (24 * 60 * 60 * 1000); // 24 hours ago
 
-      // Record memory
       const currentMem = process.memoryUsage().heapUsed;
-      this.memoryHistory.push({time: now, mem: currentMem - this.startMem});
-
       const requestsDelta = this.requestCount - this.requestCountSnapshot;
-      const minutesSinceStart = this.memoryHistory.length > 1
+      const minutesSinceStart = this.history.length > 1
         ? this.intervalMs / 60000
         : (now - this.startTime) / 60000;
       const requestsPerMin = minutesSinceStart > 0 ? requestsDelta / minutesSinceStart : 0;
+      const elapsed = (now - this.lastTime) * 1000; // convert to microseconds
+      const usage = process.cpuUsage(this.lastUsage);
+      const percent = 100 * (usage.user + usage.system) / elapsed;
+      const loopDelay = this.eventLoopMonitor.mean / 1e6;
+      let cacheCount = 0;
+      for (let m of this.cachingModules) {
+        cacheCount = cacheCount + m.cacheCount();
+      }
+      this.eventLoopMonitor.reset();
 
-      this.requestHistory.push({time: now, rpm: requestsPerMin});
+      this.history.push({time: now, mem: currentMem - this.startMem, rpm: requestsPerMin, cpu: percent, block: loopDelay, cache : cacheCount});
       this.requestCountSnapshot = this.requestCount;
+      this.lastUsage = process.cpuUsage();
+      this.lastTime = now;
 
       // Prune old data (keep 24 hours)
-      this.memoryHistory = this.memoryHistory.filter(m => m.time > cutoff);
-      this.requestHistory = this.requestHistory.filter(r => r.time > cutoff);
+      this.history = this.history.filter(m => m.time > cutoff);
     }
-  }
-
-  getMetricsData() {
-    // Ensure we have current data point
-    const now = Date.now();
-    const lastMemory = this.memoryHistory[this.memoryHistory.length - 1];
-    if (!lastMemory || (now - lastMemory.time) > 60000) {
-      this.recordMetrics();
-    }
-
-    return {
-      memoryHistory: this.memoryHistory,
-      requestHistory: this.requestHistory,
-      startMem: this.startMem
-    };
   }
 
   markStarted() {
     this.started = true;
     this.startMem = process.memoryUsage().heapUsed;
     this.startTime = Date.now();
+    this.lastUsage = process.cpuUsage();
+    this.lastTime = this.startTime;
+    this.eventLoopMonitor = monitorEventLoopDelay({ resolution: 20 });
+    this.eventLoopMonitor.enable();
     this.recordMetrics();
   }
 

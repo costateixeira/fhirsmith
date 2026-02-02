@@ -1,9 +1,0 @@
-Things todo:
-
-Test ValueSet and ConceptMap
-
-
- Core Operations Logic
- Zero Config Support 
- web server
- 

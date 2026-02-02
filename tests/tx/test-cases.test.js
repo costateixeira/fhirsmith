@@ -2,7 +2,7 @@
 // Generated from test-cases.json
 // Regenerate with: node generate-tests.js
 
-const { runTest, startTxTests, finishTxTests } = require('../../tx/test-runner');
+const { runTest, startTxTests, finishTxTests } = require('../../tx/tests/test-runner');
 
 describe('Tx Tests', () => {
 

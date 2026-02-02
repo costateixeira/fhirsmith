@@ -173,7 +173,7 @@ class ExpansionCache {
   /**
    * Minimum time (ms) an expansion must take before we cache it
    */
-  static MIN_CACHE_TIME_MS = 2000;
+  static MIN_CACHE_TIME_MS = 250;
 
   /**
    * Default maximum number of cached entries
@@ -209,18 +209,8 @@ class ExpansionCache {
     keyParts.push(`vs:${JSON.stringify(vsJson)}`);
 
     // Parameters - filter out tx-resource and valueSet params, sort for consistency
-    if (params && params.parameter) {
-      const filteredParams = params.parameter
-        .filter(p => p.name !== 'tx-resource' && p.name !== 'valueSet' && p.name !== 'cache-id')
-        .map(p => {
-          // Normalize parameter to string representation
-          const value = p.valueString || p.valueCode || p.valueUri ||
-            p.valueBoolean?.toString() || p.valueInteger?.toString() ||
-            JSON.stringify(p.valueCoding) || '';
-          return `${p.name}=${value}`;
-        })
-        .sort();
-      keyParts.push(`params:${filteredParams.join('&')}`);
+    if (params) {
+      keyParts.push(`params:`+params.hashSource());
     }
 
     // Additional resources - hash the full content of each resource
@@ -390,6 +380,10 @@ class ExpansionCache {
       totalHits,
       totalDurationSaved: totalHits > 0 ? totalDuration * totalHits : 0
     };
+  }
+
+  size() {
+    return this.cache.size;
   }
 }
 

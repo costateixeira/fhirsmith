@@ -4,7 +4,8 @@ const fs = require('fs');
 const Database = require('sqlite3').Database;
 const bcrypt = require('bcrypt');
 const session = require('express-session');
-const SQLiteStore = require('connect-sqlite3')(session);
+const folders = require('../library/folder-setup');
+
 
 class PublisherModule {
   constructor(stats) {
@@ -20,7 +21,7 @@ class PublisherModule {
 
   async initialize(config) {
     this.config = config;
-    this.logger = require('../common/logger').getInstance().child({ module: 'publisher' });
+    this.logger = require('../library/logger').getInstance().child({ module: 'publisher' });
 
     // Initialize database first
     await this.initializeDatabase();
@@ -48,9 +49,10 @@ class PublisherModule {
 
   async initializeDatabase() {
     // Ensure database directory exists
-    const dbPath = this.config.database;
+    const dbPath = path.isAbsolute(this.config.database)
+      ? this.config.database
+      : folders.filePath('publisher', this.config.database);
     const dbDir = path.dirname(dbPath);
-
     const fs = require('fs');
     if (!fs.existsSync(dbDir)) {
       fs.mkdirSync(dbDir, { recursive: true });
@@ -390,7 +392,11 @@ class PublisherModule {
   }
 
   async runDraftBuild(task) {
-    const taskDir = path.join(this.config.workspaceRoot, 'task-' + task.id);
+    const workspaceRoot = path.isAbsolute(this.config.workspaceRoot)
+      ? this.config.workspaceRoot
+      : folders.filePath('publisher', this.config.workspaceRoot);
+
+    const taskDir = path.join(workspaceRoot, 'task-' + task.id);
     const draftDir = path.join(taskDir, 'draft');
     const logFile = path.join(taskDir, 'draft-build.log');
 
@@ -627,7 +633,7 @@ class PublisherModule {
     this.countRequest();
 
     try {
-      const htmlServer = require('../common/html-server');
+      const htmlServer = require('../library/html-server');
 
       // Get recent tasks
       const tasks = await this.getTasks(10);
@@ -694,7 +700,7 @@ class PublisherModule {
   renderLogin(req, res) {
     this.countRequest();
 
-    const htmlServer = require('../common/html-server');
+    const htmlServer = require('../library/html-server');
 
     let content = '<div class="row justify-content-center">';
     content += '<div class="col-md-6">';
@@ -769,7 +775,7 @@ class PublisherModule {
     this.countRequest();
 
     try {
-      const htmlServer = require('../common/html-server');
+      const htmlServer = require('../library/html-server');
       const tasks = await this.getTasks();
       const userWebsites = req.session.userId ? await this.getUserWebsites(req.session.userId) : [];
 
@@ -985,7 +991,7 @@ class PublisherModule {
       }
 
       if (req.headers.accept && req.headers.accept.includes('text/html')) {
-        const htmlServer = require('../common/html-server');
+        const htmlServer = require('../library/html-server');
         let content = '<h3>Task Output: #' + task.id + ' - ' + task.npm_package_id + '#' + task.version + '</h3>';
         content += '<p><strong>Status:</strong> <span class="badge bg-' + this.getStatusColor(task.status) + '">' + task.status + '</span></p>';
         content += '<p><strong>GitHub:</strong> ' + task.github_org + '/' + task.github_repo + ' (' + task.git_branch + ')</p>';
@@ -1075,7 +1081,7 @@ class PublisherModule {
     this.countRequest();
 
     try {
-      const htmlServer = require('../common/html-server');
+      const htmlServer = require('../library/html-server');
       const websites = await this.getWebsites();
 
       let content = '<div class="row mb-4">';
@@ -1171,7 +1177,7 @@ class PublisherModule {
     this.countRequest();
 
     try {
-      const htmlServer = require('../common/html-server');
+      const htmlServer = require('../library/html-server');
       const users = await this.getUsers();
       const websites = await this.getWebsites();
 

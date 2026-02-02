@@ -3,9 +3,17 @@ const FhirValidator = require('fhir-validator-wrapper');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const TXModule = require('../tx/tx.js');
-const ServerStats = require("../stats");
-const Logger = require("../common/logger");
+const TXModule = require('../tx.js');
+const ServerStats = require("../../stats");
+const Logger = require("../../library/logger");
+const {txTestVersion} = require("./test-cases-version");
+
+let count = 0;
+let error = 0;
+
+function txTestModeSet() {
+   return new Set(['tx.fhir.org', 'omop', 'general', 'snomed']);
+}
 
 async function startTxTests() {
     await startServer();
@@ -13,25 +21,45 @@ async function startTxTests() {
 }
 
 async function  finishTxTests() {
+    console.log(txTestSummary());
+    let textfilename = path.join(__dirname, 'test-cases-summary.txt');
+    fs.writeFileSync(textfilename, txTestSummary());
+
     await unloadValidator();
     await stopServer();
 }
 
-async function runTest(test) {
+function txTestSummary() {
+    let set = Array.from(txTestModeSet()).join(',');
+    if (error == 0) {
+      return `FHIRsmith passed all ${count} HL7 terminology service tests (modes ${set}, tests v${txTestVersion()}, runner v${validator.jarVersion()})`;
+    } else {
+      return `FHIRsmith failed all ${error} of ${count} HL7 terminology service tests (modes ${set}, tests v${txTestVersion()}, runner v${validator.jarVersion()})`;
+    }
+}
+
+async function runTest(test, version, useJson) {
+    version = version || "5.0";
     const params = {
         server: 'http://localhost:'+TEST_PORT+"/r5",
         suiteName: test.suite,
         testName: test.test,
-        version: '5.0'
+        version: version,
+        json : useJson
     };
+    count++;
     const result = await validator.runTxTest(params);
+    if (!result.result) { 
+        error++;
+    }
+    
     expect(result).toEqual({ result: true });
 }
 
 
 const TEST_PORT = 9095;
 const VALIDATOR_PORT = 9096;
-const TEST_CONFIG_FILE = path.join(__dirname, 'fixtures', 'test-cases-setup.json');
+const TEST_CONFIG_FILE = path.join(__dirname, '..', 'fixtures', 'test-cases-setup.json');
 
 let server = null;
 let validator = null;
@@ -94,7 +122,7 @@ async function stopServer() {
 }
 
 async function loadValidator() {
-    const validatorJarPath = path.join(__dirname, '../bin/validator_cli.jar');
+    const validatorJarPath = path.join(__dirname, '../../bin/validator_cli.jar');
     log =  Logger.getInstance().child({ module: 'test-runner' });
     validator = new FhirValidator(validatorJarPath, log);
     const validatorConfig = {
@@ -123,4 +151,4 @@ async function unloadValidator() {
     }
 
 }
-module.exports = { startTxTests, finishTxTests, runTest };
+module.exports = { startTxTests, finishTxTests, runTest, txTestModeSet };

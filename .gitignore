@@ -6,7 +6,7 @@
 
 node_modules/
 
-config.json
+data/config.json
 
 validator_cli.jar
 
@@ -14,7 +14,7 @@ xig/xig-download.log
 
 .idea/codeStyles/
 
-logs/
+data/logs/
 
 registry/registry-data.json
 
@@ -32,10 +32,14 @@ test-cache/
 
 tests/vs/.vsac-last-run
 
-.package-cache/
+data/terminology-cache/
 
 shl/private-key.pem
 
 shl/public-key.pem
 
-bin/validator_cli.jar.version
+data/bin/validator_cli.jar.version
+
+tx/tests/test-cases-summary.txt
+
+.idea/

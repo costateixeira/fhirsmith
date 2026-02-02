@@ -8,9 +8,26 @@ const express = require('express');
 // const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const folders = require('./library/folder-setup');  // <-- ADD: load early
 
-const Logger = require('./common/logger');
+// Load configuration BEFORE logger
+let config;
+try {
+  const configPath = folders.filePath('config.json');  // <-- CHANGE: config now in data dir
+  const configData = fs.readFileSync(configPath, 'utf8');
+  config = JSON.parse(configData);
+} catch (error) {
+  console.error('Failed to load configuration:', error.message);
+  process.exit(1);
+}
+
+const Logger = require('./library/logger');
 const serverLog = Logger.getInstance().child({ module: 'server' });
+
+const activeModules = config.modules ? Object.keys(config.modules)
+  .filter(mod => config.modules[mod].enabled)
+  .join(', ') : [];
+serverLog.info(`Loaded Configuration. Active modules = ${activeModules}`);
 
 // Import modules
 const SHLModule = require('./shl/shl.js');
@@ -24,30 +41,13 @@ const NpmProjectorModule = require('./npmprojector/npmprojector.js');
 const TXModule = require('./tx/tx.js');
 const packageJson = require('./package.json');
 
-const htmlServer = require('./common/html-server');
+const htmlServer = require('./library/html-server');
 const ServerStats = require("./stats");
 const {Liquid} = require("liquidjs");
 const {escapeHtml} = require("./library/utilities");
 htmlServer.useLog(serverLog);
 
 const app = express();
-
-// Load configuration
-let config;
-try {
-  const configPath = path.join(__dirname, 'config.json');
-  const configData = fs.readFileSync(configPath, 'utf8');
-  config = JSON.parse(configData);
-  
-  const activeModules = Object.keys(config.modules)
-    .filter(mod => config.modules[mod].enabled)
-    .join(', ');
-
-  serverLog.info(`Loaded Configuration. Active modules = ${activeModules}`);
-} catch (error) {
-  serverLog.error('Failed to load configuration:'+error.message);
-  process.exit(1);
-}
 
 const PORT = process.env.PORT || config.server.port || 3000;
 
@@ -68,7 +68,7 @@ async function initializeModules() {
   stats = new ServerStats();
   
   // Initialize SHL module
-  if (config.modules.shl.enabled) {
+  if (config.modules?.shl?.enabled) {
     try {
       modules.shl = new SHLModule(stats);
       await modules.shl.initialize(config.modules.shl);
@@ -80,7 +80,7 @@ async function initializeModules() {
   }
 
   // Initialize VCL module
-  if (config.modules.vcl.enabled) {
+  if (config.modules?.vcl?.enabled) {
     try {
       modules.vcl = new VCLModule(stats);
       await modules.vcl.initialize(config.modules.vcl);
@@ -92,7 +92,7 @@ async function initializeModules() {
   }
   
   // Initialize XIG module
-  if (config.modules.xig.enabled) {
+  if (config.modules?.xig?.enabled) {
     try {
       await xigModule.initializeXigModule(stats);
       app.use('/xig', xigModule.router);
@@ -104,7 +104,7 @@ async function initializeModules() {
   }
 
   // Initialize Packages module
-  if (config.modules.packages.enabled) {
+  if (config.modules?.packages?.enabled) {
     try {
       modules.packages = new PackagesModule(stats);
       await modules.packages.initialize(config.modules.packages);
@@ -116,7 +116,7 @@ async function initializeModules() {
   }
 
   // Initialize Registry module
-  if (config.modules.registry && config.modules.registry.enabled) {
+  if (config.modules?.registry?.enabled) {
     try {
       modules.registry = new RegistryModule(stats);
       await modules.registry.initialize(config.modules.registry);
@@ -128,7 +128,7 @@ async function initializeModules() {
   }
 
   // Initialize Publisher module
-  if (config.modules.publisher && config.modules.publisher.enabled) {
+  if (config.modules?.publisher?.enabled) {
     try {
       modules.publisher = new PublisherModule(stats);
       await modules.publisher.initialize(config.modules.publisher);
@@ -140,7 +140,7 @@ async function initializeModules() {
   }
 
   // Initialize Token module
-  if (config.modules.token && config.modules.token.enabled) {
+  if (config.modules?.token?.enabled) {
     try {
       modules.token = new TokenModule(stats);
       await modules.token.initialize(config.modules.token);
@@ -152,7 +152,7 @@ async function initializeModules() {
   }
 
   // Initialize NpmProjector module
-  if (config.modules.npmprojector && config.modules.npmprojector.enabled) {
+  if (config.modules?.npmprojector?.enabled) {
     try {
       modules.npmprojector = new NpmProjectorModule(stats);
       await modules.npmprojector.initialize(config.modules.npmprojector);
@@ -167,7 +167,7 @@ async function initializeModules() {
   // Initialize TX module
   // Note: TX module registers its own endpoints directly on the app
   // because it supports multiple endpoints at different paths
-  if (config.modules.tx && config.modules.tx.enabled) {
+  if (config.modules?.tx?.enabled) {
     try {
       modules.tx = new TXModule(stats);
       await modules.tx.initialize(config.modules.tx, app);
@@ -342,8 +342,7 @@ async function buildRootPageContent() {
     extname: '.liquid'
   });
   content += await liquid.renderFile('home-metrics', {
-    memoryHistoryJson: JSON.stringify(stats.memoryHistory),
-    requestHistoryJson: JSON.stringify(stats.requestHistory),
+    historyJson: JSON.stringify(stats.history),
     startTime: stats.startTime
   });
 
@@ -379,7 +378,7 @@ app.get('/', async (req, res) => {
         processingTime: Date.now() - startTime
       };
 
-      const html = htmlServer.renderPage('root', 'FHIR Development Server', content, stats);
+      const html = htmlServer.renderPage('root', config.hostName || 'FHIRsmith Server', content, stats);
       res.setHeader('Content-Type', 'text/html');
       res.send(html);
     } catch (error) {

@@ -29,6 +29,7 @@ const {VersionUtilities} = require("../library/version-utilities");
 const {ListCodeSystemProvider} = require("./cs/cs-provider-list");
 const { Provider } = require("./provider");
 const {I18nSupport} = require("../library/i18nsupport");
+const folders = require('../library/folder-setup');
 
 /**
  * This class holds all the loaded content ready for processing
@@ -91,7 +92,7 @@ class Library {
 
     // Create package manager for FHIR packages
     const packageServers = ['https://packages2.fhir.org/packages'];
-    this.cacheFolder = path.join(__dirname, '..', '.package-cache');
+    this.cacheFolder = folders.subDir('terminology-cache');  // <-- CHANGE
     this.packageManager = new PackageManager(packageServers, this.cacheFolder);
   }
 

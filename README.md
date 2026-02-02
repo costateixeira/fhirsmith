@@ -6,9 +6,9 @@ This server provides a set of server-side services that are useful for the FHIR 
 
 ## Modules useful to anyone in the community
 
-* (Coming) R4/R6 interconverter 
-* [tx.fhir.org](tx/README.md) server 
-* [SHL Server](shl/readme.md) - SHL/VHL support services 
+* (Coming) R4/R6 interconverter
+* [tx.fhir.org](tx/README.md) server
+* [SHL Server](shl/readme.md) - SHL/VHL support services
 
 ## Services useful the community as a whole
 
@@ -17,7 +17,7 @@ This server provides a set of server-side services that are useful for the FHIR 
 * [XIG server](xig/readme.md) -  **Comprehensive FHIR IG analytics** with resource breakdowns by version, authority, and realm (as running at http://packages2.fhir.org/packages)
 * [Publisher](publisher/readme.md) - FHIR publishing services (coming)
 * [VCL](vcl/readme.md) - **Parse VCL expressions** into FHIR ValueSet resources for http://fhir.org/vcl
-* (Coming) Token services 
+* (Coming) Token services
 
 ## Build Status
 ![CI Build](https://github.com/HealthIntersections/fhirsmith/actions/workflows/ci.yml/badge.svg)
@@ -25,42 +25,75 @@ This server provides a set of server-side services that are useful for the FHIR 
 [![Docker](https://img.shields.io/badge/docker-ghcr.io-blue)](https://github.com/HealthIntersections/fhirsmith/pkgs/container/fhirsmith)
 
 Note: In production, this server always runs behind an nginx reverse proxy, so there's no
-in-build support for SSL, rate limiting etc. 
+in-build support for SSL, rate limiting etc.
 
 ## Quick Start
 
+There are 4 executable programs:
+* the server (`node server`)
+* the test cases (`npm test`)
+* the terminology importer (`node --max-old-space-size=8192 tx/importers/tx-import XXX`) - see [Doco](tx/importers/readme.md)
+* the test cases generater (`node tx/tests/testcases-generator.js`)
+
+### Data Directory
+
+The server separates code from runtime data. All databases, caches, logs, and downloaded
+files are stored in a single data directory. The location is determined by:
+
+1. The `FHIRSMITH_DATA_DIR` environment variable (if set)
+2. Otherwise, defaults to `./data` relative to the working directory
+
+The data directory contains (depending on which modules are in use):
+* `config.json` — server and module configuration
+* `logs/` — server and nginx log files
+* `terminology-cache/` — downloaded terminology packages and FHIR packages
+* `packages/` — package server database
+* `xig/` — XIG database
+* `shl/` — SHL databases and certificates
+* `registry/` — registry crawler data
+* `publisher/` — publisher database and build workspace
+* `token/` — token database
+
+During development with a cloned repository, the data directory defaults to `[root]/data`
+(the test cases require this setup). When deployed via Docker or npm, the data directory
+is provided by the host — see Deployment below.
+
 ### Prerequisites
-- Node.js 16+ 
+- Node.js 16+
 - NPM or Yarn
-- Java 8+ (for FHIR validator)
+- Java 17+ (for FHIR validator, also for the test cases)
 
 ### Installation
 
+These instructions are for Development. For deployment, see below.
+
 ```bash
 # Clone the repository
-git clone <repository-url>
-cd fhir-server
+git clone https://github.com/HealthIntersections/FHIRsmith
+cd FHIRsmith
 
 # Install dependencies
 npm install
 
 # Create required directories
-mkdir -p data logs static
+mkdir -p data data/logs
 
 # Copy example configuration
-cp config.example.json config.json
+cp config.example.json data/config.json
 
 # Edit configuration as needed
-nano config.json
+nano data/config.json
 ```
-Each Module has it's own entry in the config, as described by the module.
+
+Each Module has it's own entry in the config, as described by the module
 
 ### Basic Configuration
 
-Create a `config.json` file (use `config-template.json`):
+Create a `config.json` file in your data directory (use `config-template.json` as a starting point):
 
 ```json
 {
+  "hostName" : "[descriptive name for the server]",
   "server": {
     "port": 3000,
     "cors": {
@@ -85,7 +118,8 @@ npm start
 ```
 
 The server will be available at `http://localhost:{port}` using the port specified in the config.
-In the production servers listed above, the server always sits behind an NGINX server.
+In the production servers listed above, the server always sits behind an NGINX server which manages
+SSL, security, rate limiting etc.
 
 ## Testing
 
@@ -93,25 +127,52 @@ In the production servers listed above, the server always sits behind an NGINX s
 npm test
 ```
 
-You need to provide additional data files for testing:
-- (none yet)
-
 ## Deployment
+
+There are three deployment options: npm global install, Docker, or clone-and-run. All three
+use the `FHIRSMITH_DATA_DIR` environment variable to locate the data directory.
+
+### npm Global Install
+
+```bash
+# Install globally
+npm install -g fhirsmith
+
+# Create a data directory
+mkdir -p /var/lib/fhirsmith
+cp node_modules/fhirsmith/config-template.json /var/lib/fhirsmith/config.json
+# Edit config.json as needed
+
+# Set the data directory and run
+export FHIRSMITH_DATA_DIR=/var/lib/fhirsmith
+fhirsmith
+```
+
+Or run it inline:
+
+```bash
+FHIRSMITH_DATA_DIR=/var/lib/fhirsmith fhirsmith
+```
 
 ### Docker Installation
 
-The server is available as a Docker image:
+The server is available as a Docker image. Mount a host directory as the data directory:
 
 ```bash
 # Pull the latest image
 docker pull ghcr.io/healthintersections/fhirsmith:latest
 
-# Run with mounted volumes
-docker run -d --name fhir-server \
+# Create and populate data directory on host
+mkdir -p /path/to/data
+cp config-template.json /path/to/data/config.json
+# Edit config.json as needed
+
+# Run with data directory mounted
+docker run -d --name fhirsmith \
   -p 3000:3000 \
-  -v /path/to/config.json:/app/config.json \
+  -e FHIRSMITH_DATA_DIR=/app/data \
   -v /path/to/data:/app/data \
-  ghcr.io/healthintersections/fhirsmith:v1.0.0
+  ghcr.io/healthintersections/fhirsmith:latest
 ```
 
 Available tags:
@@ -121,11 +182,11 @@ Available tags:
 
 ### Environment Variables
 
-```bash
-export PORT=3000
-export NODE_ENV=production
-export FHIR_SERVER_CONFIG=/path/to/config.json
-```
+| Variable | Description | Default |
+|---|---|---|
+| `FHIRSMITH_DATA_DIR` | Path to the data directory | `./data` |
+| `PORT` | Server port (overrides config) | from config.json |
+| `NODE_ENV` | Node environment | `production` |
 
 ### Windows Installation
 

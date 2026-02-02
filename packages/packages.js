@@ -10,9 +10,10 @@ const cron = require('node-cron');
 const path = require('path');
 const fs = require('fs');
 const PackageCrawler = require('./package-crawler.js');
-const htmlServer = require('../common/html-server');
+const htmlServer = require('../library/html-server');
+const folders = require('../library/folder-setup');
 
-const Logger = require('../common/logger');
+const Logger = require('../library/logger');
 const {validateParameter} = require("../library/utilities");
 const pckLog = Logger.getInstance().child({ module: 'packages' });
 
@@ -608,8 +609,8 @@ class PackagesModule {
 
   async initializeDatabase() {
     return new Promise((resolve, reject) => {
-      // Use absolute path from config
-      const dbPath = this.config.database;
+      // Use config path if absolute, otherwise resolve relative to data dir
+      const dbPath = path.isAbsolute(this.config.database) ? this.config.database : folders.filePath('packages', this.config.database);
 
       // Ensure directory exists
       const dbDir = path.dirname(dbPath);

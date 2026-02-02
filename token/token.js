@@ -18,9 +18,11 @@ const FacebookStrategy = require('passport-facebook').Strategy;
 const GitHubStrategy = require('passport-github2').Strategy;
 const rateLimit = require('express-rate-limit');
 const lusca = require('lusca');
+const folders = require('../library/folder-setup');
 
-const Logger = require('../common/logger');
-const htmlServer = require('../common/html-server');
+
+const Logger = require('../library/logger');
+const htmlServer = require('../library/html-server');
 
 class TokenModule {
   constructor(stats) {
@@ -57,8 +59,11 @@ class TokenModule {
   }
 
   async initializeDatabase() {
-    const dbPath = this.config.database || path.join(__dirname, 'token.db');
-    
+    const configDb = this.config.database || 'token.db';
+    const dbPath = path.isAbsolute(configDb)
+      ? configDb
+      : folders.ensureFilePath('token', configDb);
+
     return new Promise((resolve, reject) => {
       this.db = new sqlite3.Database(dbPath, (err) => {
         if (err) {
@@ -149,9 +154,15 @@ class TokenModule {
   }
 
   initializeSession() {
+    const configDb = this.config.database || 'token.db';
+    const sessionDbPath = path.isAbsolute(configDb)
+      ? configDb
+      : folders.ensureFilePath('token', configDb);
+
     const sessionConfig = {
       store: new SQLiteStore({
-        db: this.config.database || 'token.db',
+        dir: path.dirname(sessionDbPath),
+        db: path.basename(sessionDbPath),
         table: 'sessions'
       }),
       secret: this.config.sessionSecret || crypto.randomBytes(64).toString('hex'),

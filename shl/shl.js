@@ -13,8 +13,9 @@ const CBOR = require('cbor');
 const pako = require('pako');
 const base45 = require('base45');
 const fs = require('fs');
+const folders = require('../library/folder-setup');
 
-const Logger = require('../common/logger');
+const Logger = require('../library/logger');
 const shlLog = Logger.getInstance().child({ module: 'shl' });
 
 // Import the FHIR Validator
@@ -282,7 +283,9 @@ class SHLModule {
 
   async initializeDatabase() {
     return new Promise((resolve, reject) => {
-      const dbPath = path.resolve(__dirname, this.config.database);
+
+      const dbPath = folders.filePath('shl', this.config.database);  // <-- CHANGE
+      fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
       this.db = new sqlite3.Database(dbPath, (err) => {
         if (err) {
@@ -396,8 +399,8 @@ class SHLModule {
       };
       
       shlLog.info('Starting FHIR Validator with config:', validatorConfig);
-      
-      const validatorJarPath = path.join(__dirname, '../bin/validator_cli.jar');
+
+      const validatorJarPath = folders.filePath('bin', 'validator_cli.jar');
       this.fhirValidator = new FhirValidator(validatorJarPath, shlLog);
       await this.fhirValidator.start(validatorConfig);
       

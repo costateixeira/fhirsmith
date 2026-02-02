@@ -4,9 +4,10 @@ const express = require('express');
 const path = require('path');
 const RegistryCrawler = require('./crawler');
 const RegistryAPI = require('./api');
-const htmlServer = require('../common/html-server');
-const Logger = require('../common/logger');
+const htmlServer = require('../library/html-server');
+const Logger = require('../library/logger');
 const regLog = Logger.getInstance().child({ module: 'registry' });
+const folders = require('../library/folder-setup');
 
 class RegistryModule {
   constructor(stats) {
@@ -74,7 +75,7 @@ class RegistryModule {
   async loadSavedData() {
     try {
       const fs = require('fs').promises;
-      const dataPath = path.join(__dirname, 'registry-data.json');
+      const dataPath = folders.ensureFilePath('registry', 'registry-data.json');  // <-- CHANGE
       const data = await fs.readFile(dataPath, 'utf8');
       const jsonData = JSON.parse(data);
       
@@ -96,7 +97,8 @@ class RegistryModule {
   async saveData() {
     try {
       const fs = require('fs').promises;
-      const dataPath = path.join(__dirname, 'registry-data.json');
+      const dataPath = folders.ensureFilePath('registry', 'registry-data.json');
+
       const data = this.crawler.saveData();
       await fs.writeFile(dataPath, JSON.stringify(data, null, 2));
       this.logger.debug('Saved registry data to disk');

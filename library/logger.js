@@ -1,6 +1,7 @@
 const winston = require('winston');
 require('winston-daily-rotate-file');
 const fs = require('fs');
+const folders = require('./folder-setup');
 
 class Logger {
   static _instance = null;
@@ -15,7 +16,7 @@ class Logger {
   constructor(options = {}) {
     this.options = {
       level: options.level || 'info',
-      logDir: options.logDir || './logs',
+      logDir: options.logDir || folders.logsDir(),
       console: options.console !== undefined ? options.console : true,
       consoleErrors: options.consoleErrors !== undefined ? options.consoleErrors : false,
       telnetErrors: options.telnetErrors !== undefined ? options.telnetErrors : false,

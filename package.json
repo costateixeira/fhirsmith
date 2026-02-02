@@ -41,7 +41,7 @@
     "express-rate-limit": "^7.4.1",
     "express-session": "^1.18.2",
     "fast-xml-parser": "^4.3.2",
-    "fhir-validator-wrapper": "1.2.0",
+    "fhir-validator-wrapper": "1.2.1",
     "fhirpath": "^4.8.0",
     "fs-extra": "^11.1.0",
     "inquirer": "^8.2.5",

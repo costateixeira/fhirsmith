@@ -3,7 +3,7 @@
  * These tests can be run with Jest, Mocha, or any similar testing framework
  */
 
-import {ConceptMap} from "../library/conceptmap";
+import {ConceptMap} from "../../tx/library/conceptmap";
 
 describe('ConceptMap', () => {
   // Test data

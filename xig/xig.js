@@ -13,16 +13,17 @@ const cron = require('node-cron');
 const sqlite3 = require('sqlite3').verbose();
 const { EventEmitter } = require('events');
 const zlib = require('zlib');
-const htmlServer = require('../common/html-server');
+const htmlServer = require('../library/html-server');
+const folders = require('../library/folder-setup');
 
-const Logger = require('../common/logger');
+const Logger = require('../library/logger');
 const xigLog = Logger.getInstance().child({ module: 'xig' });
 
 const router = express.Router();
 
 // Configuration
 const XIG_DB_URL = 'http://fhir.org/guides/stats/xig.db';
-const XIG_DB_PATH = path.join(__dirname, 'data', 'xig.db');
+const XIG_DB_PATH = folders.filePath('xig', 'xig.db');
 const TEMPLATE_PATH = path.join(__dirname, 'xig-template.html');
 
 // Global database instance
@@ -1804,6 +1805,7 @@ function initializeDatabase() {
 
 async function updateXigDatabase() {
   try {
+    fs.mkdirSync(path.dirname(XIG_DB_PATH), { recursive: true });
 
     const tempPath = XIG_DB_PATH + '.tmp';
     

@@ -7,7 +7,7 @@ describe('PackageValueSetProvider', () => {
   let packageManager;
   let packagePath;
   let provider;
-  const packageCacheDir = path.join(__dirname, '../../.package-cache');
+  const packageCacheDir = path.join(__dirname, '../../data/terminology-cache');
   const packageId = 'hl7.fhir.uv.tools';
   const packageVersion = '0.8.0';
 

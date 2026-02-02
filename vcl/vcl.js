@@ -7,7 +7,7 @@
 const express = require('express');
 const {parseVCLAndSetId, validateVCLExpression, VCLParseException} = require('./vcl-parser.js');
 
-const Logger = require('../common/logger');
+const Logger = require('../library/logger');
 const vclLog = Logger.getInstance().child({ module: 'vcl' });
 
 class VCLModule {

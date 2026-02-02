@@ -3,7 +3,7 @@
  * These tests can be run with Jest, Mocha, or any similar testing framework
  */
 
-import ValueSet from "../library/valueset";
+import ValueSet from "../../tx/library/valueset";
 
 describe('ValueSet', () => {
   // Test data

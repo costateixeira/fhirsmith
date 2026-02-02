@@ -4,7 +4,7 @@
 //
 
 const express = require('express');
-const Logger = require('../common/logger');
+const Logger = require('../library/logger');
 const FHIRIndexer = require('./indexer');
 const PackageWatcher = require('./watcher');
 

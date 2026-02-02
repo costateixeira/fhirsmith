@@ -1,0 +1,58 @@
+const path = require('path');
+const fs = require('fs');
+
+class FolderSetup {
+  constructor() {
+    this._dataDir = null;
+    this._initialized = false;
+  }
+
+  init(dataDir = null) {
+    if (this._initialized) {
+      return this;
+    }
+
+    this._dataDir = dataDir || process.env.FHIRSMITH_DATA_DIR || path.join(__dirname, '..', 'data');
+    fs.mkdirSync(this._dataDir, { recursive: true });
+    this._initialized = true;
+
+    return this;
+  }
+
+  dataDir() {
+    if (!this._initialized) {
+      this.init();
+    }
+    return this._dataDir;
+  }
+
+  subDir(name) {
+    const dir = path.join(this.dataDir(), name);
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  }
+
+  filePath(...relativePath) {
+    return path.join(this.dataDir(), ...relativePath);
+  }
+
+  ensureFilePath(...relativePath) {
+    const filePath = path.join(this.dataDir(), ...relativePath);
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    return filePath;
+  }
+
+  logsDir() {
+    return this.subDir('logs');
+  }
+
+  cacheDir() {
+    return this.subDir('cache');
+  }
+
+  databasesDir() {
+    return this.subDir('databases');
+  }
+}
+
+module.exports = new FolderSetup();

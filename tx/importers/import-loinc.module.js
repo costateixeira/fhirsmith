@@ -398,16 +398,31 @@ class LoincModule extends BaseTerminologyModule {
     const db = new sqlite3.Database(dbPath);
 
     const indexes = [
+      // Codes table indexes
       'CREATE INDEX IF NOT EXISTS idx_codes_code ON Codes(Code)',
       'CREATE INDEX IF NOT EXISTS idx_codes_type ON Codes(Type)',
       'CREATE INDEX IF NOT EXISTS idx_codes_status ON Codes(StatusKey)',
       'CREATE INDEX IF NOT EXISTS idx_codes_type_status ON Codes(Type, StatusKey)',
+
+      // Relationships table indexes
       'CREATE INDEX IF NOT EXISTS idx_relationships_source ON Relationships(RelationshipTypeKey, SourceKey)',
       'CREATE INDEX IF NOT EXISTS idx_relationships_target ON Relationships(RelationshipTypeKey, TargetKey)',
+      'CREATE INDEX IF NOT EXISTS idx_relationships_source_type ON Relationships(SourceKey, RelationshipTypeKey)',
+
+      // Properties table indexes
       'CREATE INDEX IF NOT EXISTS idx_properties_code ON Properties(PropertyTypeKey, CodeKey)',
       'CREATE INDEX IF NOT EXISTS idx_properties_code2 ON Properties(CodeKey, PropertyTypeKey)',
+      'CREATE INDEX IF NOT EXISTS idx_properties_valuekey ON Properties(PropertyValueKey)',
+
+      // PropertyValues table indexes - for value lookups in filters
+      'CREATE INDEX IF NOT EXISTS idx_propertyvalues_value ON PropertyValues(Value COLLATE NOCASE)',
+
+      // Descriptions table indexes
       'CREATE INDEX IF NOT EXISTS idx_descriptions_code ON Descriptions(CodeKey, LanguageKey)',
       'CREATE INDEX IF NOT EXISTS idx_descriptions_type ON Descriptions(DescriptionTypeKey)',
+      'CREATE INDEX IF NOT EXISTS idx_descriptions_code_type ON Descriptions(CodeKey, DescriptionTypeKey)',
+
+      // Closure table indexes
       'CREATE INDEX IF NOT EXISTS idx_closure_ancestor ON Closure(AncestorKey)',
       'CREATE INDEX IF NOT EXISTS idx_closure_descendent ON Closure(DescendentKey)'
     ];
@@ -638,71 +653,71 @@ class LoincDataMigrator {
 
     const tableSQL = [
       `CREATE TABLE Config (
-        ConfigKey INTEGER NOT NULL PRIMARY KEY,
-        Value TEXT NOT NULL
-      )`,
+                               ConfigKey INTEGER NOT NULL PRIMARY KEY,
+                               Value TEXT NOT NULL
+       )`,
       `CREATE TABLE Types (
-        TypeKey INTEGER NOT NULL PRIMARY KEY,
-        Code TEXT NOT NULL
-      )`,
+                              TypeKey INTEGER NOT NULL PRIMARY KEY,
+                              Code TEXT NOT NULL
+       )`,
       `CREATE TABLE Languages (
-        LanguageKey INTEGER NOT NULL PRIMARY KEY,
-        Code TEXT NOT NULL,
-        Description TEXT NOT NULL
-      )`,
+                                  LanguageKey INTEGER NOT NULL PRIMARY KEY,
+                                  Code TEXT NOT NULL,
+                                  Description TEXT NOT NULL
+       )`,
       `CREATE TABLE StatusCodes (
-        StatusKey INTEGER NOT NULL PRIMARY KEY,
-        Description TEXT NOT NULL
-      )`,
+                                    StatusKey INTEGER NOT NULL PRIMARY KEY,
+                                    Description TEXT NOT NULL
+       )`,
       `CREATE TABLE RelationshipTypes (
-        RelationshipTypeKey INTEGER NOT NULL PRIMARY KEY,
-        Description TEXT NOT NULL
-      )`,
+                                          RelationshipTypeKey INTEGER NOT NULL PRIMARY KEY,
+                                          Description TEXT NOT NULL
+       )`,
       `CREATE TABLE DescriptionTypes (
-        DescriptionTypeKey INTEGER NOT NULL PRIMARY KEY,
-        Description TEXT NOT NULL
-      )`,
+                                         DescriptionTypeKey INTEGER NOT NULL PRIMARY KEY,
+                                         Description TEXT NOT NULL
+       )`,
       `CREATE TABLE PropertyTypes (
-        PropertyTypeKey INTEGER NOT NULL PRIMARY KEY,
-        Description TEXT NOT NULL
-      )`,
+                                      PropertyTypeKey INTEGER NOT NULL PRIMARY KEY,
+                                      Description TEXT NOT NULL
+       )`,
       `CREATE TABLE Codes (
-        CodeKey INTEGER NOT NULL PRIMARY KEY,
-        Code TEXT NOT NULL,
-        Type INTEGER NOT NULL,
-        RelationshipKey INTEGER NULL,
-        StatusKey INTEGER NOT NULL,
-        Description TEXT NOT NULL
-      )`,
+                              CodeKey INTEGER NOT NULL PRIMARY KEY,
+                              Code TEXT NOT NULL,
+                              Type INTEGER NOT NULL,
+                              RelationshipKey INTEGER NULL,
+                              StatusKey INTEGER NOT NULL,
+                              Description TEXT NOT NULL
+       )`,
       `CREATE TABLE Relationships (
-        RelationshipKey INTEGER NOT NULL PRIMARY KEY,
-        RelationshipTypeKey INTEGER NOT NULL,
-        SourceKey INTEGER NOT NULL,
-        TargetKey INTEGER NOT NULL,
-        StatusKey INTEGER NOT NULL
-      )`,
+                                      RelationshipKey INTEGER NOT NULL PRIMARY KEY,
+                                      RelationshipTypeKey INTEGER NOT NULL,
+                                      SourceKey INTEGER NOT NULL,
+                                      TargetKey INTEGER NOT NULL,
+                                      StatusKey INTEGER NOT NULL
+       )`,
       `CREATE TABLE PropertyValues (
-        PropertyValueKey INTEGER NOT NULL PRIMARY KEY,
-        Value TEXT NOT NULL
-      )`,
+                                       PropertyValueKey INTEGER NOT NULL PRIMARY KEY,
+                                       Value TEXT NOT NULL
+       )`,
       `CREATE TABLE Properties (
-        PropertyKey INTEGER NOT NULL PRIMARY KEY,
-        PropertyTypeKey INTEGER NOT NULL,
-        CodeKey INTEGER NOT NULL,
-        PropertyValueKey INTEGER NOT NULL
-      )`,
+                                   PropertyKey INTEGER NOT NULL PRIMARY KEY,
+                                   PropertyTypeKey INTEGER NOT NULL,
+                                   CodeKey INTEGER NOT NULL,
+                                   PropertyValueKey INTEGER NOT NULL
+       )`,
       `CREATE TABLE Descriptions (
-        DescriptionKey INTEGER NOT NULL PRIMARY KEY,
-        CodeKey INTEGER NOT NULL,
-        LanguageKey INTEGER NOT NULL,
-        DescriptionTypeKey INTEGER NOT NULL,
-        Value TEXT NOT NULL
-      )`,
+                                     DescriptionKey INTEGER NOT NULL PRIMARY KEY,
+                                     CodeKey INTEGER NOT NULL,
+                                     LanguageKey INTEGER NOT NULL,
+                                     DescriptionTypeKey INTEGER NOT NULL,
+                                     Value TEXT NOT NULL
+       )`,
       `CREATE TABLE Closure (
-        AncestorKey INTEGER NOT NULL,
-        DescendentKey INTEGER NOT NULL,
-        PRIMARY KEY (AncestorKey, DescendentKey)
-      )`,
+                                AncestorKey INTEGER NOT NULL,
+                                DescendentKey INTEGER NOT NULL,
+                                PRIMARY KEY (AncestorKey, DescendentKey)
+       )`,
       `CREATE VIRTUAL TABLE TextIndex USING fts5(
         codekey UNINDEXED,
         type UNINDEXED, 

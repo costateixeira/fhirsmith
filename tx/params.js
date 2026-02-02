@@ -514,12 +514,13 @@ class TxParameters {
     return result;
   }
 
-  hash() {
+  hashSource() {
     const b = (v) => {
       return v ? '1|' : '0|';
     };
 
-    let s = this.FUid + '|' + b(this.FMembershipOnly) + '|' + this.FProperties.join(',') + '|' +
+    let s = '|'+this.count+'|'+this.limit+'|'+this.offset+
+      this.FUid + '|' + b(this.FMembershipOnly) + '|' + this.FProperties.join(',') + '|' +
       b(this.FActiveOnly) + b(this.FIncompleteOK) + b(this.FDisplayWarning) + b(this.FExcludeNested) + b(this.FGenerateNarrative) + b(this.FLimitedExpansion) + b(this.FExcludeNotForUI) + b(this.FExcludePostCoordinated) +
       b(this.FIncludeDesignations) + b(this.FIncludeDefinition) + b(this.hasActiveOnly) + b(this.hasExcludeNested) + b(this.hasGenerateNarrative) +
       b(this.hasLimitedExpansion) + b(this.hasExcludeNotForUI) + b(this.hasExcludePostCoordinated) + b(this.hasIncludeDesignations) +
@@ -537,7 +538,11 @@ class TxParameters {
     for (let t of this.FVersionRules) {
       s = s + t.asString() + '|';
     }
-    return crypto.createHash('sha256').update('hello').digest(s);
+    for (let t of this.FValueSetVersionRules || []) {
+      s = s + t.asString() + '|';
+    }
+
+    return s;
   }
 
   link() {

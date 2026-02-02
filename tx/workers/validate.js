@@ -43,6 +43,7 @@ class ValueSetChecker {
   worker;
   valueSet;
   params;
+  requiredSupplements = [];
   others = new Map();
 
   constructor(worker, valueSet, params) {
@@ -299,11 +300,11 @@ class ValueSetChecker {
           this.worker.opContext.addNote(this.valueSet, 'Version Rules: ' + vrs, this.indentCount);
         }
       }
-      this.worker.requiredSupplements = [];
+      this.requiredSupplements = [];
       for (let ext of Extensions.list(this.valueSet.jsonObj, 'http://hl7.org/fhir/StructureDefinition/valueset-supplement')) {
-        this.worker.requiredSupplements.push(getValuePrimitive(ext));
+        this.requiredSupplements.push(getValuePrimitive(ext));
       }
-      if (this.worker.requiredSupplements.length > 0) {
+      if (this.requiredSupplements.length > 0) {
         await this.checkSupplementsExist(this.valueSet);
       }
 
@@ -326,8 +327,8 @@ class ValueSetChecker {
         }
       }
     }
-    if (this.worker.requiredSupplements.length > 0) {
-     throw new Issue('error', 'not-found', null, 'VALUESET_SUPPLEMENT_MISSING', this.worker.i18n.translatePlural(this.worker.requiredSupplements.length, 'VALUESET_SUPPLEMENT_MISSING', this.params.HTTPLanguages, [this.worker.requiredSupplements.join(',')])).handleAsOO(400);
+    if (this.requiredSupplements.length > 0) {
+     throw new Issue('error', 'not-found', null, 'VALUESET_SUPPLEMENT_MISSING', this.worker.i18n.translatePlural(this.requiredSupplements.length, 'VALUESET_SUPPLEMENT_MISSING', this.params.HTTPLanguages, [this.requiredSupplements.join(',')])).handleAsOO(400);
     }
   }
 
@@ -355,9 +356,9 @@ class ValueSetChecker {
     let cs = await this.worker.findCodeSystem(cc.system, v, this.params, ['complete', 'fragment'], null, true, false, false);
     if (cs !== null) {
       this.worker.opContext.addNote(this.valueSet, 'CodeSystem found: "' + this.worker.renderer.displayCoded(cs) + '"', this.indentCount);
-      for (let i = this.worker.requiredSupplements.length - 1; i >= 0; i--) {
-        if (cs.hasSupplement(this.worker.requiredSupplements[i])) {
-          this.worker.requiredSupplements.splice(i, 1);
+      for (let i = this.requiredSupplements.length - 1; i >= 0; i--) {
+        if (cs.hasSupplement(this.requiredSupplements[i])) {
+          this.requiredSupplements.splice(i, 1);
         }
       }
       let i = 0;
@@ -660,8 +661,8 @@ class ValueSetChecker {
         }
       }
 
-      if (this.worker.requiredSupplements.length > 0) {
-        throw new Issue('error', 'not-found', null, 'VALUESET_SUPPLEMENT_MISSING', this.worker.i18n.translatePlural(this.worker.requiredSupplements.length, 'VALUESET_SUPPLEMENT_MISSING', this.params.HTTPLanguages, [this.worker.requiredSupplements.join(',')])).handleAsOO(400);
+      if (this.requiredSupplements.length > 0) {
+        throw new Issue('error', 'not-found', null, 'VALUESET_SUPPLEMENT_MISSING', this.worker.i18n.translatePlural(this.requiredSupplements.length, 'VALUESET_SUPPLEMENT_MISSING', this.params.HTTPLanguages, [this.requiredSupplements.join(',')])).handleAsOO(400);
       }
 
       if (Extensions.checkNoModifiers(this.valueSet.jsonObj.compose, 'ValueSetChecker.prepare', 'ValueSet.compose')) {
@@ -710,7 +711,7 @@ class ValueSetChecker {
             this.worker.opContext.addNote(this.valueSet, 'CodeSystem found: ' + this.worker.renderer.displayCoded(cs) + ' for ' + this.worker.renderer.displayCoded(cc.system, v), this.indentCount);
             await this.checkCanonicalStatusCS(path, op, cs, this.valueSet);
             ver.value = cs.version();
-            this.worker.checkSupplements(cs, cc);
+            this.worker.checkSupplements(cs, cc, this.requiredSupplements);
             contentMode.value = cs.contentMode();
 
             let msg = '';
@@ -754,7 +755,7 @@ class ValueSetChecker {
                 throw new Issue('error', 'unknown', null, null, 'No Match for ' + cc.system + '|' + cc.version);
               }
               await this.checkCanonicalStatus(path, op, cs, this.valueSet);
-              this.worker.checkSupplements(cs, cc);
+              this.worker.checkSupplements(cs, cc, this.requiredSupplements);
               ver.value = cs.version();
               contentMode.value = cs.contentMode();
               let msg = '';
@@ -963,7 +964,7 @@ class ValueSetChecker {
       if (inc.system) {
         let cs = await this.worker.findCodeSystem(inc.system, inc.version, this.params, ['complete', 'fragment'], null,true);
         if (cs !== null) {
-          await this.worker.checkSupplements(cs, null);
+          await this.worker.checkSupplements(cs, null, this.requiredSupplements);
         }
       }
     }

@@ -7,7 +7,7 @@ describe('PackageConceptMapProvider', () => {
   let packageManager;
   let packagePath;
   let provider;
-  const packageCacheDir = path.join(__dirname, '../../.package-cache');
+  const packageCacheDir = path.join(__dirname, '../../data/terminology-cache');
   const packageId = 'ch.fhir.ig.ch-core';
   const packageVersion = '2.0.0';
 

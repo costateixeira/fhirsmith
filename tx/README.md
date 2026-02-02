@@ -317,7 +317,7 @@ When a terminology operation doesn't specify a version, the default version is u
 ### File Caching
 
 Files specified in sources (except `internal` and `ucum`) are:
-1. First checked in the local cache folder (`.package-cache`)
+1. First checked in the local cache folder (`terminology-cache`)
 2. Downloaded from the `base.url` if not present
 3. Cached locally for future use
 

@@ -24,6 +24,7 @@ const UPPER_LIMIT_NO_TEXT = 1000;
 const UPPER_LIMIT_TEXT = 1000;
 const INTERNAL_LIMIT = 10000;
 const EXPANSION_DEAD_TIME_SECS = 30;
+const CACHE_WHEN_DEBUGGING = false;
 
 /**
  * Total status for expansion
@@ -682,7 +683,7 @@ class ValueSetExpander {
         // nothing
       } else {
 
-        this.worker.checkSupplements(cs, cset);
+        this.worker.checkSupplements(cs, cset, this.requiredSupplements);
         this.checkProviderCanonicalStatus(expansion, cs, this.valueSet);
         const sv = this.canonical(await cs.system(), await cs.version());
         this.addParamUri(expansion, 'used-codesystem', sv);
@@ -707,7 +708,7 @@ class ValueSetExpander {
           if (cs.specialEnumeration() && this.params.limitedExpansion && filters.length === 0) {
             this.worker.opContext.log('import special value set ' + cs.specialEnumeration());
             const base = await this.expandValueSet(cs.specialEnumeration(), '', filter, notClosed);
-            expansion.addExtensionV('http://hl7.org/fhir/StructureDefinition/valueset-toocostly', this.factory.makeBoolean(true));
+            Extensions.addBoolean(expansion, 'http://hl7.org/fhir/StructureDefinition/valueset-toocostly', true);
             await this.importValueSet(base, expansion, valueSets, 0);
             notClosed.value = true;
           } else if (filter.isNull) {
@@ -718,7 +719,6 @@ class ValueSetExpander {
 
               } else {
                 throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly', null, 400).withDiagnostics(this.worker.opContext.diagnostics());
-
               }
             }
 
@@ -902,7 +902,7 @@ class ValueSetExpander {
       const prep = null;
       const cs = await this.worker.findCodeSystem(cset.system, cset.version, this.params, ['complete', 'fragment'], false, true, true, null);
 
-      this.worker.checkSupplements(cs, cset);
+      this.worker.checkSupplements(cs, cset, this.requiredSupplements);
       this.checkResourceCanonicalStatus(expansion, cs, this.valueSet);
       const sv = this.canonical(await cs.system(), await cs.version());
       this.addParamUri(expansion, 'used-codesystem', sv);
@@ -926,7 +926,7 @@ class ValueSetExpander {
         this.opContext.log('handle system');
         if (cs.specialEnumeration() && this.params.limitedExpansion && filters.length === 0) {
           const base = await this.expandValueSet(cs.specialEnumeration(), '', filter, notClosed);
-          expansion.addExtensionV('http://hl7.org/fhir/StructureDefinition/valueset-toocostly', this.factory.makeBoolean(true));
+          Extensions.addBoolean(expansion, 'http://hl7.org/fhir/StructureDefinition/valueset-toocostly', true);
           this.excludeValueSet(base, expansion, valueSets, 0);
           notClosed.value = true;
         } else if (filter.isNull) {
@@ -1160,9 +1160,9 @@ class ValueSetExpander {
       result.text = undefined;
     }
 
-    this.worker.requiredSupplements = [];
+    this.requiredSupplements = [];
     for (const ext of Extensions.list(source.jsonObj, 'http://hl7.org/fhir/StructureDefinition/valueset-supplement')) {
-      this.worker.requiredSupplements.push(getValuePrimitive(ext));
+      this.requiredSupplements.push(getValuePrimitive(ext));
     }
 
     if (result.expansion) {
@@ -1260,8 +1260,8 @@ class ValueSetExpander {
         await this.handleCompose(source, filter, exp, notClosed);
       }
 
-      if (this.worker.requiredSupplements.length > 0) {
-        throw new Issue('error', 'not-found', null, 'VALUESET_SUPPLEMENT_MISSING',  this.worker.opContext.i18n.translatePlural(this.worker.requiredSupplements.length, 'VALUESET_SUPPLEMENT_MISSING', this.params.httpLanguages, [this.worker.requiredSupplements.join(', ')]), 'not-found', 400);
+      if (this.requiredSupplements.length > 0) {
+        throw new Issue('error', 'not-found', null, 'VALUESET_SUPPLEMENT_MISSING',  this.worker.opContext.i18n.translatePlural(this.requiredSupplements.length, 'VALUESET_SUPPLEMENT_MISSING', this.params.httpLanguages, [this.requiredSupplements.join(', ')]), 'not-found', 400);
       }
     } catch (e) {
       if (e instanceof Issue) {
@@ -1646,6 +1646,7 @@ class ExpandWorker extends TerminologyWorker {
 
     // Handle tx-resource and cache-id parameters
     this.setupAdditionalResources(params);
+    const logExtraOutput = this.findParameter(params, 'logExtraOutput');
 
     let txp = new TxParameters(this.opContext.i18n.languageDefinitions, this.opContext.i18n, false);
     txp.readParams(params);
@@ -1672,7 +1673,7 @@ class ExpandWorker extends TerminologyWorker {
     }
 
     // Perform the expansion
-    const result = await this.doExpand(valueSet, txp);
+    const result = await this.doExpand(valueSet, txp, logExtraOutput);
     req.logInfo = this.usedSources.join("|")+txp.logInfo();
     return res.json(this.fixForVersion(result));
   }
@@ -1716,12 +1717,13 @@ class ExpandWorker extends TerminologyWorker {
 
     // Handle tx-resource and cache-id parameters
     this.setupAdditionalResources(params);
+    const logExtraOutput = this.findParameter(params, 'logExtraOutput');
 
     let txp = new TxParameters(this.opContext.i18n.languageDefinitions, this.opContext.i18n, false);
     txp.readParams(params);
 
     // Perform the expansion
-    const result = await this.doExpand(valueSet, txp);
+    const result = await this.doExpand(valueSet, txp, logExtraOutput);
     req.logInfo = this.usedSources.join("|")+txp.logInfo();
     return res.json(this.fixForVersion(result));
   }
@@ -1737,15 +1739,13 @@ class ExpandWorker extends TerminologyWorker {
    * @param {Object} params - Parameters resource with expansion options
    * @returns {Object} Expanded ValueSet resource
    */
-  async doExpand(valueSet, params) {
+  async doExpand(valueSet, params, logExtraOutput) {
     this.deadCheck('doExpand');
 
     const expansionCache = this.opContext.expansionCache;
-    const debugging = this.opContext.debugging;
-
     // Compute cache key (only if caching is available and not debugging)
     let cacheKey = null;
-    if (expansionCache && !debugging) {
+    if (expansionCache && (CACHE_WHEN_DEBUGGING || !this.opContext.debugging)) {
       cacheKey = expansionCache.computeKey(valueSet, params, this.additionalResources);
 
       // Check for cached expansion
@@ -1758,11 +1758,11 @@ class ExpandWorker extends TerminologyWorker {
 
     // Perform the actual expansion
     const startTime = performance.now();
-    const result = await this.performExpansion(valueSet, params);
+    const result = await this.performExpansion(valueSet, params, logExtraOutput);
     const durationMs = performance.now() - startTime;
 
     // Cache if it took long enough (and not debugging)
-    if (cacheKey && expansionCache && !debugging) {
+    if (cacheKey && expansionCache && (CACHE_WHEN_DEBUGGING || !this.opContext.debugging)) {
       const wasCached = expansionCache.set(cacheKey, result, durationMs);
       if (wasCached) {
         this.log.debug(`Cached expansion (took ${Math.round(durationMs)}ms)`);
@@ -1778,7 +1778,7 @@ class ExpandWorker extends TerminologyWorker {
    * @param {Object} params - Parameters resource with expansion options
    * @returns {Object} Expanded ValueSet resource
    */
-  async performExpansion(valueSet, params) {
+  async performExpansion(valueSet, params, logExtraOutput) {
     this.deadCheck('performExpansion');
 
     // Store params for worker methods
@@ -1794,6 +1794,7 @@ class ExpandWorker extends TerminologyWorker {
     //txResources = processAdditionalResources(context, manager, nil, params);
     // Create expander and run expansion
     const expander = new ValueSetExpander(this, params);
+    expander.logExtraOutput = logExtraOutput;
     return await expander.expand(valueSet, filter);
   }
 
