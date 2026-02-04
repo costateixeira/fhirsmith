@@ -113,7 +113,7 @@ class BundleXML extends FhirXmlBase {
   /**
    * Render a nested resource as XML
    */
-  static renderResource(resource, indentLevel, fhirVersion) {
+  static renderResource(resource, indentLevel, _fhirVersion) {
     const indent = '  '.repeat(indentLevel);
     const resourceType = resource.resourceType;
 
