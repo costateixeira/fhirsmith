@@ -136,118 +136,147 @@ class NpmProjectorModule {
 
     // Root - module info
     this.router.get('/', (req, res) => {
-      this.countRequest();
+      const start = Date.now();
+      try {
+        let queryDate;
 
-      const indexer = this.getIndexer();
-      const types = indexer.getResourceTypes();
-      const stats = indexer.getStats();
+        const indexer = this.getIndexer();
+        const types = indexer.getResourceTypes();
+        const stats = indexer.getStats();
 
-      res.json({
-        message: 'NpmProjector FHIR Server',
-        npmPath: this.config.npmPath,
-        fhirVersion: this.config.fhirVersion || 'r4',
-        resourceTypes: types,
-        configuredTypes: this.config.resourceTypes || 'all',
-        stats: stats,
-        lastReload: this.lastReloadTime,
-        reloadCount: this.reloadCount,
-        endpoints: {
-          metadata: 'metadata',
-          stats: '_stats',
-          search: '[ResourceType]',
-          read: '[ResourceType]/[id]'
-        }
-      });
+        res.json({
+          message: 'NpmProjector FHIR Server',
+          npmPath: this.config.npmPath,
+          fhirVersion: this.config.fhirVersion || 'r4',
+          resourceTypes: types,
+          configuredTypes: this.config.resourceTypes || 'all',
+          stats: stats,
+          lastReload: this.lastReloadTime,
+          reloadCount: this.reloadCount,
+          endpoints: {
+            metadata: 'metadata',
+            stats: '_stats',
+            search: '[ResourceType]',
+            read: '[ResourceType]/[id]'
+          }
+        });
+      } finally {
+        this.stats.countRequest('home', Date.now() - start);
+      }
     });
 
     // Capability Statement (metadata)
     this.router.get('/metadata', (req, res) => {
-      this.countRequest();
+      const start = Date.now();
+      try {
+        let queryDate;
 
-      const indexer = this.getIndexer();
-      res.json(this.buildCapabilityStatement(indexer));
+        const indexer = this.getIndexer();
+        res.json(this.buildCapabilityStatement(indexer));
+      } finally {
+        this.stats.countRequest('metadata', Date.now() - start);
+      }
     });
 
     // Stats endpoint
     this.router.get('/_stats', (req, res) => {
-      this.countRequest();
+      const start = Date.now();
+      try {
+        let queryDate;
 
-      const indexer = this.getIndexer();
-      res.json({
-        ...indexer.getStats(),
-        lastReload: this.lastReloadTime,
-        reloadCount: this.reloadCount
-      });
+        const indexer = this.getIndexer();
+        res.json({
+          ...indexer.getStats(),
+          lastReload: this.lastReloadTime,
+          reloadCount: this.reloadCount
+        });
+      } finally {
+        this.stats.countRequest('stats', Date.now() - start);
+      }
     });
 
     // Trigger manual reload
     this.router.post('/_reload', (req, res) => {
-      this.countRequest();
+      const start = Date.now();
+      try {
+        let queryDate;
 
-      this.log.info('Manual reload triggered');
-      this.watcher.triggerReload();
-      res.json({ message: 'Reload triggered', reloadCount: this.reloadCount });
+        this.log.info('Manual reload triggered');
+        this.watcher.triggerReload();
+        res.json({message: 'Reload triggered', reloadCount: this.reloadCount});
+      } finally {
+        this.stats.countRequest('reload', Date.now() - start);
+      }
     });
 
     // Read: GET /[type]/[id]
     this.router.get('/:resourceType/:id', (req, res) => {
-      this.countRequest();
+      try {
+        let queryDate;
 
-      const { resourceType, id } = req.params;
-      const indexer = this.getIndexer();
+        const {resourceType, id} = req.params;
+        const indexer = this.getIndexer();
 
-      const resource = indexer.read(resourceType, id);
+        const resource = indexer.read(resourceType, id);
 
-      if (!resource) {
-        return res.status(404).json(this.operationOutcome(
-          'error',
-          'not-found',
-          `${resourceType}/${id} not found`
-        ));
+        if (!resource) {
+          return res.status(404).json(this.operationOutcome(
+            'error',
+            'not-found',
+            `${resourceType}/${id} not found`
+          ));
+        }
+
+        res.json(resource);
+      } finally {
+        this.stats.countRequest('*', Date.now() - start);
       }
-
-      res.json(resource);
     });
 
     // Search: GET /[type]?params...
     this.router.get('/:resourceType', (req, res) => {
-      this.countRequest();
+      const start = Date.now();
+      try {
+        let queryDate;
 
-      const { resourceType } = req.params;
-      const indexer = this.getIndexer();
+        const {resourceType} = req.params;
+        const indexer = this.getIndexer();
 
-      // Check if resource type exists
-      if (!indexer.getResourceTypes().includes(resourceType)) {
-        return res.status(404).json(this.operationOutcome(
-          'error',
-          'not-found',
-          `Resource type ${resourceType} not found`
-        ));
-      }
-
-      // Extract search parameters
-      const searchParams = {};
-      for (const [key, value] of Object.entries(req.query)) {
-        if (!key.startsWith('_') || key === '_id') {
-          searchParams[key] = value;
+        // Check if resource type exists
+        if (!indexer.getResourceTypes().includes(resourceType)) {
+          return res.status(404).json(this.operationOutcome(
+            'error',
+            'not-found',
+            `Resource type ${resourceType} not found`
+          ));
         }
+
+        // Extract search parameters
+        const searchParams = {};
+        for (const [key, value] of Object.entries(req.query)) {
+          if (!key.startsWith('_') || key === '_id') {
+            searchParams[key] = value;
+          }
+        }
+
+        // Handle _id specially
+        if (searchParams._id) {
+          searchParams.id = searchParams._id;
+          delete searchParams._id;
+        }
+
+        const results = indexer.search(resourceType, searchParams);
+
+        // Handle _count
+        let count = parseInt(req.query._count) || 100;
+        count = Math.min(count, 1000);
+
+        const paginatedResults = results.slice(0, count);
+
+        res.json(this.buildSearchBundle(paginatedResults, req, results.length));
+      } finally {
+        this.stats.countRequest(':resourceType', Date.now() - start);
       }
-
-      // Handle _id specially
-      if (searchParams._id) {
-        searchParams.id = searchParams._id;
-        delete searchParams._id;
-      }
-
-      const results = indexer.search(resourceType, searchParams);
-
-      // Handle _count
-      let count = parseInt(req.query._count) || 100;
-      count = Math.min(count, 1000);
-
-      const paginatedResults = results.slice(0, count);
-
-      res.json(this.buildSearchBundle(paginatedResults, req, results.length));
     });
   }
 
@@ -368,10 +397,6 @@ class NpmProjectorModule {
     this.log.info('NpmProjector module shut down');
   }
 
-
-  countRequest() {
-    this.stats.requestCount++;
-  }
 }
 
 module.exports = NpmProjectorModule;

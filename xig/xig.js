@@ -49,12 +49,32 @@ const cacheEmitter = new EventEmitter();
 // Cache loading lock to prevent concurrent loads
 let cacheLoadInProgress = false;
 
+// Update history - tracks every download attempt for diagnostics
+const MAX_UPDATE_HISTORY = 20;
+let updateHistory = [];
+let updateInProgress = false;
+
+function recordUpdateAttempt(entry) {
+  updateHistory.unshift(entry); // newest first
+  if (updateHistory.length > MAX_UPDATE_HISTORY) {
+    updateHistory.length = MAX_UPDATE_HISTORY;
+  }
+}
+
+function getLastUpdateAttempt() {
+  return updateHistory.length > 0 ? updateHistory[0] : null;
+}
+
+function getUpdateHistory() {
+  return updateHistory;
+}
+
 // Enhanced HTML escaping
 function escapeHtml(text) {
   if (typeof text !== 'string') {
     return String(text);
   }
-  
+
   const map = {
     '&': '&amp;',
     '<': '&lt;',
@@ -65,7 +85,7 @@ function escapeHtml(text) {
     '`': '&#x60;',
     '=': '&#x3D;'
   };
-  
+
   return text.replace(/[&<>"'`=/]/g, function(m) { return map[m]; });
 }
 
@@ -73,22 +93,22 @@ function escapeHtml(text) {
 function validateExternalUrl(url) {
   try {
     const parsed = new URL(url);
-    
+
     // Only allow http and https
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       throw new Error(`Protocol ${parsed.protocol} not allowed`);
     }
-    
+
     // Block private IP ranges
     const hostname = parsed.hostname;
-    if (hostname === 'localhost' || 
-        hostname === '127.0.0.1' ||
-        hostname.startsWith('10.') ||
-        hostname.startsWith('192.168.') ||
-        /^172\.(1[6-9]|2[0-9]|3[01])\./.test(hostname)) {
+    if (hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname.startsWith('10.') ||
+      hostname.startsWith('192.168.') ||
+      /^172\.(1[6-9]|2[0-9]|3[01])\./.test(hostname)) {
       throw new Error('Private IP addresses not allowed');
     }
-    
+
     return parsed;
   } catch (error) {
     throw new Error(`Invalid URL: ${error.message}`);
@@ -98,32 +118,32 @@ function validateExternalUrl(url) {
 // Secure SQL query building with parameterized queries
 function buildSecureResourceQuery(queryParams, offset = 0, limit = 50) {
   const { realm, auth, ver, type, rt, text } = queryParams;
-  
+
   let baseQuery = `
-    SELECT 
-      ResourceKey, ResourceType, Type, Kind, Description, PackageKey,
-      Realm, Authority, R2, R2B, R3, R4, R4B, R5, R6,
-      Id, Url, Version, Status, Date, Name, Title, Content,
-      Supplements, Details, FMM, WG, StandardsStatus, Web
-    FROM Resources
-    WHERE 1=1
+      SELECT
+          ResourceKey, ResourceType, Type, Kind, Description, PackageKey,
+          Realm, Authority, R2, R2B, R3, R4, R4B, R5, R6,
+          Id, Url, Version, Status, Date, Name, Title, Content,
+          Supplements, Details, FMM, WG, StandardsStatus, Web
+      FROM Resources
+      WHERE 1=1
   `;
-  
+
   const conditions = [];
   const params = [];
-  
+
   // Realm filter
   if (realm && realm !== '') {
     conditions.push('AND realm = ?');
     params.push(realm);
   }
-  
+
   // Authority filter
   if (auth && auth !== '') {
     conditions.push('AND authority = ?');
     params.push(auth);
   }
-  
+
   // Version filter
   if (ver) {
     switch (ver) {
@@ -150,13 +170,13 @@ function buildSecureResourceQuery(queryParams, offset = 0, limit = 50) {
         break;
     }
   }
-  
+
   // Type-specific filters
   switch (type) {
     case 'cs': // CodeSystem
       conditions.push("AND ResourceType = 'CodeSystem'");
       break;
-      
+
     case 'rp': // Resource Profiles
       conditions.push("AND ResourceType = 'StructureDefinition' AND kind = 'resource'");
       if (rt && rt !== '' && hasCachedValue('profileResources', rt)) {
@@ -164,7 +184,7 @@ function buildSecureResourceQuery(queryParams, offset = 0, limit = 50) {
         params.push(rt);
       }
       break;
-      
+
     case 'dp': // Datatype Profiles
       conditions.push("AND ResourceType = 'StructureDefinition' AND (kind = 'complex-type' OR kind = 'primitive-type')");
       if (rt && rt !== '' && hasCachedValue('profileTypes', rt)) {
@@ -172,11 +192,11 @@ function buildSecureResourceQuery(queryParams, offset = 0, limit = 50) {
         params.push(rt);
       }
       break;
-      
+
     case 'lm': // Logical Models
       conditions.push("AND ResourceType = 'StructureDefinition' AND kind = 'logical'");
       break;
-      
+
     case 'ext': // Extensions
       conditions.push("AND ResourceType = 'StructureDefinition' AND Type = 'Extension'");
       if (rt && rt !== '' && hasCachedValue('extensionContexts', rt)) {
@@ -184,7 +204,7 @@ function buildSecureResourceQuery(queryParams, offset = 0, limit = 50) {
         params.push(rt);
       }
       break;
-      
+
     case 'vs': // ValueSets
       conditions.push("AND ResourceType = 'ValueSet'");
       if (rt && rt !== '' && hasTerminologySource(rt)) {
@@ -192,7 +212,7 @@ function buildSecureResourceQuery(queryParams, offset = 0, limit = 50) {
         params.push(rt);
       }
       break;
-      
+
     case 'cm': // ConceptMaps
       conditions.push("AND ResourceType = 'ConceptMap'");
       if (rt && rt !== '' && hasTerminologySource(rt)) {
@@ -200,7 +220,7 @@ function buildSecureResourceQuery(queryParams, offset = 0, limit = 50) {
         params.push(rt);
       }
       break;
-      
+
     default:
       // No specific type selected
       if (rt && rt !== '' && hasCachedValue('resourceTypes', rt)) {
@@ -209,7 +229,7 @@ function buildSecureResourceQuery(queryParams, offset = 0, limit = 50) {
       }
       break;
   }
-  
+
   // Text search filter
   if (text && text !== '') {
     if (type === 'cs') {
@@ -221,32 +241,32 @@ function buildSecureResourceQuery(queryParams, offset = 0, limit = 50) {
       params.push(text, text);
     }
   }
-  
+
   // Build final query
   const fullQuery = baseQuery + ' ' + conditions.join(' ') + ' ORDER BY ResourceType, Type, Description LIMIT ? OFFSET ?';
   params.push(limit, offset);
-  
+
   return { query: fullQuery, params };
 }
 
 function buildSecureResourceCountQuery(queryParams) {
   const { realm, auth, ver, type, rt, text } = queryParams;
-  
+
   let baseQuery = 'SELECT COUNT(*) as total FROM Resources WHERE 1=1';
   const conditions = [];
   const params = [];
-  
+
   // Same conditions as main query but for counting
   if (realm && realm !== '') {
     conditions.push('AND realm = ?');
     params.push(realm);
   }
-  
+
   if (auth && auth !== '') {
     conditions.push('AND authority = ?');
     params.push(auth);
   }
-  
+
   if (ver) {
     switch (ver) {
       case 'R2': conditions.push('AND R2 = 1'); break;
@@ -258,7 +278,7 @@ function buildSecureResourceCountQuery(queryParams) {
       case 'R6': conditions.push('AND R6 = 1'); break;
     }
   }
-  
+
   switch (type) {
     case 'cs':
       conditions.push("AND ResourceType = 'CodeSystem'");
@@ -308,7 +328,7 @@ function buildSecureResourceCountQuery(queryParams) {
       }
       break;
   }
-  
+
   if (text && text !== '') {
     if (type === 'cs') {
       conditions.push(`AND (ResourceKey IN (SELECT ResourceKey FROM ResourceFTS WHERE Description MATCH ? OR Narrative MATCH ?) 
@@ -319,7 +339,7 @@ function buildSecureResourceCountQuery(queryParams) {
       params.push(text, text);
     }
   }
-  
+
   const fullQuery = baseQuery + ' ' + conditions.join(' ');
   return { query: fullQuery, params };
 }
@@ -348,24 +368,24 @@ function renderPage(title, content, options = {}) {
 
 async function gatherPageStatistics() {
   const startTime = Date.now();
-  
+
   try {
     // Get database age info
     const dbAge = getDatabaseAgeInfo();
     let downloadDate = 'Unknown';
-    
+
     if (dbAge.lastDownloaded) {
       downloadDate = dbAge.lastDownloaded.toISOString().split('T')[0];
     } else {
       downloadDate = 'Never';
     }
-    
+
     // Get counts from database
     const tableCounts = await getDatabaseTableCounts();
-    
+
     const endTime = Date.now();
     const processingTime = endTime - startTime;
-    
+
     return {
       downloadDate: downloadDate,
       totalResources: tableCounts.resources || 0,
@@ -373,13 +393,13 @@ async function gatherPageStatistics() {
       processingTime: processingTime,
       version: getMetadata('fhir-version') || '4.0.1'
     };
-    
+
   } catch (error) {
     xigLog.error(`Error gathering page statistics: ${error.message}`);
-    
+
     const endTime = Date.now();
     const processingTime = endTime - startTime;
-    
+
     return {
       downloadDate: 'Error',
       totalResources: 0,
@@ -395,13 +415,13 @@ function buildContentHtml(contentData) {
   if (typeof contentData === 'string') {
     return contentData;
   }
-  
+
   let html = '';
-  
+
   if (contentData.message) {
     html += `<p>${escapeHtml(contentData.message)}</p>`;
   }
-  
+
   if (contentData.data && Array.isArray(contentData.data)) {
     html += '<ul>';
     contentData.data.forEach(item => {
@@ -409,7 +429,7 @@ function buildContentHtml(contentData) {
     });
     html += '</ul>';
   }
-  
+
   if (contentData.table) {
     html += '<table class="table table-striped">';
     if (contentData.table.headers) {
@@ -432,7 +452,7 @@ function buildContentHtml(contentData) {
     }
     html += '</table>';
   }
-  
+
   return html;
 }
 
@@ -447,17 +467,17 @@ function sqlEscapeString(str) {
 function buildSqlFilter(queryParams) {
   const { realm, auth, ver, type, rt, text } = queryParams;
   let filter = '';
-  
+
   // Realm filter
   if (realm && realm !== '') {
     filter += ` and realm = '${sqlEscapeString(realm)}'`;
   }
-  
+
   // Authority filter
   if (auth && auth !== '') {
     filter += ` and authority = '${sqlEscapeString(auth)}'`;
   }
-  
+
   // Version filter - check specific version columns
   if (ver) {
     switch (ver) {
@@ -484,38 +504,38 @@ function buildSqlFilter(queryParams) {
         break;
     }
   }
-  
+
   // Type-specific filters
   switch (type) {
     case 'cs': // CodeSystem
       filter += " and ResourceType = 'CodeSystem'";
       break;
-      
+
     case 'rp': // Resource Profiles
       filter += " and ResourceType = 'StructureDefinition' and kind = 'resource'";
       if (rt && rt !== '' && hasCachedValue('profileResources', rt)) {
         filter += ` and Type = '${sqlEscapeString(rt)}'`;
       }
       break;
-      
+
     case 'dp': // Datatype Profiles
       filter += " and ResourceType = 'StructureDefinition' and (kind = 'complex-type' or kind = 'primitive-type')";
       if (rt && rt !== '' && hasCachedValue('profileTypes', rt)) {
         filter += ` and Type = '${sqlEscapeString(rt)}'`;
       }
       break;
-      
+
     case 'lm': // Logical Models
       filter += " and ResourceType = 'StructureDefinition' and kind = 'logical'";
       break;
-      
+
     case 'ext': // Extensions
       filter += " and ResourceType = 'StructureDefinition' and (Type = 'Extension')";
       if (rt && rt !== '' && hasCachedValue('extensionContexts', rt)) {
         filter += ` and ResourceKey in (Select ResourceKey from Categories where Mode = 2 and Code = '${sqlEscapeString(rt)}')`;
       }
       break;
-      
+
     case 'vs': // ValueSets
       filter += " and ResourceType = 'ValueSet'";
       if (rt && rt !== '' && hasTerminologySource(rt)) {
@@ -529,7 +549,7 @@ function buildSqlFilter(queryParams) {
         filter += ` and ResourceKey in (Select ResourceKey from Categories where Mode = 1 and Code = '${sqlEscapeString(rt)}')`;
       }
       break;
-      
+
     default:
       // No specific type selected - handle rt parameter for general resource filtering
       if (rt && rt !== '' && hasCachedValue('resourceTypes', rt)) {
@@ -537,26 +557,26 @@ function buildSqlFilter(queryParams) {
       }
       break;
   }
-  
+
   // Text search filter
   if (text && text !== '') {
     const escapedText = sqlEscapeString(text);
     if (type === 'cs') {
       // Special handling for CodeSystems - search both resource and CodeSystem-specific fields
       filter += ` and (ResourceKey in (select ResourceKey from ResourceFTS where Description match '${escapedText}' or Narrative match '${escapedText}') ` +
-                `or ResourceKey in (select ResourceKey from CodeSystemFTS where Display match '${escapedText}' or Definition match '${escapedText}'))`;
+        `or ResourceKey in (select ResourceKey from CodeSystemFTS where Display match '${escapedText}' or Definition match '${escapedText}'))`;
     } else {
       // Standard resource text search
       filter += ` and ResourceKey in (select ResourceKey from ResourceFTS where Description match '${escapedText}' or Narrative match '${escapedText}')`;
     }
   }
-  
+
   // Convert to proper WHERE clause
   if (filter !== '') {
     // Remove the first " and " and prepend "WHERE "
     filter = 'WHERE ' + filter.substring(4);
   }
-  
+
   return filter;
 }
 
@@ -570,39 +590,39 @@ function hasTerminologySource(sourceCode) {
 
 function buildResourceListQuery(queryParams, offset = 0, limit = 50) {
   const whereClause = buildSqlFilter(queryParams);
-  
+
   // Build the complete SQL query
   let sql = `
-    SELECT 
-      ResourceKey,
-      ResourceType,
-      Type,
-      Kind,
-      Description,
-      PackageKey,
-      Realm,
-      Authority,
-      R2, R2B, R3, R4, R4B, R5, R6,
-      Id,
-      Url,
-      Version,
-      Status,
-      Date,
-      Name,
-      Title,
-      Content,
-      Supplements,
-      Details,
-      FMM,
-      WG, 
-      StandardsStatus,
-      Web
-    FROM Resources
-    ${whereClause}
-    ORDER BY ResourceType, Type, Description
-    LIMIT ${limit} OFFSET ${offset}
+      SELECT
+          ResourceKey,
+          ResourceType,
+          Type,
+          Kind,
+          Description,
+          PackageKey,
+          Realm,
+          Authority,
+          R2, R2B, R3, R4, R4B, R5, R6,
+          Id,
+          Url,
+          Version,
+          Status,
+          Date,
+          Name,
+          Title,
+          Content,
+          Supplements,
+          Details,
+          FMM,
+          WG,
+          StandardsStatus,
+          Web
+      FROM Resources
+          ${whereClause}
+      ORDER BY ResourceType, Type, Description
+          LIMIT ${limit} OFFSET ${offset}
   `;
-  
+
   return sql.trim();
 }
 
@@ -612,9 +632,9 @@ function buildPaginationControls(count, offset, baseUrl, queryParams) {
   if (count <= 200) {
     return ''; // No pagination needed
   }
-  
+
   let html = '<p>';
-  
+
   // Start link
   if (offset > 200) {
     const startParams = { ...queryParams };
@@ -622,25 +642,25 @@ function buildPaginationControls(count, offset, baseUrl, queryParams) {
     const startUrl = buildPaginationUrl(baseUrl, startParams);
     html += `<a href="${startUrl}">Start</a> `;
   }
-  
-  // Prev link  
+
+  // Prev link
   if (offset >= 200) {
     const prevParams = { ...queryParams, offset: (offset - 200).toString() };
     const prevUrl = buildPaginationUrl(baseUrl, prevParams);
     html += `<a href="${prevUrl}">Prev</a> `;
   }
-  
+
   // Current range
   const endRange = Math.min(offset + 200, count);
   html += `<b>Rows ${offset} - ${endRange}</b>`;
-  
+
   // Next link (only if there are more results)
   if (offset + 200 < count) {
     const nextParams = { ...queryParams, offset: (offset + 200).toString() };
     const nextUrl = buildPaginationUrl(baseUrl, nextParams);
     html += ` <a href="${nextUrl}">Next</a>`;
   }
-  
+
   html += '</p>';
   return html;
 }
@@ -675,13 +695,13 @@ function getPackage(packageKey) {
   if (!configCache.loaded || !configCache.maps.packages) {
     return null;
   }
-  
+
   return configCache.maps.packages.get(packageKey) || null;
 }
 
 function renderExtension(details) {
   if (!details) return '<td></td><td></td><td></td>';
-  
+
   // Extension details are stored in a structured format
   // For now, we'll do basic parsing - you may need to adjust based on actual format
   try {
@@ -689,7 +709,7 @@ function renderExtension(details) {
     const context = parts[0] || '';
     const modifier = parts[1] || '';
     const type = parts[2] || '';
-    
+
     return `<td>${escapeHtml(context)}</td><td>${escapeHtml(modifier)}</td><td>${escapeHtml(type)}</td>`;
   } catch (error) {
     return `<td colspan="3">${escapeHtml(details)}</td>`;
@@ -928,18 +948,18 @@ async function buildSummaryStats(queryParams, baseUrl) {
   const { ver, auth, realm } = queryParams;
   const currentFilter = buildSqlFilter(queryParams);
   let html = '';
-  
+
   if (!xigDb) {
     return '<p class="text-warning">Database not available for summary statistics</p>';
   }
-  
+
   try {
     html += '<div style="background-color:rgb(254, 250, 198); border: 1px black solid; padding: 6px; font-size: 12px; font-family: verdana;">';
     // Version breakdown (only if no version filter is applied)
     if (!ver || ver === '') {
       html += '<p><strong>By Version</strong></p>';
       html += '<ul style="columns: 4; -webkit-columns: 4; -moz-columns: 4">';
-      
+
       const versions = getCachedSet('versions');
       for (const version of versions) {
         try {
@@ -949,14 +969,14 @@ async function buildSummaryStats(queryParams, baseUrl) {
           } else {
             sql = `SELECT COUNT(*) as count FROM Resources ${currentFilter} AND ${version} = 1`;
           }
-          
+
           const count = await new Promise((resolve, reject) => {
             xigDb.get(sql, [], (err, row) => {
               if (err) reject(err);
               else resolve(row ? row.count : 0);
             });
           });
-          
+
           const linkUrl = buildVersionLinkUrl(baseUrl, queryParams, version);
           html += `<li><a href="${linkUrl}">${escapeHtml(version)}</a>: ${count.toLocaleString()}</li>`;
         } catch (error) {
@@ -965,30 +985,30 @@ async function buildSummaryStats(queryParams, baseUrl) {
       }
       html += '</ul>';
     }
-    
+
     // Authority breakdown (only if no authority filter is applied)
     if (!auth || auth === '') {
       html += '<p><strong>By Authority</strong></p>';
       html += '<ul style="columns: 4; -webkit-columns: 4; -moz-columns: 4">';
-      
+
       let sql;
       if (currentFilter === '') {
         sql = 'SELECT Authority, COUNT(*) as count FROM Resources GROUP BY Authority ORDER BY Authority';
       } else {
         sql = `SELECT Authority, COUNT(*) as count FROM Resources ${currentFilter} GROUP BY Authority ORDER BY Authority`;
       }
-      
+
       const authorityResults = await new Promise((resolve, reject) => {
         xigDb.all(sql, [], (err, rows) => {
           if (err) reject(err);
           else resolve(rows || []);
         });
       });
-      
+
       authorityResults.forEach(row => {
         const authority = row.Authority;
         const count = row.count;
-        
+
         if (!authority || authority === '') {
           html += `<li>none: ${count.toLocaleString()}</li>`;
         } else {
@@ -998,7 +1018,7 @@ async function buildSummaryStats(queryParams, baseUrl) {
       });
       html += '</ul>';
     }
-    
+
     // Realm breakdown (only if no realm filter is applied)
     if (!realm || realm === '') {
       html += '<p><strong>By Realm</strong></p>';
@@ -1010,7 +1030,7 @@ async function buildSummaryStats(queryParams, baseUrl) {
       } else {
         sql = `SELECT Realm, COUNT(*) as count FROM Resources ${currentFilter} GROUP BY Realm ORDER BY Realm`;
       }
-      
+
       const realmResults = await new Promise((resolve, reject) => {
         xigDb.all(sql, [], (err, rows) => {
           if (err) reject(err);
@@ -1022,7 +1042,7 @@ async function buildSummaryStats(queryParams, baseUrl) {
       realmResults.forEach(row => {
         const realmCode = row.Realm;
         const count = row.count;
-        
+
         if (!realmCode || realmCode === '') {
           html += `<li>none: ${count.toLocaleString()}</li>`;
         } else  if (realmCode.length > 3) {
@@ -1033,17 +1053,17 @@ async function buildSummaryStats(queryParams, baseUrl) {
         }
       });
       if (c > 0) {
-          html += `<li>other: ${c}</li>`;
+        html += `<li>other: ${c}</li>`;
       }
       html += '</ul>';
     }
-      html += '</div><p>&nbsp;</p>';
-    
+    html += '</div><p>&nbsp;</p>';
+
   } catch (error) {
     xigLog.error(`Error building summary stats: ${error.message}`);
     html += `<p class="text-warning">Error loading summary statistics: ${escapeHtml(error.message)}</p>`;
   }
-  
+
   return html;
 }
 
@@ -1079,18 +1099,18 @@ function buildRealmLinkUrl(baseUrl, currentParams, realm) {
 
 function makeSelect(selectedValue, optionsList, name = 'rt') {
   let html = `<select name="${name}" size="1">`;
-  
+
   // Add empty option
   if (!selectedValue || selectedValue === '') {
     html += '<option value="" selected="true"></option>';
   } else {
     html += '<option value=""></option>';
   }
-  
+
   // Add options from list
   optionsList.forEach(item => {
     let code, display;
-    
+
     // Handle "code=display" format or just "code"
     if (item.includes('=')) {
       [code, display] = item.split('=', 2);
@@ -1098,23 +1118,23 @@ function makeSelect(selectedValue, optionsList, name = 'rt') {
       code = item;
       display = item;
     }
-    
+
     if (selectedValue === code) {
       html += `<option value="${escapeHtml(code)}" selected="true">${escapeHtml(display)}</option>`;
     } else {
       html += `<option value="${escapeHtml(code)}">${escapeHtml(display)}</option>`;
     }
   });
-  
+
   html += '</select>';
   return html;
 }
 
 function buildAdditionalForm(queryParams) {
   const { ver, realm, auth, type, rt, text } = queryParams;
-  
+
   let html = '<form method="GET" action="" style="background-color: #eeeeee; border: 1px black solid; padding: 6px; font-size: 12px; font-family: verdana;">';
-  
+
   // Add hidden inputs to preserve current filter state
   if (ver && ver !== '') {
     html += `<input type="hidden" name="ver" value="${escapeHtml(ver)}"/>`;
@@ -1125,13 +1145,13 @@ function buildAdditionalForm(queryParams) {
   if (auth && auth !== '') {
     html += `<input type="hidden" name="auth" value="${escapeHtml(auth)}"/>`;
   }
-  
+
   // Add type-specific fields
   switch (type) {
     case 'cs': // CodeSystem
       html += '<input type="hidden" name="type" value="cs"/>';
       break;
-      
+
     case 'rp': { // Resource Profiles
       html += '<input type="hidden" name="type" value="rp"/>';
       const profileResources = getCachedSet('profileResources');
@@ -1151,7 +1171,7 @@ function buildAdditionalForm(queryParams) {
     case 'lm': // Logical Models
       html += '<input type="hidden" name="type" value="lm"/>';
       break;
-      
+
     case 'ext': {// Extensions
       html += '<input type="hidden" name="type" value="ext"/>';
       const extensionContexts = getCachedSet('extensionContexts');
@@ -1189,15 +1209,15 @@ function buildAdditionalForm(queryParams) {
       break;
     }
   }
-  
+
   // Add text search field
   html += `Text: <input type="text" name="text" value="${escapeHtml(text || '')}" class="" style="width: 200px;"/> `;
-  
+
   // Add submit button
   html += '<input type="submit" value="Search" style="color:rgb(89, 137, 241)"/>';
-  
+
   html += '</form>';
-  
+
   return html;
 }
 
@@ -1223,9 +1243,9 @@ function capitalizeFirst(str) {
 
 function buildPageHeading(queryParams) {
   const { type, realm, auth, ver, rt } = queryParams;
-  
+
   let heading = '<h2>';
-  
+
   // Determine the main heading based on type
   switch (type) {
     case 'cs':
@@ -1258,50 +1278,50 @@ function buildPageHeading(queryParams) {
       }
       break;
   }
-  
+
   // Add additional qualifiers
   if (realm && realm !== '') {
     heading += `, Realm ${escapeHtml(realm.toUpperCase())}`;
   }
-  
+
   if (auth && auth !== '') {
     heading += `, Authority ${escapeHtml(capitalizeFirst(auth))}`;
   }
-  
+
   if (ver && ver !== '') {
     heading += `, Version ${escapeHtml(ver)}`;
   }
-  
+
   heading += '</h2>';
-  
+
   return heading;
 }
 
 function buildBaseUrl(baseUrl, params, excludeParam) {
   const filteredParams = { ...params };
   delete filteredParams[excludeParam];
-  
+
   const queryString = Object.keys(filteredParams)
     .filter(key => filteredParams[key] && filteredParams[key] !== '')
     .map(key => `${key}=${encodeURIComponent(filteredParams[key])}`)
     .join('&');
-    
+
   return baseUrl + (queryString ? '?' + queryString : '');
 }
 
 function buildVersionBar(baseUrl, currentParams) {
   const { ver } = currentParams;
   const baseUrlWithoutVer = buildBaseUrl(baseUrl, currentParams, 'ver');
-  
+
   let html = 'Version: ';
-  
+
   // "All" link/bold
   if (!ver || ver === '') {
     html += '<b>All</b>';
   } else {
     html += `<a href="${baseUrlWithoutVer}">All</a>`;
   }
-  
+
   // Version links
   const versions = getCachedSet('versions');
   versions.forEach(version => {
@@ -1312,23 +1332,23 @@ function buildVersionBar(baseUrl, currentParams) {
       html += ` | <a href="${baseUrlWithoutVer}${separator}ver=${encodeURIComponent(version)}">${escapeHtml(version)}</a>`;
     }
   });
-  
+
   return html;
 }
 
 function buildAuthorityBar(baseUrl, currentParams) {
   const { auth } = currentParams;
   const baseUrlWithoutAuth = buildBaseUrl(baseUrl, currentParams, 'auth');
-  
+
   let html = 'Authority: ';
-  
+
   // "All" link/bold
   if (!auth || auth === '') {
     html += '<b>All</b>';
   } else {
     html += `<a href="${baseUrlWithoutAuth}">All</a>`;
   }
-  
+
   // Authority links
   const authorities = getCachedSet('authorities');
   authorities.forEach(authority => {
@@ -1339,23 +1359,23 @@ function buildAuthorityBar(baseUrl, currentParams) {
       html += ` | <a href="${baseUrlWithoutAuth}${separator}auth=${encodeURIComponent(authority)}">${escapeHtml(authority)}</a>`;
     }
   });
-  
+
   return html;
 }
 
 function buildRealmBar(baseUrl, currentParams) {
   const { realm } = currentParams;
   const baseUrlWithoutRealm = buildBaseUrl(baseUrl, currentParams, 'realm');
-  
+
   let html = 'Realm: ';
-  
+
   // "All" link/bold
   if (!realm || realm === '') {
     html += '<b>All</b>';
   } else {
     html += `<a href="${baseUrlWithoutRealm}">All</a>`;
   }
-  
+
   // Realm links
   const realms = getCachedSet('realms');
   realms.forEach(realmCode => {
@@ -1366,23 +1386,23 @@ function buildRealmBar(baseUrl, currentParams) {
       html += ` | <a href="${baseUrlWithoutRealm}${separator}realm=${encodeURIComponent(realmCode)}">${escapeHtml(realmCode)}</a>`;
     }
   });
-  
+
   return html;
 }
 
 function buildTypeBar(baseUrl, currentParams) {
   const { type } = currentParams;
   const baseUrlWithoutType = buildBaseUrl(baseUrl, currentParams, 'type');
-  
+
   let html = 'View: ';
-  
+
   // "All" link/bold
   if (!type || type === '') {
     html += '<b>All</b>';
   } else {
     html += `<a href="${baseUrlWithoutType}">All</a>`;
   }
-  
+
   // Type links - using the types map (rp=Resource Profiles, etc.)
   const typesMap = getCachedTable('types');
   if (typesMap instanceof Map) {
@@ -1395,7 +1415,7 @@ function buildTypeBar(baseUrl, currentParams) {
       }
     });
   }
-  
+
   return html;
 }
 
@@ -1404,7 +1424,7 @@ function buildControlPanel(baseUrl, queryParams) {
   const authorityBar = buildAuthorityBar(baseUrl, queryParams);
   const realmBar = buildRealmBar(baseUrl, queryParams);
   const typeBar = buildTypeBar(baseUrl, queryParams);
-  
+
   return `
     <div class="control-panel mb-4 p-3 border rounded bg-light">
       <ul style="background-color: #eeeeee; border: 1px black solid; margin: 6px">
@@ -1431,7 +1451,7 @@ function getCachedValue(tableName, key) {
   if (!configCache.loaded || !configCache.maps[tableName]) {
     return null;
   }
-  
+
   const cache = configCache.maps[tableName];
   if (cache instanceof Map) {
     return cache.get(key);
@@ -1443,7 +1463,7 @@ function hasCachedValue(tableName, value) {
   if (!configCache.loaded || !configCache.maps[tableName]) {
     return false;
   }
-  
+
   const cache = configCache.maps[tableName];
   if (cache instanceof Set) {
     return cache.has(value);
@@ -1466,13 +1486,13 @@ function getCacheStats() {
   if (!configCache.loaded) {
     return { loaded: false };
   }
-  
+
   const stats = {
     loaded: true,
     lastUpdated: configCache.lastUpdated,
     tables: {}
   };
-  
+
   Object.keys(configCache.maps).forEach(tableName => {
     const cache = configCache.maps[tableName];
     if (cache instanceof Map) {
@@ -1483,7 +1503,7 @@ function getCacheStats() {
       stats.tables[tableName] = { type: 'Unknown', size: 0 };
     }
   });
-  
+
   return stats;
 }
 
@@ -1496,10 +1516,20 @@ function getMetadata(key) {
 function downloadFile(url, destination, maxRedirects = 5) {
   return new Promise((resolve, reject) => {
     xigLog.info(`Starting download from ${url}`);
+    const downloadMeta = {
+      url: url,
+      finalUrl: url,
+      redirectCount: 0,
+      httpStatus: null,
+      contentLength: null,
+      downloadedBytes: 0,
+      serverLastModified: null,
+      startTime: Date.now()
+    };
 
     function attemptDownload(currentUrl, redirectCount = 0) {
       if (redirectCount > maxRedirects) {
-        reject(new Error(`Too many redirects (${maxRedirects})`));
+        reject(Object.assign(new Error(`Too many redirects (${maxRedirects})`), { downloadMeta }));
         return;
       }
 
@@ -1508,6 +1538,12 @@ function downloadFile(url, destination, maxRedirects = 5) {
         const protocol = validatedUrl.protocol === 'https:' ? https : http;
 
         const request = protocol.get(validatedUrl, (response) => {
+          downloadMeta.httpStatus = response.statusCode;
+          downloadMeta.finalUrl = currentUrl;
+          downloadMeta.redirectCount = redirectCount;
+          downloadMeta.serverLastModified = response.headers['last-modified'] || null;
+          downloadMeta.contentLength = response.headers['content-length'] ? parseInt(response.headers['content-length']) : null;
+
           // Handle redirects
           if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
             let redirectUrl = response.headers.location;
@@ -1525,27 +1561,28 @@ function downloadFile(url, destination, maxRedirects = 5) {
           }
 
           if (response.statusCode !== 200) {
-            reject(new Error(`Download failed with status code: ${response.statusCode}`));
+            reject(Object.assign(
+              new Error(`Download failed with HTTP ${response.statusCode}`),
+              { downloadMeta }
+            ));
             return;
           }
 
           // Check content length
-          const contentLength = parseInt(response.headers['content-length'] || '0');
           const maxSize = 10 * 1024 * 1024 * 1024; // 10GB limit
-          if (contentLength > maxSize) {
-            reject(new Error('File too large'));
+          if (downloadMeta.contentLength && downloadMeta.contentLength > maxSize) {
+            reject(Object.assign(new Error('File too large'), { downloadMeta }));
             return;
           }
 
           const fileStream = fs.createWriteStream(destination);
-          let downloadedBytes = 0;
 
           response.on('data', (chunk) => {
-            downloadedBytes += chunk.length;
-            if (downloadedBytes > maxSize) {
+            downloadMeta.downloadedBytes += chunk.length;
+            if (downloadMeta.downloadedBytes > maxSize) {
               request.destroy();
               fs.unlink(destination, () => {}); // Clean up
-              reject(new Error('File too large'));
+              reject(Object.assign(new Error('File too large'), { downloadMeta }));
               return;
             }
           });
@@ -1554,27 +1591,28 @@ function downloadFile(url, destination, maxRedirects = 5) {
 
           fileStream.on('finish', () => {
             fileStream.close();
-            xigLog.info(`Download completed successfully. Downloaded ${downloadedBytes} bytes to ${destination}`);
-            resolve();
+            downloadMeta.durationMs = Date.now() - downloadMeta.startTime;
+            xigLog.info(`Download completed successfully. Downloaded ${downloadMeta.downloadedBytes} bytes to ${destination}`);
+            resolve(downloadMeta);
           });
 
           fileStream.on('error', (err) => {
             fs.unlink(destination, () => {}); // Delete partial file
-            reject(err);
+            reject(Object.assign(err, { downloadMeta }));
           });
         });
 
         request.on('error', (err) => {
-          reject(err);
+          reject(Object.assign(err, { downloadMeta }));
         });
 
         request.setTimeout(300000, () => { // 5 minutes timeout
           request.destroy();
-          reject(new Error('Download timeout'));
+          reject(Object.assign(new Error('Download timeout after 5 minutes'), { downloadMeta }));
         });
 
       } catch (error) {
-        reject(error);
+        reject(Object.assign(error, { downloadMeta }));
       }
     }
 
@@ -1588,18 +1626,18 @@ function validateDatabaseFile(filePath) {
       reject(new Error('Database file does not exist'));
       return;
     }
-    
+
     // Try to open the SQLite database to validate it
     const testDb = new sqlite3.Database(filePath, sqlite3.OPEN_READONLY, (err) => {
       if (err) {
         reject(new Error(`Invalid SQLite database: ${err.message}`));
         return;
       }
-      
+
       // Try a simple query to ensure the database is accessible
       testDb.get("SELECT name FROM sqlite_master WHERE type='table' LIMIT 1", (err) => {
         testDb.close();
-        
+
         if (err) {
           reject(new Error(`Database validation failed: ${err.message}`));
         } else {
@@ -1614,12 +1652,12 @@ async function loadConfigCache() {
   if (cacheLoadInProgress) {
     return;
   }
-  
+
   if (!xigDb) {
     xigLog.error('No database connection available for cache loading');
     return;
   }
-  
+
   cacheLoadInProgress = true;
 
   try {
@@ -1629,7 +1667,7 @@ async function loadConfigCache() {
       lastUpdated: new Date(),
       maps: {}
     };
-    
+
     // Helper function for simple queries
     const executeQuery = (sql, params = []) => {
       return new Promise((resolve, reject) => {
@@ -1642,7 +1680,7 @@ async function loadConfigCache() {
         });
       });
     };
-    
+
     // Load metadata
     const metadataRows = await executeQuery('SELECT Name, Value FROM Metadata');
     newCache.maps.metadata = new Map();
@@ -1678,10 +1716,10 @@ async function loadConfigCache() {
         Web: row.Web,
         Canonical: row.Canonical
       };
-      
+
       // Index by PackageKey
       newCache.maps.packages.set(row.PackageKey, packageObj);
-      
+
       // Index by PID with # replaced by |
       const pidKey = row.PID ? row.PID.replace(/#/g, '|') : row.PID;
       if (pidKey) {
@@ -1692,19 +1730,19 @@ async function loadConfigCache() {
     // Check if Resources table exists before querying it
     const tableCheckQuery = "SELECT name FROM sqlite_master WHERE type='table' AND name='Resources'";
     const resourcesTableExists = await executeQuery(tableCheckQuery);
-    
+
     if (resourcesTableExists.length > 0) {
       // Load resource-related caches
       const profileResourceRows = await executeQuery(
         "SELECT DISTINCT Type FROM Resources WHERE ResourceType = 'StructureDefinition' AND Kind = 'resource'"
-      ); 
+      );
       newCache.maps.profileResources = new Set();
       profileResourceRows.forEach(row => {
         if (row.Type && row.Type.trim() !== '') {  // Filter out null/undefined/empty values
           newCache.maps.profileResources.add(row.Type);
         }
       });
-      
+
       const profileTypeRows = await executeQuery(
         "SELECT DISTINCT Type FROM Resources WHERE ResourceType = 'StructureDefinition' AND (Kind = 'complex-type' OR Kind = 'primitive-type')"
       );
@@ -1714,7 +1752,7 @@ async function loadConfigCache() {
           newCache.maps.profileTypes.add(row.Type);
         }
       });
-      
+
       const resourceTypeRows = await executeQuery('SELECT DISTINCT ResourceType FROM Resources');
       newCache.maps.resourceTypes = new Set();
       resourceTypeRows.forEach(row => {
@@ -1725,46 +1763,46 @@ async function loadConfigCache() {
       newCache.maps.profileTypes = new Set();
       newCache.maps.resourceTypes = new Set();
     }
-    
+
     // Load categories
     const extensionContextRows = await executeQuery('SELECT DISTINCT Code FROM Categories WHERE Mode = 2');
     newCache.maps.extensionContexts = new Set();
     extensionContextRows.forEach(row => {
       newCache.maps.extensionContexts.add(row.Code);
     });
-    
+
     const extensionTypeRows = await executeQuery('SELECT DISTINCT Code FROM Categories WHERE Mode = 3');
     newCache.maps.extensionTypes = new Set();
     extensionTypeRows.forEach(row => {
       newCache.maps.extensionTypes.add(row.Code);
     });
-    
+
     // Load TX sources
     const txSourceRows = await executeQuery('SELECT Code, Display FROM TxSource');
     newCache.maps.txSources = new Map();
     txSourceRows.forEach(row => {
       newCache.maps.txSources.set(row.Code, row.Display);
     });
-    
+
     // Add fixed dictionaries
     newCache.maps.versions = new Set(['R2', 'R2B', 'R3', 'R4', 'R4B', 'R5', 'R6']);
-    
+
     newCache.maps.types = new Map([
       ['rp', 'Resource Profiles'],
-      ['dp', 'Datatype Profiles'], 
+      ['dp', 'Datatype Profiles'],
       ['ext', 'Extensions'],
       ['lm', 'Logical Models'],
       ['cs', 'CodeSystems'],
       ['vs', 'ValueSets'],
       ['cm', 'ConceptMaps']
     ]);
-    
+
     newCache.loaded = true;
-    
+
     // ATOMIC REPLACEMENT
     const oldCache = configCache;
     configCache = newCache;
-    
+
 
     // Emit event
     cacheEmitter.emit('cacheUpdated', newCache, oldCache);
@@ -1784,7 +1822,7 @@ function initializeDatabase() {
       resolve();
       return;
     }
-    
+
     xigDb = new sqlite3.Database(XIG_DB_PATH, sqlite3.OPEN_READONLY, async (err) => {
       if (err) {
         xigLog.error(`Failed to open XIG database: ${err.message}`);
@@ -1796,7 +1834,7 @@ function initializeDatabase() {
         } catch (cacheError) {
           xigLog.warn(`Failed to load config cache: ${cacheError.message}`);
         }
-        
+
         resolve();
       }
     });
@@ -1804,14 +1842,40 @@ function initializeDatabase() {
 }
 
 async function updateXigDatabase() {
+  if (updateInProgress) {
+    xigLog.warn('Update already in progress, skipping');
+    return;
+  }
+
+  updateInProgress = true;
+  const entry = {
+    timestamp: new Date(),
+    trigger: new Error().stack.includes('cron') ? 'cron' : 'manual',
+    status: 'started',
+    sourceUrl: XIG_DB_URL,
+    error: null,
+    downloadMeta: null,
+    previousFileAge: null,
+    durationMs: null
+  };
+
+  // Record current file age before attempting
+  const currentAge = getDatabaseAgeInfo();
+  entry.previousFileAge = currentAge.daysOld;
+
+  const updateStart = Date.now();
+
   try {
     fs.mkdirSync(path.dirname(XIG_DB_PATH), { recursive: true });
 
     const tempPath = XIG_DB_PATH + '.tmp';
-    
-    await downloadFile(XIG_DB_URL, tempPath);
+
+    const downloadMeta = await downloadFile(XIG_DB_URL, tempPath);
+    entry.downloadMeta = downloadMeta;
+
     await validateDatabaseFile(tempPath);
-    
+    entry.status = 'validated';
+
     if (xigDb) {
       await new Promise((resolve) => {
         xigDb.close((err) => {
@@ -1823,48 +1887,57 @@ async function updateXigDatabase() {
         });
       });
     }
-    
+
     if (fs.existsSync(XIG_DB_PATH)) {
       fs.unlinkSync(XIG_DB_PATH);
     }
     fs.renameSync(tempPath, XIG_DB_PATH);
-    
+
     await initializeDatabase();
 
-    xigLog.info('XIG database updated');
-    
+    entry.status = 'success';
+    entry.durationMs = Date.now() - updateStart;
+    xigLog.info(`XIG database updated successfully in ${entry.durationMs}ms (${downloadMeta.downloadedBytes} bytes)`);
+
   } catch (error) {
+    entry.status = 'failed';
+    entry.error = error.message;
+    entry.downloadMeta = error.downloadMeta || entry.downloadMeta;
+    entry.durationMs = Date.now() - updateStart;
     xigLog.error(`XIG database update failed: ${error.message}`);
-    
+
     const tempPath = XIG_DB_PATH + '.tmp';
     if (fs.existsSync(tempPath)) {
       fs.unlinkSync(tempPath);
     }
-    
+
     if (!xigDb) {
       await initializeDatabase();
     }
+  } finally {
+    updateInProgress = false;
+    recordUpdateAttempt(entry);
   }
 }
 
 // Request tracking middleware
 function trackRequest(req, res, next) {
   requestStats.total++;
-  
+
   const today = new Date().toISOString().split('T')[0];
   const currentCount = requestStats.dailyCounts.get(today) || 0;
   requestStats.dailyCounts.set(today, currentCount + 1);
-  
+
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   const cutoffDate = thirtyDaysAgo.toISOString().split('T')[0];
-  
+
   for (const [date] of requestStats.dailyCounts.entries()) {
     if (date < cutoffDate) {
       requestStats.dailyCounts.delete(date);
     }
   }
-  
+
   next();
 }
 
@@ -1877,31 +1950,31 @@ function getDatabaseTableCounts() {
       resolve({ packages: 0, resources: 0 });
       return;
     }
-    
+
     const counts = {};
     let completedQueries = 0;
     const totalQueries = 2;
-    
+
     xigDb.get('SELECT COUNT(*) as count FROM Packages', [], (err, row) => {
       if (err) {
         counts.packages = 0;
       } else {
         counts.packages = row.count;
       }
-      
+
       completedQueries++;
       if (completedQueries === totalQueries) {
         resolve(counts);
       }
     });
-    
+
     xigDb.get('SELECT COUNT(*) as count FROM Resources', [], (err, row) => {
       if (err) {
         counts.resources = 0;
       } else {
         counts.resources = row.count;
       }
-      
+
       completedQueries++;
       if (completedQueries === totalQueries) {
         resolve(counts);
@@ -1914,7 +1987,7 @@ function getRequestStats() {
   const now = new Date();
   const daysRunning = Math.max(1, Math.ceil((now - requestStats.startTime) / (1000 * 60 * 60 * 24)));
   const averagePerDay = Math.round(requestStats.total / daysRunning);
-  
+
   return {
     total: requestStats.total,
     startTime: requestStats.startTime,
@@ -1932,18 +2005,18 @@ function getDatabaseAgeInfo() {
       status: 'No database file'
     };
   }
-  
+
   const stats = fs.statSync(XIG_DB_PATH);
   const lastModified = stats.mtime;
   const now = new Date();
   const ageInDays = Math.floor((now - lastModified) / (1000 * 60 * 60 * 24));
-  
+
   return {
     lastDownloaded: lastModified,
     daysOld: ageInDays,
-    status: ageInDays === 0 ? 'Today' : 
-            ageInDays === 1 ? '1 day ago' : 
-            `${ageInDays} days ago`
+    status: ageInDays === 0 ? 'Today' :
+      ageInDays === 1 ? '1 day ago' :
+        `${ageInDays} days ago`
   };
 }
 
@@ -1953,10 +2026,10 @@ function buildStatsTable(statsData) {
   html += '<tr><th>Metric</th><th>Value</th><th>Details</th></tr>';
   html += '</thead>';
   html += '<tbody>';
-  
+
   // Cache Statistics
   html += '<tr class="table-info"><td colspan="3"><strong>Cache Statistics</strong></td></tr>';
-  
+
   if (statsData.cache.loaded) {
     Object.keys(statsData.cache.tables).forEach(tableName => {
       const tableInfo = statsData.cache.tables[tableName];
@@ -1966,7 +2039,7 @@ function buildStatsTable(statsData) {
       html += `<td>${tableInfo.type}</td>`;
       html += `</tr>`;
     });
-    
+
     html += `<tr>`;
     html += `<td>Cache Last Updated</td>`;
     html += `<td>${new Date(statsData.cache.lastUpdated).toLocaleString()}</td>`;
@@ -1975,16 +2048,21 @@ function buildStatsTable(statsData) {
   } else {
     html += '<tr><td>Cache Status</td><td class="text-warning">Not Loaded</td><td>Cache is still initializing</td></tr>';
   }
-  
+
   // Database Statistics
   html += '<tr class="table-info"><td colspan="3"><strong>Database Statistics</strong></td></tr>';
-  
+
   html += `<tr>`;
-  html += `<td>Database Size</td>`;
+  html += `<td>Database File</td>`;
   html += `<td>${(statsData.database.fileSize / 1024 / 1024).toFixed(2)} MB</td>`;
-  html += `<td>Downloaded from fhir.org</td>`;
+  html += `<td>${escapeHtml(XIG_DB_PATH)}</td>`;
   html += `</tr>`;
-  
+
+  html += `<tr>`;
+  html += `<td>Download Source</td>`;
+  html += `<td colspan="2"><code>${escapeHtml(XIG_DB_URL)}</code></td>`;
+  html += `</tr>`;
+
   html += `<tr>`;
   html += `<td>Last Downloaded</td>`;
   html += `<td>${statsData.databaseAge.status}</td>`;
@@ -1994,35 +2072,85 @@ function buildStatsTable(statsData) {
     html += `<td>Never downloaded</td>`;
   }
   html += `</tr>`;
-  
+
   // Table counts
   html += `<tr>`;
   html += `<td>Packages</td>`;
   html += `<td>${statsData.tableCounts.packages.toLocaleString()}</td>`;
   html += `<td>FHIR Implementation Guide packages</td>`;
   html += `</tr>`;
-  
+
   html += `<tr>`;
   html += `<td>Resources</td>`;
   html += `<td>${statsData.tableCounts.resources.toLocaleString()}</td>`;
   html += `<td>FHIR resources across all packages</td>`;
   html += `</tr>`;
-  
+
+  // Update History
+  html += '<tr class="table-info"><td colspan="3"><strong>Update History</strong></td></tr>';
+
+  if (updateInProgress) {
+    html += '<tr><td>⏳ Update In Progress</td><td colspan="2">A download is currently running...</td></tr>';
+  }
+
+  const history = getUpdateHistory();
+  if (history.length === 0) {
+    html += '<tr><td colspan="3" class="text-muted">No update attempts since server started</td></tr>';
+  } else {
+    history.forEach((entry, idx) => {
+      const time = new Date(entry.timestamp).toLocaleString();
+      const statusIcon = entry.status === 'success' ? '✅' : '❌';
+      const statusClass = entry.status === 'success' ? '' : 'table-danger';
+
+      let detail = '';
+      if (entry.status === 'success' && entry.downloadMeta) {
+        const mb = (entry.downloadMeta.downloadedBytes / 1024 / 1024).toFixed(1);
+        const secs = (entry.durationMs / 1000).toFixed(1);
+        detail = `Downloaded ${mb} MB in ${secs}s`;
+        if (entry.downloadMeta.httpStatus) {
+          detail += ` (HTTP ${entry.downloadMeta.httpStatus})`;
+        }
+      } else if (entry.status === 'failed') {
+        detail = escapeHtml(entry.error || 'Unknown error');
+        if (entry.downloadMeta) {
+          if (entry.downloadMeta.httpStatus) {
+            detail += ` (HTTP ${entry.downloadMeta.httpStatus})`;
+          }
+          if (entry.downloadMeta.finalUrl !== entry.sourceUrl) {
+            detail += `<br>Redirected to: <code>${escapeHtml(entry.downloadMeta.finalUrl)}</code>`;
+          }
+          if (entry.downloadMeta.downloadedBytes > 0) {
+            detail += `<br>Partial download: ${(entry.downloadMeta.downloadedBytes / 1024 / 1024).toFixed(1)} MB`;
+          }
+        }
+        if (entry.durationMs) {
+          detail += `<br>Duration: ${(entry.durationMs / 1000).toFixed(1)}s`;
+        }
+      }
+
+      html += `<tr class="${statusClass}">`;
+      html += `<td>${statusIcon} ${idx === 0 ? '<strong>Latest</strong>' : `#${idx + 1}`}</td>`;
+      html += `<td>${time}</td>`;
+      html += `<td>${detail}</td>`;
+      html += `</tr>`;
+    });
+  }
+
   // Request Statistics
   html += '<tr class="table-info"><td colspan="3"><strong>Request Statistics</strong></td></tr>';
-  
+
   html += `<tr>`;
   html += `<td>Total Requests</td>`;
   html += `<td>${statsData.requests.total.toLocaleString()}</td>`;
   html += `<td>Since ${statsData.requests.startTime.toLocaleString()}</td>`;
   html += `</tr>`;
-  
+
   html += `<tr>`;
   html += `<td>Average per Day</td>`;
   html += `<td>${statsData.requests.averagePerDay.toLocaleString()}</td>`;
   html += `<td>Based on ${statsData.requests.daysRunning} days running</td>`;
   html += `</tr>`;
-  
+
   // Recent daily activity (last 7 days)
   const recentDays = [];
   for (let i = 6; i >= 0; i--) {
@@ -2032,16 +2160,16 @@ function buildStatsTable(statsData) {
     const count = statsData.requests.dailyCounts.get(dateStr) || 0;
     recentDays.push(`${dateStr}: ${count}`);
   }
-  
+
   html += `<tr>`;
   html += `<td>Recent Activity</td>`;
   html += `<td>Last 7 days</td>`;
   html += `<td>${recentDays.join('<br>')}</td>`;
   html += `</tr>`;
-  
+
   html += '</tbody>';
   html += '</table>';
-  
+
   return html;
 }
 
@@ -2055,7 +2183,7 @@ function getDatabaseInfo() {
       });
       return;
     }
-    
+
     xigDb.get("SELECT COUNT(*) as tableCount FROM sqlite_master WHERE type='table'", (err, row) => {
       if (err) {
         reject(err);
@@ -2071,23 +2199,24 @@ function getDatabaseInfo() {
   });
 }
 
-function countRequest() {
-  globalStats.requestCount++;
+function countRequest(name, tat) {
+  globalStats.stats.stats.stats.stats.countRequest(name, tat);
 }
 
 // Routes
 router.get('/:packagePid/:resourceType/:resourceId', async (req, res) => {
-  countRequest();
+  const start = Date.now();;
+  try {
 
   const { packagePid, resourceType, resourceId } = req.params;
-  
+
   // Check if this looks like a package/resource pattern
   // Package PIDs typically contain dots and pipes: hl7.fhir.uv.extensions|current
   // Resource types are FHIR resource names: StructureDefinition, ValueSet, etc.
-  
+
   const isPackagePidFormat = packagePid.includes('.') || packagePid.includes('|');
   const isFhirResourceType = /^[A-Z][a-zA-Z]+$/.test(resourceType);
-  
+
   if (isPackagePidFormat && isFhirResourceType) {
     // This looks like a legacy resource URL, redirect to the proper format
     res.redirect(301, `/xig/resource/${packagePid}/${resourceType}/${resourceId}`);
@@ -2095,17 +2224,21 @@ router.get('/:packagePid/:resourceType/:resourceId', async (req, res) => {
     // Not a resource URL pattern, return 404
     res.status(404).send('Not Found');
   }
+  } finally {
+    this.stats.countRequest(':id', Date.now() - start);
+  }
 });
 
 // Resources list endpoint with control panel
 router.get('/', async (req, res) => {
-  countRequest();
+  const start = Date.now();;
+  try {
 
   const startTime = Date.now(); // Add this at the very beginning
-  
+
   try {
     const title = 'FHIR Resources';
-    
+
     // Parse query parameters
     const queryParams = {
       ver: req.query.ver || '',
@@ -2116,20 +2249,20 @@ router.get('/', async (req, res) => {
       text: req.query.text || '',
       offset: req.query.offset || '0'
     };
-    
+
     // Parse offset for pagination
     const offset = parseInt(queryParams.offset) || 0;
-    
+
     // Build control panel
     const controlPanel = buildControlPanel('/xig', queryParams);
-    
+
     // Build dynamic heading
     const pageHeading = buildPageHeading(queryParams);
-    
+
     // Get resource count
     let resourceCount = 0;
     let countError = null;
-    
+
     try {
       if (xigDb) {
         const { query: countQuery, params: countParams } = buildSecureResourceCountQuery(queryParams);
@@ -2147,7 +2280,7 @@ router.get('/', async (req, res) => {
       countError = error.message;
       xigLog.error(`Error getting resource count: ${error.message}`);
     }
-    
+
     // Build resource count paragraph
     let countParagraph = '<p>';
     if (countError) {
@@ -2156,16 +2289,16 @@ router.get('/', async (req, res) => {
       countParagraph += `${resourceCount.toLocaleString()} resources`;
     }
     countParagraph += '</p>';
-    
+
     // Build additional form
     const additionalForm = buildAdditionalForm(queryParams);
-    
+
     // Build summary statistics
     const summaryStats = await buildSummaryStats(queryParams, '/xig');
-    
+
     // Build resource table
     const resourceTable = await buildResourceTable(queryParams, resourceCount, offset);
-    
+
     // Build content
     let content = controlPanel;
     content += pageHeading;
@@ -2176,20 +2309,24 @@ router.get('/', async (req, res) => {
     // Gather statistics and render
     const stats = await gatherPageStatistics();
     stats.processingTime = Date.now() - startTime;
-    
+
     const html = renderPage(title, content, stats);
     res.setHeader('Content-Type', 'text/html');
     res.send(html);
-    
+
   } catch (error) {
     xigLog.error(`Error rendering resources page: ${error.message}`);
     htmlServer.sendErrorResponse(res, 'xig', error);
+  }
+  } finally {
+    this.stats.countRequest('/', Date.now() - start);
   }
 });
 
 // Stats endpoint
 router.get('/stats', async (req, res) => {
-  countRequest();
+  const start = Date.now();;
+  try {
 
   const startTime = Date.now(); // Add this at the very beginning
 
@@ -2199,7 +2336,7 @@ router.get('/stats', async (req, res) => {
       getDatabaseInfo(),
       getDatabaseTableCounts()
     ]);
-    
+
     const statsData = {
       cache: getCacheStats(),
       database: dbInfo,
@@ -2207,90 +2344,119 @@ router.get('/stats', async (req, res) => {
       tableCounts: tableCounts,
       requests: getRequestStats()
     };
-    
+
     const content = buildStatsTable(statsData);
-    
+
     let introContent = '';
+    const lastAttempt = getLastUpdateAttempt();
+
     if (statsData.databaseAge.daysOld !== null && statsData.databaseAge.daysOld > 1) {
       introContent += `<div class="alert alert-warning">`;
-      introContent += `<strong>Note:</strong> Database is ${statsData.databaseAge.daysOld} days old. `;
-      introContent += `Automatic updates occur daily at 2 AM.`;
+      introContent += `<strong>⚠ Database is ${statsData.databaseAge.daysOld} days old.</strong> `;
+      introContent += `Automatic updates are scheduled daily at 2 AM. `;
+      if (lastAttempt) {
+        if (lastAttempt.status === 'failed') {
+          introContent += `<br><strong>Last update attempt failed</strong> at ${new Date(lastAttempt.timestamp).toLocaleString()}: `;
+          introContent += `${escapeHtml(lastAttempt.error || 'Unknown error')}`;
+          if (lastAttempt.downloadMeta && lastAttempt.downloadMeta.httpStatus) {
+            introContent += ` (HTTP ${lastAttempt.downloadMeta.httpStatus})`;
+          }
+        } else if (lastAttempt.status === 'success') {
+          introContent += `<br>Last successful update: ${new Date(lastAttempt.timestamp).toLocaleString()} `;
+          introContent += `(file age based on filesystem mtime)`;
+        }
+      } else {
+        introContent += `<br>No update attempts recorded since server started.`;
+      }
+      introContent += `</div>`;
+    } else if (lastAttempt && lastAttempt.status === 'failed') {
+      // DB is fresh but last attempt failed — still worth showing
+      introContent += `<div class="alert alert-warning">`;
+      introContent += `<strong>Last update attempt failed</strong> at ${new Date(lastAttempt.timestamp).toLocaleString()}: `;
+      introContent += `${escapeHtml(lastAttempt.error || 'Unknown error')}`;
       introContent += `</div>`;
     }
-    
+
     if (!statsData.cache.loaded) {
       introContent += `<div class="alert alert-info">`;
       introContent += `<strong>Info:</strong> Cache is still loading. Some statistics may be incomplete.`;
       introContent += `</div>`;
     }
-    
+
     const fullContent = introContent + content;
-    
-   const stats = await gatherPageStatistics();
+
+    const stats = await gatherPageStatistics();
     stats.processingTime = Date.now() - startTime;
-    
+
     const html = renderPage('FHIR IG Statistics Status', fullContent, stats);
     res.setHeader('Content-Type', 'text/html');
     res.send(html);
-    
+
   } catch (error) {
     xigLog.error(`Error generating stats page: ${error.message}`);
     htmlServer.sendErrorResponse(res, 'xig', error);
+  }
+  } finally {
+    this.stats.countRequest('stats', Date.now() - start);
   }
 });
 
 // Resource detail endpoint - handles individual resource pages
 router.get('/resource/:packagePid/:resourceType/:resourceId', async (req, res) => {
-  countRequest();
+  const start = Date.now();;
+  try {
   const startTime = Date.now(); // Add this at the very beginning
   try {
     const { packagePid, resourceType, resourceId } = req.params;
-    
+
     // Convert URL-safe package PID back to database format (| to #)
     const dbPackagePid = packagePid.replace(/\|/g, '#');
-    
+
     if (!xigDb) {
       throw new Error('Database not available');
     }
-    
+
     // Get package information first
     const packageObj = getPackageByPid(dbPackagePid);
     if (!packageObj) {
-      return res.status(404).send(renderPage('Resource Not Found', 
+      return res.status(404).send(renderPage('Resource Not Found',
         `<div class="alert alert-danger">Unknown Package: ${escapeHtml(packagePid)}</div>`));
     }
-    
+
     // Get resource details
     const resourceQuery = `
-      SELECT * FROM Resources 
-      WHERE PackageKey = ? AND ResourceType = ? AND Id = ?
+        SELECT * FROM Resources
+        WHERE PackageKey = ? AND ResourceType = ? AND Id = ?
     `;
-    
+
     const resourceData = await new Promise((resolve, reject) => {
       xigDb.get(resourceQuery, [packageObj.PackageKey, resourceType, resourceId], (err, row) => {
         if (err) reject(err);
         else resolve(row);
       });
     });
-    
+
     if (!resourceData) {
-      return res.status(404).send(renderPage('Resource Not Found', 
+      return res.status(404).send(renderPage('Resource Not Found',
         `<div class="alert alert-danger">Unknown Resource: ${escapeHtml(resourceType)}/${escapeHtml(resourceId)} in package ${escapeHtml(packagePid)}</div>`));
     }
-    
+
     // Build the resource detail page
     const content = await buildResourceDetailPage(packageObj, resourceData, req.secure);
     const title = `${resourceType}/${resourceId}`;
     const stats = await gatherPageStatistics();
     stats.processingTime = Date.now() - startTime;
-    
+
     const html = renderPage(title, content, stats);
     res.setHeader('Content-Type', 'text/html');
     res.send(html);
-    
+
   } catch (error) {
     xigLog.error(`Error rendering resource detail page: ${error.message}`);
     htmlServer.sendErrorResponse(res, 'xig', error);
+  }
+  } finally {
+    this.stats.countRequest(':pid', Date.now() - start);
   }
 });
 
@@ -2299,56 +2465,56 @@ function getPackageByPid(pid) {
   if (!configCache.loaded || !configCache.maps.packagesById) {
     return null;
   }
-  
+
   // Try with both # and | variants
   const pidWithPipe = pid.replace(/#/g, '|');
-  return configCache.maps.packagesById.get(pid) || 
-         configCache.maps.packagesById.get(pidWithPipe) || 
-         null;
+  return configCache.maps.packagesById.get(pid) ||
+    configCache.maps.packagesById.get(pidWithPipe) ||
+    null;
 }
 
 // Main function to build resource detail page content
 async function buildResourceDetailPage(packageObj, resourceData, secure = false) {
   let html = '';
-  
+
   try {
     // Build basic resource metadata table
     html += await buildResourceMetadataTable(packageObj, resourceData);
-    
+
     // Build dependencies sections
     html += await buildResourceDependencies(resourceData, secure);
-    
+
     // Build narrative section (if available)
     html += await buildResourceNarrative(resourceData.ResourceKey, packageObj);
-    
+
     // Build source section
     html += await buildResourceSource(resourceData.ResourceKey);
-    
+
   } catch (error) {
     xigLog.error(`Error building resource detail content: ${error.message}`);
     html += `<div class="alert alert-warning">Error loading some content: ${escapeHtml(error.message)}</div>`;
   }
-  
+
   return html;
 }
 
 // Build the main resource metadata table
 async function buildResourceMetadataTable(packageObj, resourceData) {
   let html = '<table class="table table-bordered">';
-  
+
   // Package
   if (packageObj && packageObj.Web) {
     html += `<tr><td><strong>Package</strong></td><td><a href="${escapeHtml(packageObj.Web)}" target="_blank">${escapeHtml(packageObj.Id)}</a></td></tr>`;
   } else if (packageObj) {
     html += `<tr><td><strong>Package</strong></td><td>${escapeHtml(packageObj.Id)}</td></tr>`;
   }
-  
+
   // Type
   html += `<tr><td><strong>Resource Type</strong></td><td>${escapeHtml(resourceData.ResourceType)}</td></tr>`;
-  
+
   // Id
   html += `<tr><td><strong>Id</strong></td><td>${escapeHtml(resourceData.Id)}</td></tr>`;
-  
+
   // FHIR Versions
   const versions = showVersion(resourceData);
   if (versions.includes(',')) {
@@ -2356,12 +2522,12 @@ async function buildResourceMetadataTable(packageObj, resourceData) {
   } else {
     html += `<tr><td><strong>FHIR Version</strong></td><td>${escapeHtml(versions)}</td></tr>`;
   }
-  
+
   // Source
   if (resourceData.Web) {
     html += `<tr><td><strong>Source</strong></td><td><a href="${escapeHtml(resourceData.Web)}" target="_blank">${escapeHtml(resourceData.Web)}</a></td></tr>`;
   }
-  
+
   // Add all other non-empty fields
   const fields = [
     { key: 'Url', label: 'URL' },
@@ -2382,7 +2548,7 @@ async function buildResourceMetadataTable(packageObj, resourceData) {
     { key: 'valueSet', label: 'ValueSet' },
     { key: 'Kind', label: 'Kind' }
   ];
-  
+
   fields.forEach(field => {
     const value = resourceData[field.key];
     if (value && value !== '') {
@@ -2394,7 +2560,7 @@ async function buildResourceMetadataTable(packageObj, resourceData) {
       }
     }
   });
-  
+
   html += '</table>';
   return html;
 }
@@ -2402,49 +2568,49 @@ async function buildResourceMetadataTable(packageObj, resourceData) {
 // Build resources that use this resource (dependencies pointing TO this resource)
 async function buildResourceDependencies(resourceData, secure = false) {
   let html = '<hr/><h3>Resources that use this resource</h3>';
-  
+
   try {
     const dependenciesQuery = `
-      SELECT Packages.PID, Resources.ResourceType, Resources.Id, Resources.Url, Resources.Web, Resources.Name, Resources.Title 
-      FROM DependencyList, Resources, Packages 
-      WHERE DependencyList.TargetKey = ? 
-        AND DependencyList.SourceKey = Resources.ResourceKey  
-        AND Resources.PackageKey = Packages.PackageKey 
-      ORDER BY ResourceType
+        SELECT Packages.PID, Resources.ResourceType, Resources.Id, Resources.Url, Resources.Web, Resources.Name, Resources.Title
+        FROM DependencyList, Resources, Packages
+        WHERE DependencyList.TargetKey = ?
+          AND DependencyList.SourceKey = Resources.ResourceKey
+          AND Resources.PackageKey = Packages.PackageKey
+        ORDER BY ResourceType
     `;
-    
+
     const dependencies = await new Promise((resolve, reject) => {
       xigDb.all(dependenciesQuery, [resourceData.ResourceKey], (err, rows) => {
         if (err) reject(err);
         else resolve(rows || []);
       });
     });
-    
+
     if (dependencies.length === 0) {
       html += '<p style="color: #808080">No resources found</p>';
     } else {
       html += buildDependencyTable(dependencies, secure);
     }
-    
+
     // Build resources that this resource uses (dependencies FROM this resource)
     html += '<hr/><h3>Resources that this resource uses</h3>';
-    
+
     const usesQuery = `
-      SELECT Packages.PID, Resources.ResourceType, Resources.Id, Resources.Url, Resources.Web, Resources.Name, Resources.Title 
-      FROM DependencyList, Resources, Packages 
-      WHERE DependencyList.SourceKey = ? 
-        AND DependencyList.TargetKey = Resources.ResourceKey  
-        AND Resources.PackageKey = Packages.PackageKey 
-      ORDER BY ResourceType
+        SELECT Packages.PID, Resources.ResourceType, Resources.Id, Resources.Url, Resources.Web, Resources.Name, Resources.Title
+        FROM DependencyList, Resources, Packages
+        WHERE DependencyList.SourceKey = ?
+          AND DependencyList.TargetKey = Resources.ResourceKey
+          AND Resources.PackageKey = Packages.PackageKey
+        ORDER BY ResourceType
     `;
-    
+
     const uses = await new Promise((resolve, reject) => {
       xigDb.all(usesQuery, [resourceData.ResourceKey], (err, rows) => {
         if (err) reject(err);
         else resolve(rows || []);
       });
     });
-    
+
     if (uses.length === 0) {
       html += '<p style="color: #808080">No resources found</p>';
     } else {
@@ -2456,42 +2622,42 @@ async function buildResourceDependencies(resourceData, secure = false) {
   } catch (error) {
     html += `<div class="alert alert-warning">Error loading dependencies: ${escapeHtml(error.message)}</div>`;
   }
-  
+
   return html;
 }
 async function buildExtensionExamplesSection(resourceUrl) {
   let html = '<hr/><h3>Examples of Use for Extension</h3>';
-  
+
   try {
     if (!xigDb) {
       html += '<p style="color: #808080"><em>Database not available</em></p>';
       return html;
     }
-    
+
     // Query to find extension examples using the resource URL
     const extensionExamplesQuery = `
-      SELECT eu.Url, eu.Name, eu.Version 
-      FROM ExtensionDefns ed
-      JOIN ExtensionUsages eusage ON ed.ExtensionDefnKey = eusage.ExtensionDefnKey
-      JOIN ExtensionUsers eu ON eusage.ExtensionUserKey = eu.ExtensionUserKey
-      WHERE ed.Url = ?
-      ORDER BY eu.Name
+        SELECT eu.Url, eu.Name, eu.Version
+        FROM ExtensionDefns ed
+                 JOIN ExtensionUsages eusage ON ed.ExtensionDefnKey = eusage.ExtensionDefnKey
+                 JOIN ExtensionUsers eu ON eusage.ExtensionUserKey = eu.ExtensionUserKey
+        WHERE ed.Url = ?
+        ORDER BY eu.Name
     `;
-    
+
     const extensionExamples = await new Promise((resolve, reject) => {
       xigDb.all(extensionExamplesQuery, [resourceUrl], (err, rows) => {
         if (err) reject(err);
         else resolve(rows || []);
       });
     });
-    
+
     if (extensionExamples.length === 0) {
       html += '<p style="color: #808080">No extension usage examples found</p>';
     } else {
       html += '<table class="table table-bordered table-striped">';
       html += '<thead><tr><th>Resource</th><th>Version</th></tr></thead>';
       html += '<tbody>';
-      
+
       extensionExamples.forEach(example => {
         const versionMap = { 1: 'R2', 2: 'R2B', 3: 'R3', 4: 'R4', 5: 'R4B', 6: 'R5' };
         const versionName = example.Version ? (versionMap[example.Version] || example.Version.toString()) : '';
@@ -2501,23 +2667,23 @@ async function buildExtensionExamplesSection(resourceUrl) {
         html += `<td>${escapeHtml(versionName)}</td>`;
         html += '</tr>';
       });
-      
+
       html += '</tbody>';
       html += '</table>';
     }
-    
+
   } catch (error) {
     xigLog.error(`Error loading extension examples: ${error.message}`);
     html += `<div class="alert alert-warning">Error loading extension examples: ${escapeHtml(error.message)}</div>`;
   }
-  
+
   return html;
 }
 // Helper function to build dependency tables
 function buildDependencyTable(dependencies) {
   let html = '';
   let currentType = '';
-  
+
   dependencies.forEach(dep => {
     if (currentType !== dep.ResourceType) {
       if (currentType !== '') {
@@ -2527,13 +2693,13 @@ function buildDependencyTable(dependencies) {
       html += '<table class="table table-bordered">';
       html += `<tr style="background-color: #eeeeee"><td colspan="2"><strong>${escapeHtml(currentType)}</strong></td></tr>`;
     }
-    
+
     html += '<tr>';
-    
+
     // Build the link to the resource detail page
     const packagePid = dep.PID.replace(/#/g, '|'); // Convert # to | for URL
     const resourceUrl = `/xig/resource/${encodeURIComponent(packagePid)}/${encodeURIComponent(dep.ResourceType)}/${encodeURIComponent(dep.Id)}`;
-    
+
     // Resource link
     if (dep.Url && dep.Url !== '') {
       // Remove common prefix if present
@@ -2548,48 +2714,48 @@ function buildDependencyTable(dependencies) {
       const displayId = dep.ResourceType + '/' + dep.Id;
       html += `<td><a href="${resourceUrl}">${escapeHtml(displayId)}</a></td>`;
     }
-    
+
     // Title or Name
     const displayName = dep.Title || dep.Name || '';
     html += `<td>${escapeHtml(displayName)}</td>`;
-    
+
     html += '</tr>';
   });
-  
+
   if (currentType !== '') {
     html += '</table>';
   }
-  
+
   return html;
 }
 
 // Build narrative section (simplified - full implementation would need BLOB decompression)
 async function buildResourceNarrative(resourceKey, packageObj) {
   let html = '';
-  
+
   try {
     html += '<hr/><h3>Narrative</h3>';
-    
+
     if (!xigDb) {
       html += '<p style="color: #808080"><em>Database not available</em></p>';
       return html;
     }
-    
+
     // Get the BLOB data from Contents table
     const contentsQuery = 'SELECT Json FROM Contents WHERE ResourceKey = ?';
-    
+
     const blobData = await new Promise((resolve, reject) => {
       xigDb.get(contentsQuery, [resourceKey], (err, row) => {
         if (err) reject(err);
         else resolve(row);
       });
     });
-    
+
     if (!blobData || !blobData.Json) {
       html += '<p style="color: #808080"><em>No content data available</em></p>';
       return html;
     }
-    
+
     // Decompress the GZIP data
     const decompressedData = await new Promise((resolve, reject) => {
       zlib.gunzip(blobData.Json, (err, result) => {
@@ -2597,61 +2763,61 @@ async function buildResourceNarrative(resourceKey, packageObj) {
         else resolve(result);
       });
     });
-    
+
     // Parse as JSON
     const jsonData = JSON.parse(decompressedData.toString('utf8'));
-    
+
     // Extract narrative from text.div
     if (jsonData.text && jsonData.text.div) {
       let narrativeDiv = jsonData.text.div;
-      
+
       // Fix narrative links to be relative to the package canonical base
       if (packageObj && packageObj.Web) {
         const baseUrl = packageObj.Web.substring(0, packageObj.Web.lastIndexOf('/'));
         narrativeDiv = fixNarrative(narrativeDiv, baseUrl);
       }
-      
+
       html += '<p style="color: maroon">Note: links and images are rebased to the (stated) source</p>';
       html += narrativeDiv;
     } else {
       html += '<p style="color: #808080"><em>No narrative content found in resource</em></p>';
     }
-    
+
   } catch (error) {
     xigLog.error(`Error loading narrative: ${error.message}`);
     html += `<div class="alert alert-warning">Error loading narrative: ${escapeHtml(error.message)}</div>`;
   }
-  
+
   return html;
 }
 
 // Build source section (simplified - full implementation would need BLOB decompression)
 async function buildResourceSource(resourceKey) {
   let html = '';
-  
+
   try {
     html += '<hr/><h3>Source1</h3>';
-    
+
     if (!xigDb) {
       html += '<p style="color: #808080"><em>Database not available</em></p>';
       return html;
     }
-    
+
     // Get the BLOB data from Contents table
     const contentsQuery = 'SELECT Json FROM Contents WHERE ResourceKey = ?';
-    
+
     const blobData = await new Promise((resolve, reject) => {
       xigDb.get(contentsQuery, [resourceKey], (err, row) => {
         if (err) reject(err);
         else resolve(row);
       });
     });
-    
+
     if (!blobData || !blobData.Json) {
       html += '<p style="color: #808080"><em>No content data available</em></p>';
       return html;
     }
-    
+
     // Decompress the GZIP data
     const decompressedData = await new Promise((resolve, reject) => {
       zlib.gunzip(blobData.Json, (err, result) => {
@@ -2659,23 +2825,23 @@ async function buildResourceSource(resourceKey) {
         else resolve(result);
       });
     });
-    
+
     // Parse and format as JSON
     const jsonData = JSON.parse(decompressedData.toString('utf8'));
     if (jsonData.text && jsonData.text.div) {
       jsonData.text.div = "<!-- snip (see above) -->";
     }
     const formattedJson = JSON.stringify(jsonData, null, 2);
-    
+
     html += '<pre>';
     html += escapeHtml(formattedJson);
     html += '</pre>';
-    
+
   } catch (error) {
     xigLog.error(`Error loading source: ${error.message}`);
     html += `<div class="alert alert-warning">Error loading source: ${escapeHtml(error.message)}</div>`;
   }
-  
+
   return html;
 }
 
@@ -2683,14 +2849,14 @@ function fixNarrative(narrativeHtml, baseUrl) {
   if (!narrativeHtml || !baseUrl) {
     return narrativeHtml;
   }
-  
+
   try {
     // Fix relative image sources (but not http/https/data: URLs)
     let fixed = narrativeHtml.replace(/src="(?!http|https|data:|#)([^"]+)"/g, `src="${baseUrl}/$1"`);
-    
+
     // Fix relative links (but not http/https/data:/mailto:/# URLs)
     fixed = fixed.replace(/href="(?!http|https|data:|mailto:|#)([^"]+)"/g, `href="${baseUrl}/$1"`);
-    
+
     return fixed;
   } catch (error) {
     xigLog.error(`Error fixing narrative links: ${error.message}`);
@@ -2700,30 +2866,43 @@ function fixNarrative(narrativeHtml, baseUrl) {
 
 // JSON endpoints
 router.get('/status', async (req, res) => {
-  countRequest();
+  const start = Date.now();;
+  try {
 
   try {
     const dbInfo = await getDatabaseInfo();
-    res.json({
+    await res.json({
       status: 'OK',
       database: dbInfo,
+      databaseAge: getDatabaseAgeInfo(),
       downloadUrl: XIG_DB_URL,
       localPath: XIG_DB_PATH,
-      cache: getCacheStats()
+      cache: getCacheStats(),
+      updateInProgress: updateInProgress,
+      lastUpdateAttempt: getLastUpdateAttempt(),
+      updateHistory: getUpdateHistory()
     });
   } catch (error) {
     res.status(500).json({
       status: 'ERROR',
       error: error.message,
-      cache: getCacheStats()
+      cache: getCacheStats(),
+      updateHistory: getUpdateHistory()
     });
+  }
+  } finally {
+    this.stats.countRequest('stats', Date.now() - start);
   }
 });
 
-router.get('/cache', (req, res) => {
-  countRequest();
+router.get('/cache', async (req, res) => {
+  const start = Date.now();;
+  try {
 
-  res.json(getCacheStats());
+    await res.json(getCacheStats());
+  } finally {
+    this.stats.countRequest('cacheStats', Date.now() - start);
+  }
 });
 
 router.post('/update', async (req, res) => {
@@ -2749,16 +2928,16 @@ async function initializeXigModule(stats) {
   try {
     globalStats = stats;
     loadTemplate();
-    
+
     await initializeDatabase();
-    
+
     if (!fs.existsSync(XIG_DB_PATH)) {
       xigLog.info('No existing XIG database found, triggering initial download');
       setTimeout(() => {
         updateXigDatabase();
       }, 5000);
     }
-    
+
     // Check if auto-update is enabled
     // Note: This assumes we're called only when XIG is enabled
     cron.schedule('0 2 * * *', () => {
@@ -2796,7 +2975,7 @@ module.exports = {
   getDatabaseInfo,
   shutdown,
   initializeXigModule,
-  
+
   // Cache functions
   getCachedValue,
   getCachedTable,
@@ -2806,13 +2985,13 @@ module.exports = {
   getCacheStats,
   loadConfigCache,
   getMetadata,
-  
+
   // Template functions
   renderPage,
   buildContentHtml,
   escapeHtml,
   loadTemplate,
-  
+
   // Control panel functions
   buildControlPanel,
   buildVersionBar,
@@ -2822,12 +3001,12 @@ module.exports = {
   buildBaseUrl,
   buildPageHeading,
   capitalizeFirst,
-  
+
   // Form building functions
   buildAdditionalForm,
   makeSelect,
   getCachedMap,
-  
+
   // Resource table functions
   buildResourceTable,
   buildPaginationControls,
@@ -2849,7 +3028,7 @@ module.exports = {
   buildVersionLinkUrl,
   buildAuthorityLinkUrl,
   buildRealmLinkUrl,
-  
+
   // SQL filter functions
   buildSqlFilter,
   buildResourceListQuery,
@@ -2857,13 +3036,15 @@ module.exports = {
   sqlEscapeString,
   hasTerminologySource,
   gatherPageStatistics,
-  
+
   // Statistics functions
   getDatabaseTableCounts,
   getRequestStats,
   getDatabaseAgeInfo,
   buildStatsTable,
-  
+  getUpdateHistory,
+  getLastUpdateAttempt,
+
   // Event emitter
   cacheEmitter
 };

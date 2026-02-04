@@ -357,7 +357,8 @@ class RegistryModule {
    * Handle main registry page
    */
   async handleMainPage(req, res) {
-    this.countRequest();
+    const start = Date.now();
+    try {
 
     const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
     
@@ -408,6 +409,9 @@ class RegistryModule {
     } catch (error) {
       this.logger.error('Error rendering registry page:', error);
       htmlServer.sendErrorResponse(res, 'registry', error);
+    }
+    } finally {
+      this.stats.countRequest('home', Date.now() - start);
     }
   }
 
@@ -965,124 +969,128 @@ class RegistryModule {
    * Serves a form when accessed directly from a browser
    */
   handleResolveEndpoint(req, res) {
-    this.countRequest();
-
+    const start = Date.now();
     try {
-      const params = this._normalizeQueryParams(req.query);
-      const { fhirVersion, url, valueSet, usage } = params;
 
-      // Convert authoritativeOnly to boolean
-      const authoritativeOnly = params.authoritativeOnly === 'true';
+      try {
+        const params = this._normalizeQueryParams(req.query);
+        const {fhirVersion, url, valueSet, usage} = params;
 
-      let cleanUrl = url == null ? null : url.split('|')[0];
-      let cleanVS = valueSet == null ? null : valueSet.split('|')[0];
+        // Convert authoritativeOnly to boolean
+        const authoritativeOnly = params.authoritativeOnly === 'true';
 
-      // Validate URL parameters if provided
-      if (cleanUrl && !this._isValidUrl(cleanUrl)) {
-        return res.status(400).json({ error: 'Invalid code system URL format' });
-      }
+        let cleanUrl = url == null ? null : url.split('|')[0];
+        let cleanVS = valueSet == null ? null : valueSet.split('|')[0];
 
-      if (valueSet && !this._isValidUrl(cleanVS)) {
-        return res.status(400).json({ error: 'Invalid value set URL format' });
-      }
-
-      // Check if this is a browser request (based on Accept header)
-      const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
-      const hasRequiredParams = fhirVersion && (url || valueSet);
-
-      // If it's a browser and missing required params, show the form
-      if (acceptsHtml && !hasRequiredParams) {
-        // Use the HTML template system
-        try {
-          const startTime = Date.now();
-
-          // Load template if needed
-          if (!htmlServer.hasTemplate('registry')) {
-            const templatePath = path.join(__dirname, 'registry-template.html');
-            htmlServer.loadTemplate('registry', templatePath);
-          }
-
-          const content = this.buildResolveFormContent(req.query);
-          const stats = this.api.getStatistics();
-          stats.processingTime = Date.now() - startTime;
-
-          const html = htmlServer.renderPage(
-            'registry',
-            'FHIR Terminology Server Resolver',
-            content,
-            stats
-          );
-
-          res.setHeader('Content-Type', 'text/html');
-          return res.send(html);
-        } catch (error) {
-          this.logger.error('Error rendering form page:', error);
-          return res.send(this.buildStandaloneResolveForm(req.query));
+        // Validate URL parameters if provided
+        if (cleanUrl && !this._isValidUrl(cleanUrl)) {
+          return res.status(400).json({error: 'Invalid code system URL format'});
         }
-      }
 
-      // Otherwise, process the API request normally
-      let result, matches;
-
-      // Validate required parameters
-      if (!fhirVersion) {
-        return res.status(400).json({ error: 'A FHIR version is required' });
-      }
-
-      if (!url && !valueSet) {
-        return res.status(400).json({ error: 'Either url or valueSet parameter is required' });
-      }
-
-      if (valueSet) {
-        // Value set resolve
-        const resolveResult = this.api.resolveValueSet(fhirVersion, valueSet, authoritativeOnly, usage);
-        result = resolveResult.result;
-        matches = resolveResult.matches;
-        this.logger.info(`Resolved ValueSet ${valueSet} for FHIR ${fhirVersion} (usage=${usage}): ${matches}`);
-      } else {
-        // Code system resolve
-        const resolveResult = this.api.resolveCodeSystem(fhirVersion, url, authoritativeOnly, usage);
-        result = resolveResult.result;
-        matches = resolveResult.matches;
-        this.logger.info(`Resolved CodeSystem ${url} for FHIR ${fhirVersion} (usage=${usage}): ${matches}`);
-      }
-
-      // If only authoritative servers are requested, filter results
-      if (authoritativeOnly === 'true' && result) {
-        result.candidates = [];
-      }
-      if (acceptsHtml) {
-        try {
-          const startTime = Date.now();
-
-          // Load template if needed
-          if (!htmlServer.hasTemplate('registry')) {
-            const templatePath = path.join(__dirname, 'registry-template.html');
-            htmlServer.loadTemplate('registry', templatePath);
-          }
-
-          const content = this.buildResolveResultContent(result, fhirVersion, url || valueSet, usage);
-          const stats = this.api.getStatistics();
-          stats.processingTime = Date.now() - startTime;
-
-          const html = htmlServer.renderPage(
-            'registry',
-            'FHIR Terminology Server Resolution Results',
-            content,
-            stats
-          );
-
-          res.setHeader('Content-Type', 'text/html');
-          return res.send(html);
-        } catch (error) {
-          this.logger.error('Error rendering resolve result page:', error);
-          // Fall back to JSON if template rendering fails
+        if (valueSet && !this._isValidUrl(cleanVS)) {
+          return res.status(400).json({error: 'Invalid value set URL format'});
         }
+
+        // Check if this is a browser request (based on Accept header)
+        const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
+        const hasRequiredParams = fhirVersion && (url || valueSet);
+
+        // If it's a browser and missing required params, show the form
+        if (acceptsHtml && !hasRequiredParams) {
+          // Use the HTML template system
+          try {
+            const startTime = Date.now();
+
+            // Load template if needed
+            if (!htmlServer.hasTemplate('registry')) {
+              const templatePath = path.join(__dirname, 'registry-template.html');
+              htmlServer.loadTemplate('registry', templatePath);
+            }
+
+            const content = this.buildResolveFormContent(req.query);
+            const stats = this.api.getStatistics();
+            stats.processingTime = Date.now() - startTime;
+
+            const html = htmlServer.renderPage(
+              'registry',
+              'FHIR Terminology Server Resolver',
+              content,
+              stats
+            );
+
+            res.setHeader('Content-Type', 'text/html');
+            return res.send(html);
+          } catch (error) {
+            this.logger.error('Error rendering form page:', error);
+            return res.send(this.buildStandaloneResolveForm(req.query));
+          }
+        }
+
+        // Otherwise, process the API request normally
+        let result, matches;
+
+        // Validate required parameters
+        if (!fhirVersion) {
+          return res.status(400).json({error: 'A FHIR version is required'});
+        }
+
+        if (!url && !valueSet) {
+          return res.status(400).json({error: 'Either url or valueSet parameter is required'});
+        }
+
+        if (valueSet) {
+          // Value set resolve
+          const resolveResult = this.api.resolveValueSet(fhirVersion, valueSet, authoritativeOnly, usage);
+          result = resolveResult.result;
+          matches = resolveResult.matches;
+          this.logger.info(`Resolved ValueSet ${valueSet} for FHIR ${fhirVersion} (usage=${usage}): ${matches}`);
+        } else {
+          // Code system resolve
+          const resolveResult = this.api.resolveCodeSystem(fhirVersion, url, authoritativeOnly, usage);
+          result = resolveResult.result;
+          matches = resolveResult.matches;
+          this.logger.info(`Resolved CodeSystem ${url} for FHIR ${fhirVersion} (usage=${usage}): ${matches}`);
+        }
+
+        // If only authoritative servers are requested, filter results
+        if (authoritativeOnly === 'true' && result) {
+          result.candidates = [];
+        }
+        if (acceptsHtml) {
+          try {
+            const startTime = Date.now();
+
+            // Load template if needed
+            if (!htmlServer.hasTemplate('registry')) {
+              const templatePath = path.join(__dirname, 'registry-template.html');
+              htmlServer.loadTemplate('registry', templatePath);
+            }
+
+            const content = this.buildResolveResultContent(result, fhirVersion, url || valueSet, usage);
+            const stats = this.api.getStatistics();
+            stats.processingTime = Date.now() - startTime;
+
+            const html = htmlServer.renderPage(
+              'registry',
+              'FHIR Terminology Server Resolution Results',
+              content,
+              stats
+            );
+
+            res.setHeader('Content-Type', 'text/html');
+            return res.send(html);
+          } catch (error) {
+            this.logger.error('Error rendering resolve result page:', error);
+            // Fall back to JSON if template rendering fails
+          }
+        }
+        res.json(result);
+      } catch (error) {
+        this.logger.error('Error in resolve endpoint:', error);
+        res.status(400).json({error: error.message});
       }
-      res.json(result);
-    } catch (error) {
-      this.logger.error('Error in resolve endpoint:', error);
-      res.status(400).json({ error: error.message });
+    } finally {
+      this.stats.countRequest('resolve', Date.now() - start);
     }
   }
 
@@ -1276,63 +1284,67 @@ class RegistryModule {
   }
 
   handleLogEndpoint(req, res) {
-    this.countRequest();
-
+    const start = Date.now();
     try {
-      const params = this._normalizeQueryParams(req.query);
-      const requestedLimit = parseInt(params.limit, 10);
-      const limit = isNaN(requestedLimit) ? 100 : Math.min(requestedLimit, 1000);
 
-      // Get logs from crawler
-      const logs = this.crawler.getLogs(limit);
+      try {
+        const params = this._normalizeQueryParams(req.query);
+        const requestedLimit = parseInt(params.limit, 10);
+        const limit = isNaN(requestedLimit) ? 100 : Math.min(requestedLimit, 1000);
 
-      // Determine response format based on Accept header
-      const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
+        // Get logs from crawler
+        const logs = this.crawler.getLogs(limit);
 
-      if (acceptsHtml) {
-        try {
-          const startTime = Date.now();
+        // Determine response format based on Accept header
+        const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
 
-          // Load template if needed
-          if (!htmlServer.hasTemplate('registry')) {
-            const templatePath = path.join(__dirname, 'registry-template.html');
-            htmlServer.loadTemplate('registry', templatePath);
+        if (acceptsHtml) {
+          try {
+            const startTime = Date.now();
+
+            // Load template if needed
+            if (!htmlServer.hasTemplate('registry')) {
+              const templatePath = path.join(__dirname, 'registry-template.html');
+              htmlServer.loadTemplate('registry', templatePath);
+            }
+
+            const content = this.buildLogContent(logs);
+            const stats = this.api.getStatistics();
+            stats.processingTime = Date.now() - startTime;
+
+            const html = htmlServer.renderPage(
+              'registry',
+              'FHIR Terminology Server Registry - Logs',
+              content,
+              stats
+            );
+
+            res.setHeader('Content-Type', 'text/html');
+            res.send(html);
+          } catch (error) {
+            this.logger.error('Error rendering log page:', error);
+            res.status(500).send(`<pre>Error rendering log page: ${error.message}</pre>`);
           }
-
-          const content = this.buildLogContent(logs);
-          const stats = this.api.getStatistics();
-          stats.processingTime = Date.now() - startTime;
-
-          const html = htmlServer.renderPage(
-            'registry',
-            'FHIR Terminology Server Registry - Logs',
-            content,
-            stats
-          );
-
-          res.setHeader('Content-Type', 'text/html');
-          res.send(html);
-        } catch (error) {
-          this.logger.error('Error rendering log page:', error);
-          res.status(500).send(`<pre>Error rendering log page: ${error.message}</pre>`);
+        } else {
+          // Return JSON logs
+          res.json({
+            count: logs.length,
+            logs: logs
+          });
         }
-      } else {
-        // Return JSON logs
-        res.json({
-          count: logs.length,
-          logs: logs
-        });
+      } catch (error) {
+        this.logger.error('Error in log endpoint:', error);
+        res.status(500).json({error: error.message});
       }
-    } catch (error) {
-      this.logger.error('Error in log endpoint:', error);
-      res.status(500).json({ error: error.message });
+    } finally {
+      this.stats.countRequest('log', Date.now() - start);
     }
   }
 
   /**
    * Build log content for template
    * @param {Array} logs - Array of log entries
-   * @returns {string} HTML content
+   * @retucountRequestrns {string} HTML content
    */
   buildLogContent(logs) {
     let html = '';
@@ -1377,10 +1389,6 @@ class RegistryModule {
     html += '</pre>';
 
     return html;
-  }
-
-  countRequest() {
-    this.stats.requestCount++;
   }
 }
 

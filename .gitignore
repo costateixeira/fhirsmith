@@ -43,3 +43,5 @@ data/bin/validator_cli.jar.version
 tx/tests/test-cases-summary.txt
 
 .idea/
+
+bin/validator_cli.jar.version

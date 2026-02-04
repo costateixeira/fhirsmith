@@ -31,6 +31,11 @@ class AbstractCodeSystemProvider {
   async listCodeSystems(fhirVersion, context) {
     throw new Error('listCodeSystems must be implemented by AbstractCodeSystemProvider subclass');
   }
+
+  async close() {
+
+  }
+
 }
 
 module.exports = {

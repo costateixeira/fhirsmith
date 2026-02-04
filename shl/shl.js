@@ -131,17 +131,16 @@ class SHLModule {
 
   // Body validation middleware
   validateJsonBody(requiredFields = [], optionalFields = []) {
-    this.countRequest();
     return (req, res, next) => {
       try {
         if (!req.body || typeof req.body !== 'object') {
-          return res.status(400).json({ error: 'Request body must be JSON object' });
+          return res.status(400).json({error: 'Request body must be JSON object'});
         }
 
         // Check for required fields
         for (const field of requiredFields) {
           if (req.body[field] === undefined || req.body[field] === null) {
-            return res.status(400).json({ error: `Missing required field: ${field}` });
+            return res.status(400).json({error: `Missing required field: ${field}`});
           }
         }
 
@@ -149,28 +148,28 @@ class SHLModule {
         const allowedFields = [...requiredFields, ...optionalFields];
         for (const [key, value] of Object.entries(req.body)) {
           if (!allowedFields.includes(key)) {
-            return res.status(400).json({ error: `Unknown field: ${key}` });
+            return res.status(400).json({error: `Unknown field: ${key}`});
           }
 
           // Basic type validation
           if (key === 'vhl' && typeof value !== 'boolean') {
-            return res.status(400).json({ error: 'vhl must be boolean' });
+            return res.status(400).json({error: 'vhl must be boolean'});
           }
-          
+
           if ((key === 'password' || key === 'pword') && typeof value !== 'string') {
-            return res.status(400).json({ error: `${key} must be string` });
+            return res.status(400).json({error: `${key} must be string`});
           }
-          
+
           if (key === 'days') {
             const daysNum = typeof value === 'string' ? parseInt(value, 10) : value;
             if (isNaN(daysNum) || daysNum < 1 || daysNum > 365) {
-              return res.status(400).json({ error: 'days must be between 1 and 365' });
+              return res.status(400).json({error: 'days must be between 1 and 365'});
             }
             req.body[key] = daysNum; // Normalize to number
           }
-          
+
           if (key === 'files' && !Array.isArray(value)) {
-            return res.status(400).json({ error: 'files must be array' });
+            return res.status(400).json({error: 'files must be array'});
           }
 
           // String length limits
@@ -185,10 +184,10 @@ class SHLModule {
               recipient: 100,
               embeddedLengthMax: 10
             };
-            
+
             if (maxLengths[key] && value.length > maxLengths[key]) {
-              return res.status(400).json({ 
-                error: `${key} too long (max ${maxLengths[key]})` 
+              return res.status(400).json({
+                error: `${key} too long (max ${maxLengths[key]})`
               });
             }
           }
@@ -197,7 +196,7 @@ class SHLModule {
         next();
       } catch (error) {
         shlLog.error('Body validation error:', error);
-        res.status(500).json({ error: 'Request validation failed' });
+        res.status(500).json({error: 'Request validation failed'});
       }
     };
   }
@@ -571,326 +570,350 @@ class SHLModule {
 
     // FHIR Validation endpoint
     this.router.post('/validate', this.validateQueryParams(validationParams), async (req, res) => {
-      this.countRequest();
-      if (!this.fhirValidator || !this.fhirValidator.isRunning()) {
-        return res.status(503).json({
-          resourceType: 'OperationOutcome',
-          issue: [{
-            severity: 'error',
-            code: 'exception',
-            diagnostics: 'FHIR Validator service is not available'
-          }]
-        });
-      }
-      
+      const start = Date.now();
       try {
-        const options = {};
-        
-        if (req.query.profiles) {
-          options.profiles = req.query.profiles.split(',');
+        if (!this.fhirValidator || !this.fhirValidator.isRunning()) {
+          return res.status(503).json({
+            resourceType: 'OperationOutcome',
+            issue: [{
+              severity: 'error',
+              code: 'exception',
+              diagnostics: 'FHIR Validator service is not available'
+            }]
+          });
         }
-        if (req.query.resourceIdRule) {
-          options.resourceIdRule = req.query.resourceIdRule;
-        }
-        if (req.query.anyExtensionsAllowed !== undefined) {
-          options.anyExtensionsAllowed = req.query.anyExtensionsAllowed === 'true';
-        }
-        if (req.query.bpWarnings) {
-          options.bpWarnings = req.query.bpWarnings;
-        }
-        if (req.query.displayOption) {
-          options.displayOption = req.query.displayOption;
-        }
-        shlLog.info("validate! (4)");
 
-        let resource;
-        if (Buffer.isBuffer(req.body)) {
-          resource = req.body;
-        } else if (typeof req.body === 'string') {
-          resource = req.body;
-        } else {
-          resource = JSON.stringify(req.body);
+        try {
+          const options = {};
+
+          if (req.query.profiles) {
+            options.profiles = req.query.profiles.split(',');
+          }
+          if (req.query.resourceIdRule) {
+            options.resourceIdRule = req.query.resourceIdRule;
+          }
+          if (req.query.anyExtensionsAllowed !== undefined) {
+            options.anyExtensionsAllowed = req.query.anyExtensionsAllowed === 'true';
+          }
+          if (req.query.bpWarnings) {
+            options.bpWarnings = req.query.bpWarnings;
+          }
+          if (req.query.displayOption) {
+            options.displayOption = req.query.displayOption;
+          }
+          shlLog.info("validate! (4)");
+
+          let resource;
+          if (Buffer.isBuffer(req.body)) {
+            resource = req.body;
+          } else if (typeof req.body === 'string') {
+            resource = req.body;
+          } else {
+            resource = JSON.stringify(req.body);
+          }
+          shlLog.info("validate! (5)");
+
+          const operationOutcome = await this.fhirValidator.validate(resource, options);
+          shlLog.info("validate! (6)");
+
+          res.json(operationOutcome);
+          shlLog.info("validate! (7)");
+
+        } catch (error) {
+          shlLog.error('Validation error:', error);
+          res.status(500).json({
+            resourceType: 'OperationOutcome',
+            issue: [{
+              severity: 'error',
+              code: 'exception',
+              diagnostics: `Validation failed: ${error.message}`
+            }]
+          });
         }
-        shlLog.info("validate! (5)");
-
-        const operationOutcome = await this.fhirValidator.validate(resource, options);
-        shlLog.info("validate! (6)");
-
-        res.json(operationOutcome);
-        shlLog.info("validate! (7)");
-
-      } catch (error) {
-        shlLog.error('Validation error:', error);
-        res.status(500).json({
-          resourceType: 'OperationOutcome',
-          issue: [{
-            severity: 'error',
-            code: 'exception',
-            diagnostics: `Validation failed: ${error.message}`
-          }]
-        });
+      } finally {
+        this.stats.countRequest('validate', Date.now() - start);
       }
     });
 
     // Validator status endpoint
     this.router.get('/validate/status', (req, res) => {
-      this.countRequest();
-      const status = {
-        validatorRunning: this.fhirValidator ? this.fhirValidator.isRunning() : false,
-        validatorInitialized: this.fhirValidator !== null
-      };
-      
-      res.json(status);
+      const start = Date.now();
+      try {
+        const status = {
+          validatorRunning: this.fhirValidator ? this.fhirValidator.isRunning() : false,
+          validatorInitialized: this.fhirValidator !== null
+        };
+
+        res.json(status);
+      } finally {
+        this.stats.countRequest('status', Date.now() - start);
+      }
     });
 
     // Load additional IG endpoint
     this.router.post('/validate/loadig', this.validateJsonBody(['packageId', 'version']), async (req, res) => {
-      this.countRequest();
-      if (!this.fhirValidator || !this.fhirValidator.isRunning()) {
-        return res.status(503).json({
-          resourceType: 'OperationOutcome',
-          issue: [{
-            severity: 'error',
-            code: 'exception',
-            diagnostics: 'FHIR Validator service is not available'
-          }]
-        });
-      }
-      
-      const { packageId, version } = req.body;
-      
-      if (!packageId || !version) {
-        return res.status(400).json({
-          resourceType: 'OperationOutcome',
-          issue: [{
-            severity: 'error',
-            code: 'required',
-            diagnostics: 'packageId and version are required'
-          }]
-        });
-      }
-      
+      const start = Date.now();
       try {
-        const result = await this.fhirValidator.loadIG(packageId, version);
-        res.json(result);
-      } catch (error) {
-        shlLog.error('Load IG error:', error);
-        res.status(500).json({
-          resourceType: 'OperationOutcome',
-          issue: [{
-            severity: 'error',
-            code: 'exception',
-            diagnostics: `Failed to load IG: ${error.message}`
-          }]
-        });
+        if (!this.fhirValidator || !this.fhirValidator.isRunning()) {
+          return res.status(503).json({
+            resourceType: 'OperationOutcome',
+            issue: [{
+              severity: 'error',
+              code: 'exception',
+              diagnostics: 'FHIR Validator service is not available'
+            }]
+          });
+        }
+
+        const {packageId, version} = req.body;
+
+        if (!packageId || !version) {
+          return res.status(400).json({
+            resourceType: 'OperationOutcome',
+            issue: [{
+              severity: 'error',
+              code: 'required',
+              diagnostics: 'packageId and version are required'
+            }]
+          });
+        }
+
+        try {
+          const result = await this.fhirValidator.loadIG(packageId, version);
+          res.json(result);
+        } catch (error) {
+          shlLog.error('Load IG error:', error);
+          res.status(500).json({
+            resourceType: 'OperationOutcome',
+            issue: [{
+              severity: 'error',
+              code: 'exception',
+              diagnostics: `Failed to load IG: ${error.message}`
+            }]
+          });
+        }
+      } finally {
+        this.stats.countRequest('loadIG', Date.now() - start);
       }
     });
 
     // SHL create endpoint
     this.router.post('/create', this.validateJsonBody(['vhl', 'password', 'days']), (req, res) => {
-      this.countRequest();
-      const { vhl, password, days } = req.body;
-      
-      if (typeof vhl !== 'boolean' || !password) {
-        return res.status(400).json({
-          error: 'Invalid request. Required: vhl (boolean), password (string), days (number or string)'
-        });
-      }
-      
-      let daysNumber;
-      if (typeof days === 'string') {
-        daysNumber = parseInt(days, 10);
-        if (isNaN(daysNumber)) {
+      const start = Date.now();
+      try {
+        const {vhl, password, days} = req.body;
+
+        if (typeof vhl !== 'boolean' || !password) {
           return res.status(400).json({
-            error: 'days must be a valid number or numeric string'
+            error: 'Invalid request. Required: vhl (boolean), password (string), days (number or string)'
           });
         }
-      } else if (typeof days === 'number') {
-        daysNumber = days;
-      } else {
-        return res.status(400).json({
-          error: 'days is required and must be a number or numeric string'
-        });
-      }
-      
-      if (password !== this.config.password) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-      
-      const uuid = this.generateUUID();
-      const newPassword = this.generateUUID();
-      
-      const expiryDate = new Date();
-      expiryDate.setDate(expiryDate.getDate() + daysNumber);
-      const expiryDateString = expiryDate.toISOString();
-      
-      const insertSql = 'INSERT INTO SHL (uuid, vhl, expires_at, password) VALUES (?, ?, ?, ?)';
-      
-      this.db.run(insertSql, [uuid, vhl, expiryDateString, newPassword], function(err) {
-        if (err) {
-          return res.status(500).json({ error: 'Failed to create SHL entry: ' + err.message });
+
+        let daysNumber;
+        if (typeof days === 'string') {
+          daysNumber = parseInt(days, 10);
+          if (isNaN(daysNumber)) {
+            return res.status(400).json({
+              error: 'days must be a valid number or numeric string'
+            });
+          }
+        } else if (typeof days === 'number') {
+          daysNumber = days;
+        } else {
+          return res.status(400).json({
+            error: 'days is required and must be a number or numeric string'
+          });
         }
-        
-        const host = req.get('host') || 'localhost:3000';
-        
-        res.status(201).json({
-          uuid: uuid,
-          pword: newPassword,
-          link: `https://${host}/shl/access/${uuid}`
+
+        if (password !== this.config.password) {
+          return res.status(401).json({error: 'Unauthorized'});
+        }
+
+        const uuid = this.generateUUID();
+        const newPassword = this.generateUUID();
+
+        const expiryDate = new Date();
+        expiryDate.setDate(expiryDate.getDate() + daysNumber);
+        const expiryDateString = expiryDate.toISOString();
+
+        const insertSql = 'INSERT INTO SHL (uuid, vhl, expires_at, password) VALUES (?, ?, ?, ?)';
+
+        this.db.run(insertSql, [uuid, vhl, expiryDateString, newPassword], function (err) {
+          if (err) {
+            return res.status(500).json({error: 'Failed to create SHL entry: ' + err.message});
+          }
+
+          const host = req.get('host') || 'localhost:3000';
+
+          res.status(201).json({
+            uuid: uuid,
+            pword: newPassword,
+            link: `https://${host}/shl/access/${uuid}`
+          });
         });
-      });
+      } finally {
+        this.stats.countRequest('create', Date.now() - start);
+      }
     });
 
     // SHL upload endpoint
     this.router.post('/upload', this.validateJsonBody(['uuid', 'pword', 'files']), (req, res) => {
-      this.countRequest();
-      const { uuid, pword, files } = req.body;
-      
-      if (!uuid || !pword || !Array.isArray(files)) {
-        return res.status(400).json({
-          error: 'Invalid request. Required: uuid (string), pword (string), files (array)'
-        });
-      }
-      
-      for (const f of files) {
-        if (!f.cnt || !f.type) {
+      const start = Date.now();
+      try {
+        const {uuid, pword, files} = req.body;
+
+        if (!uuid || !pword || !Array.isArray(files)) {
           return res.status(400).json({
-            error: 'Invalid file format. Each file must have cnt (base64) and type (mime type)'
+            error: 'Invalid request. Required: uuid (string), pword (string), files (array)'
           });
         }
-      }
-      
-      const checkSHLSql = 'SELECT vhl, password FROM SHL WHERE uuid = ?';
-      
-      this.db.get(checkSHLSql, [uuid], (err, row) => {
-        if (err) {
-          return res.status(500).json({ error: 'Database error' });
-        }
-        
-        if (!row) {
-          return res.status(404).json({ error: 'SHL entry not found' });
-        }
-        
-        if (row.password !== pword) {
-          return res.status(401).json({ error: 'Unauthorized' });
-        }
-        
-        const deleteExistingFilesSql = 'DELETE FROM SHLFiles WHERE shl_uuid = ?';
-        
-        this.db.run(deleteExistingFilesSql, [uuid], (err) => {
-          if (err) {
-            return res.status(500).json({ error: 'Failed to clear existing files' });
+
+        for (const f of files) {
+          if (!f.cnt || !f.type) {
+            return res.status(400).json({
+              error: 'Invalid file format. Each file must have cnt (base64) and type (mime type)'
+            });
           }
-          
-          const insertPromises = files.map((f) => {
-            return new Promise((resolve, reject) => {
-              const fileId = this.generateUUID();
-              const insertFileSql = 'INSERT INTO SHLFiles (id, shl_uuid, cnt, type) VALUES (?, ?, ?, ?)';
-              
-              this.db.run(insertFileSql, [fileId, uuid, f.cnt, f.type], function(err) {
-                if (err) {
-                  reject(err);
-                } else {
-                  resolve();
-                }
+        }
+
+        const checkSHLSql = 'SELECT vhl, password FROM SHL WHERE uuid = ?';
+
+        this.db.get(checkSHLSql, [uuid], (err, row) => {
+          if (err) {
+            return res.status(500).json({error: 'Database error'});
+          }
+
+          if (!row) {
+            return res.status(404).json({error: 'SHL entry not found'});
+          }
+
+          if (row.password !== pword) {
+            return res.status(401).json({error: 'Unauthorized'});
+          }
+
+          const deleteExistingFilesSql = 'DELETE FROM SHLFiles WHERE shl_uuid = ?';
+
+          this.db.run(deleteExistingFilesSql, [uuid], (err) => {
+            if (err) {
+              return res.status(500).json({error: 'Failed to clear existing files'});
+            }
+
+            const insertPromises = files.map((f) => {
+              return new Promise((resolve, reject) => {
+                const fileId = this.generateUUID();
+                const insertFileSql = 'INSERT INTO SHLFiles (id, shl_uuid, cnt, type) VALUES (?, ?, ?, ?)';
+
+                this.db.run(insertFileSql, [fileId, uuid, f.cnt, f.type], function (err) {
+                  if (err) {
+                    reject(err);
+                  } else {
+                    resolve();
+                  }
+                });
               });
             });
+
+            Promise.all(insertPromises)
+              .then(() => {
+                res.json({msg: 'ok'});
+              })
+              .catch((error) => {
+                shlLog.error('File upload error:', error);
+                res.status(500).json({error: 'Failed to upload files'});
+              });
           });
-          
-          Promise.all(insertPromises)
-            .then(() => {
-              res.json({ msg: 'ok' });
-            })
-            .catch((error) => {
-              shlLog.error('File upload error:', error);
-              res.status(500).json({ error: 'Failed to upload files' });
-            });
         });
-      });
+      } finally {
+        this.stats.countRequest('upload', Date.now() - start);
+      }
     });
 
     // Helper function for the shared access logic
     const handleSHLAccess = (req, res) => {
-      this.countRequest();
-      const { uuid } = req.params;
-      
-      let recipient, embeddedLengthMax;
-      
-      if (req.method === 'GET') {
-        recipient = 'anonymous';
-        embeddedLengthMax = undefined;
-      } else {
-        ({ recipient, embeddedLengthMax } = req.body);
-        
-        if (!recipient) {
-          return res.status(400).json({
-            error: 'recipient is required in request body'
-          });
-        }
-      }
-      
-      const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 
-        (req.connection.socket ? req.connection.socket.remoteAddress : null) ||
-        req.headers['x-forwarded-for'] || 'unknown';
-      
-      const checkSHLSql = 'SELECT uuid, vhl FROM SHL WHERE uuid = ? AND expires_at > datetime("now")';
-      
-      this.db.get(checkSHLSql, [uuid], (err, shlRow) => {
-        if (err) {
-          return res.status(500).json({ error: 'Database error' });
-        }
-        
-        if (!shlRow) {
-          return res.status(404).json({ error: 'SHL entry not found or expired' });
-        }
-        
-        const logAccessSql = 'INSERT INTO SHLViews (shl_uuid, recipient, ip_address) VALUES (?, ?, ?)';
-        
-        this.db.run(logAccessSql, [uuid, recipient, clientIP], function(logErr) {
-          if (logErr) {
-            shlLog.error('Failed to log SHL access:', logErr.message);
-          }
-          
-          const getFilesSql = 'SELECT id, cnt, type FROM SHLFiles WHERE shl_uuid = ?';
-          
-          this.db.all(getFilesSql, [uuid], (err, fileRows) => {
-            if (err) {
-              return res.status(500).json({ error: 'Failed to retrieve files' });
-            }
-            
-            const host = req.get('host') || 'localhost:3000';
-            const protocol = req.secure ? 'https' : 'http';
-            const maxLength = embeddedLengthMax ? parseInt(embeddedLengthMax) : undefined;
-            
-            const files = fileRows.map(file => {
-              const fileResponse = {
-                contentType: file.type,
-                location: `${protocol}://${host}/shl/file/${file.id}`
-              };
-              
-              if (maxLength === undefined || file.cnt.length <= maxLength) {
-                fileResponse.embedded = file.cnt;
-              }
-              
-              return fileResponse;
+      const start = Date.now();
+      try {
+        const {uuid} = req.params;
+
+        let recipient, embeddedLengthMax;
+
+        if (req.method === 'GET') {
+          recipient = 'anonymous';
+          embeddedLengthMax = undefined;
+        } else {
+          ({recipient, embeddedLengthMax} = req.body);
+
+          if (!recipient) {
+            return res.status(400).json({
+              error: 'recipient is required in request body'
             });
-            
-            const standardResponse = { files };
-            
-            if (shlRow.vhl && vhlProcessor) {
-              try {
-                const vhlResponse = vhlProcessor.processVHL(host, uuid, standardResponse);
-                res.json(vhlResponse);
-              } catch (vhlErr) {
-                shlLog.error('VHL processing error:', vhlErr.message);
+          }
+        }
+
+        const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress ||
+          (req.connection.socket ? req.connection.socket.remoteAddress : null) ||
+          req.headers['x-forwarded-for'] || 'unknown';
+
+        const checkSHLSql = 'SELECT uuid, vhl FROM SHL WHERE uuid = ? AND expires_at > datetime("now")';
+
+        this.db.get(checkSHLSql, [uuid], (err, shlRow) => {
+          if (err) {
+            return res.status(500).json({error: 'Database error'});
+          }
+
+          if (!shlRow) {
+            return res.status(404).json({error: 'SHL entry not found or expired'});
+          }
+
+          const logAccessSql = 'INSERT INTO SHLViews (shl_uuid, recipient, ip_address) VALUES (?, ?, ?)';
+
+          this.db.run(logAccessSql, [uuid, recipient, clientIP], function (logErr) {
+            if (logErr) {
+              shlLog.error('Failed to log SHL access:', logErr.message);
+            }
+
+            const getFilesSql = 'SELECT id, cnt, type FROM SHLFiles WHERE shl_uuid = ?';
+
+            this.db.all(getFilesSql, [uuid], (err, fileRows) => {
+              if (err) {
+                return res.status(500).json({error: 'Failed to retrieve files'});
+              }
+
+              const host = req.get('host') || 'localhost:3000';
+              const protocol = req.secure ? 'https' : 'http';
+              const maxLength = embeddedLengthMax ? parseInt(embeddedLengthMax) : undefined;
+
+              const files = fileRows.map(file => {
+                const fileResponse = {
+                  contentType: file.type,
+                  location: `${protocol}://${host}/shl/file/${file.id}`
+                };
+
+                if (maxLength === undefined || file.cnt.length <= maxLength) {
+                  fileResponse.embedded = file.cnt;
+                }
+
+                return fileResponse;
+              });
+
+              const standardResponse = {files};
+
+              if (shlRow.vhl && vhlProcessor) {
+                try {
+                  const vhlResponse = vhlProcessor.processVHL(host, uuid, standardResponse);
+                  res.json(vhlResponse);
+                } catch (vhlErr) {
+                  shlLog.error('VHL processing error:', vhlErr.message);
+                  res.json(standardResponse);
+                }
+              } else {
                 res.json(standardResponse);
               }
-            } else {
-              res.json(standardResponse);
-            }
+            });
           });
         });
-      });
+      } finally {
+        this.stats.countRequest('access', Date.now() - start);
+      }
     };
 
     // SHL access endpoint - supports both GET and POST
@@ -899,158 +922,166 @@ class SHLModule {
 
     // SHL file endpoint - serves individual files
     this.router.get('/file/:fileId', (req, res) => {
-      this.countRequest();
-      const { fileId } = req.params;
-      
-      // Validate fileId format
-      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(fileId)) {
-        return res.status(400).json({ error: 'Invalid file ID format' });
+      const start = Date.now();
+      try {
+        const {fileId} = req.params;
+
+        // Validate fileId format
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(fileId)) {
+          return res.status(400).json({error: 'Invalid file ID format'});
+        }
+
+        const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress ||
+          (req.connection.socket ? req.connection.socket.remoteAddress : null) ||
+          req.headers['x-forwarded-for'] || 'unknown';
+
+        const getFileSql = 'SELECT id, shl_uuid, cnt, type FROM SHLFiles WHERE id = ?';
+
+        this.db.get(getFileSql, [fileId], (err, fileRow) => {
+          if (err) {
+            return res.status(500).json({error: 'Database error'});
+          }
+
+          if (!fileRow) {
+            return res.status(404).json({error: 'File not found'});
+          }
+
+          const logMasterAccessSql = 'INSERT INTO SHLViews (shl_uuid, recipient, ip_address) VALUES (?, ?, ?)';
+          const logFileAccessSql = 'INSERT INTO SHLViews (shl_uuid, recipient, ip_address) VALUES (?, ?, ?)';
+
+          this.db.run(logMasterAccessSql, [fileRow.shl_uuid, null, clientIP], function (logErr) {
+            if (logErr) {
+              shlLog.error('Failed to log master SHL file access:', logErr.message);
+            }
+          });
+
+          this.db.run(logFileAccessSql, [fileRow.id, null, clientIP], function (logErr) {
+            if (logErr) {
+              shlLog.error('Failed to log file-specific access:', logErr.message);
+            }
+          });
+
+          try {
+            const fileBuffer = Buffer.from(fileRow.cnt, 'base64');
+            res.set('Content-Type', 'application/jose');
+            res.send(fileBuffer);
+          } catch (decodeErr) {
+            res.status(500).json({error: 'Failed to decode file content'});
+          }
+        });
+      } finally {
+        this.stats.countRequest('file', Date.now() - start);
       }
-      
-      const clientIP = req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 
-        (req.connection.socket ? req.connection.socket.remoteAddress : null) ||
-        req.headers['x-forwarded-for'] || 'unknown';
-      
-      const getFileSql = 'SELECT id, shl_uuid, cnt, type FROM SHLFiles WHERE id = ?';
-      
-      this.db.get(getFileSql, [fileId], (err, fileRow) => {
-        if (err) {
-          return res.status(500).json({ error: 'Database error' });
-        }
-        
-        if (!fileRow) {
-          return res.status(404).json({ error: 'File not found' });
-        }
-        
-        const logMasterAccessSql = 'INSERT INTO SHLViews (shl_uuid, recipient, ip_address) VALUES (?, ?, ?)';
-        const logFileAccessSql = 'INSERT INTO SHLViews (shl_uuid, recipient, ip_address) VALUES (?, ?, ?)';
-        
-        this.db.run(logMasterAccessSql, [fileRow.shl_uuid, null, clientIP], function(logErr) {
-          if (logErr) {
-            shlLog.error('Failed to log master SHL file access:', logErr.message);
-          }
-        });
-        
-        this.db.run(logFileAccessSql, [fileRow.id, null, clientIP], function(logErr) {
-          if (logErr) {
-            shlLog.error('Failed to log file-specific access:', logErr.message);
-          }
-        });
-        
-        try {
-          const fileBuffer = Buffer.from(fileRow.cnt, 'base64');
-          res.set('Content-Type', 'application/jose');
-          res.send(fileBuffer);
-        } catch (decodeErr) {
-          res.status(500).json({ error: 'Failed to decode file content' });
-        }
-      });
     });
 
     // SHL sign endpoint
     this.router.post('/sign', this.validateJsonBody(['url']), async (req, res) => {
-      this.countRequest();
-      const { url } = req.body;
-      
-      if (!url || typeof url !== 'string') {
-        return res.status(400).json({
-          error: 'url is required and must be a string'
-        });
-      }
-      
+      const start = Date.now();
       try {
-        // Validate URL
-        this.validateExternalUrl(url);
-        
-        const { certPem, keyPem } = this.loadCertificates();
-        const { kid } = this.config.certificates;
-        const { issuer } = this.config.vhl;
-        
-        if (!certPem || !keyPem) {
-          return res.status(500).json({ error: 'Certificate or private key files not found' });
-        }
-        
-        if (!kid) {
-          return res.status(500).json({ error: 'KID not configured' });
-        }
-        
-        try {
-          const jwk = this.pemToJwk(certPem, keyPem);
-          
-          const payload = {
-            "1": issuer,
-            "-260": {
-              "5": [url]
-            }
-          };
+        const {url} = req.body;
 
-          const cborEncoded = CBOR.encode(payload);
-          const coseSigned = await this.createCOSESign1(cborEncoded, jwk, kid);
-          const deflated = pako.deflate(coseSigned);
-          const base45Encoded = base45.encode(deflated);
-
-          const publicJwk = {
-            kty: jwk.kty,
-            crv: jwk.crv,
-            x: jwk.x,
-            y: jwk.y
-          };
-
-          res.json({
-            signature: base45Encoded,
-            steps: {
-              input: {
-                url: url,
-                issuer: issuer,
-                kid: kid
-              },
-              step1_payload: payload,
-              step1_payload_json: JSON.stringify(payload),
-              step2_cbor_encoded: Array.from(cborEncoded),
-              step2_cbor_encoded_hex: cborEncoded.toString('hex'),
-              step2_cbor_encoded_base64: cborEncoded.toString('base64'),
-              step3_cose_signed: Array.from(coseSigned),
-              step3_cose_signed_hex: coseSigned.toString('hex'),
-              step3_cose_signed_base64: coseSigned.toString('base64'),
-              step4_deflated: Array.from(deflated),
-              step4_deflated_hex: Buffer.from(deflated).toString('hex'),
-              step4_deflated_base64: Buffer.from(deflated).toString('base64'),
-              step5_base45_encoded: base45Encoded,
-              crypto_info: {
-                public_key_jwk: publicJwk,
-                certificate_pem: certPem,
-                algorithm: "ES256",
-                curve: "P-256"
-              },
-              sizes: {
-                original_url_bytes: Buffer.byteLength(url, 'utf8'),
-                payload_json_bytes: Buffer.byteLength(JSON.stringify(payload), 'utf8'),
-                cbor_encoded_bytes: cborEncoded.length,
-                cose_signed_bytes: coseSigned.length,
-                deflated_bytes: deflated.length,
-                base45_encoded_bytes: Buffer.byteLength(base45Encoded, 'utf8')
-              }
-            }
+        if (!url || typeof url !== 'string') {
+          return res.status(400).json({
+            error: 'url is required and must be a string'
           });
-          
+        }
+
+        try {
+          // Validate URL
+          this.validateExternalUrl(url);
+
+          const {certPem, keyPem} = this.loadCertificates();
+          const {kid} = this.config.certificates;
+          const {issuer} = this.config.vhl;
+
+          if (!certPem || !keyPem) {
+            return res.status(500).json({error: 'Certificate or private key files not found'});
+          }
+
+          if (!kid) {
+            return res.status(500).json({error: 'KID not configured'});
+          }
+
+          try {
+            const jwk = this.pemToJwk(certPem, keyPem);
+
+            const payload = {
+              "1": issuer,
+              "-260": {
+                "5": [url]
+              }
+            };
+
+            const cborEncoded = CBOR.encode(payload);
+            const coseSigned = await this.createCOSESign1(cborEncoded, jwk, kid);
+            const deflated = pako.deflate(coseSigned);
+            const base45Encoded = base45.encode(deflated);
+
+            const publicJwk = {
+              kty: jwk.kty,
+              crv: jwk.crv,
+              x: jwk.x,
+              y: jwk.y
+            };
+
+            res.json({
+              signature: base45Encoded,
+              steps: {
+                input: {
+                  url: url,
+                  issuer: issuer,
+                  kid: kid
+                },
+                step1_payload: payload,
+                step1_payload_json: JSON.stringify(payload),
+                step2_cbor_encoded: Array.from(cborEncoded),
+                step2_cbor_encoded_hex: cborEncoded.toString('hex'),
+                step2_cbor_encoded_base64: cborEncoded.toString('base64'),
+                step3_cose_signed: Array.from(coseSigned),
+                step3_cose_signed_hex: coseSigned.toString('hex'),
+                step3_cose_signed_base64: coseSigned.toString('base64'),
+                step4_deflated: Array.from(deflated),
+                step4_deflated_hex: Buffer.from(deflated).toString('hex'),
+                step4_deflated_base64: Buffer.from(deflated).toString('base64'),
+                step5_base45_encoded: base45Encoded,
+                crypto_info: {
+                  public_key_jwk: publicJwk,
+                  certificate_pem: certPem,
+                  algorithm: "ES256",
+                  curve: "P-256"
+                },
+                sizes: {
+                  original_url_bytes: Buffer.byteLength(url, 'utf8'),
+                  payload_json_bytes: Buffer.byteLength(JSON.stringify(payload), 'utf8'),
+                  cbor_encoded_bytes: cborEncoded.length,
+                  cose_signed_bytes: coseSigned.length,
+                  deflated_bytes: deflated.length,
+                  base45_encoded_bytes: Buffer.byteLength(base45Encoded, 'utf8')
+                }
+              }
+            });
+
+          } catch (error) {
+            shlLog.error('SHL sign processing error:', error);
+            res.status(500).json({
+              error: 'Failed to sign URL: ' + error.message
+            });
+          }
         } catch (error) {
-          shlLog.error('SHL sign processing error:', error);
+          shlLog.error('SHL sign error:', error);
           res.status(500).json({
             error: 'Failed to sign URL: ' + error.message
           });
         }
-      } catch (error) {
-        shlLog.error('SHL sign error:', error);
-        res.status(500).json({
-          error: 'Failed to sign URL: ' + error.message
-        });
+      } finally {
+        this.stats.countRequest('sign', Date.now() - start);
       }
     });
   }
 
   async shutdown() {
     shlLog.info('Shutting down SHL module...');
-    
+
     this.stopCleanupJob();
     
     // Stop FHIR validator
@@ -1087,9 +1118,6 @@ class SHLModule {
     };
   }
 
-  countRequest() {
-    this.stats.requestCount++;
-  }
 }
 
 module.exports = SHLModule;

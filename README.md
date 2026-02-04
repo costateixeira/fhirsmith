@@ -190,7 +190,8 @@ Available tags:
 
 ### Windows Installation
 
-You can install as a windows service using...
+You can install as a windows service using [windows-install.js](windows-install.js). You might need to 
+hack that. 
 
 ## Releases
 

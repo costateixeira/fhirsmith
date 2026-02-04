@@ -927,113 +927,129 @@ class PackagesModule {
 
     // GET /packages/catalog - Search packages or get updates
     this.router.get('/catalog', this.validateQueryParams(searchParams), async (req, res) => {
-      this.countRequest();
+      const start = Date.now();
       try {
-        await this.serveSearch(req, res);
-        pckLog.info("/catalog"+searchParams);
-      } catch (error) {
-        pckLog.error('Error in /packages/catalog:', error);
-        res.status(500).json({error: 'Internal server error'});
+        try {
+          await this.serveSearch(req, res);
+          pckLog.info("/catalog" + searchParams);
+        } catch (error) {
+          pckLog.error('Error in /packages/catalog:', error);
+          res.status(500).json({error: 'Internal server error'});
+        }
+      } finally {
+        this.stats.countRequest('catalog', Date.now() - start);
       }
     });
 
     // GET /packages/-/v1/search - Search packages (v1 API)
     this.router.get('/-/v1/search', this.validateQueryParams(searchParams), async (req, res) => {
-      this.countRequest();
+      const start = Date.now();
       try {
-        req.query.objWrapper = 'true';
-        await this.serveSearch(req, res);
-        pckLog.info("/search?"+searchParams);
-      } catch (error) {
-        pckLog.error('Error in /packages/-/v1/search:', error);
-        res.status(500).json({error: 'Internal server error'});
+        try {
+          req.query.objWrapper = 'true';
+          await this.serveSearch(req, res);
+          pckLog.info("/search?" + searchParams);
+        } catch (error) {
+          pckLog.error('Error in /packages/-/v1/search:', error);
+          res.status(500).json({error: 'Internal server error'});
+        }
+      } finally {
+        this.stats.countRequest('search', Date.now() - start);
       }
     });
 
     // GET /packages/updates
     this.router.get('/updates', this.validateQueryParams(updatesParams), async (req, res) => {
-      this.countRequest();
+      const start = Date.now();
       try {
-        let {dateType, daysValue, dateValue} = req.query;
-        let dt = dateType || 'relative';
-        let days = daysValue || '10';
-        let date = dateValue || new Date().toISOString().split('T')[0];
-        await this.serveUpdates(req.secure, res, req, dt, days, date);
-        pckLog.info("/updates?"+searchParams);
-      } catch (error) {
-        pckLog.error('Error in /packages/updates:', error);
-        res.status(500).json({error: 'Internal server error'});
+        try {
+          let {dateType, daysValue, dateValue} = req.query;
+          let dt = dateType || 'relative';
+          let days = daysValue || '10';
+          let date = dateValue || new Date().toISOString().split('T')[0];
+          await this.serveUpdates(req.secure, res, req, dt, days, date);
+          pckLog.info("/updates?" + searchParams);
+        } catch (error) {
+          pckLog.error('Error in /packages/updates:', error);
+          res.status(500).json({error: 'Internal server error'});
+        }
+      } finally {
+        this.stats.countRequest('updates', Date.now() - start);
       }
     });
 
     this.router.get('/log', async (req, res) => {
-      this.countRequest();
+      const start = Date.now();
       try {
-        const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
+        try {
+          const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
 
-        let logData;
-        let summary;
-        let status;
+          let logData;
+          let summary;
+          let status;
 
-        if (this.crawlerRunning) {
-          status = 'Crawler is currently running...';
-          logData = this.lastCrawlerLog || null;
-        } else if (this.lastCrawlerLog && this.lastCrawlerLog.feeds) {
-          status = 'Showing log from most recent crawler run';
-          logData = this.lastCrawlerLog;
+          if (this.crawlerRunning) {
+            status = 'Crawler is currently running...';
+            logData = this.lastCrawlerLog || null;
+          } else if (this.lastCrawlerLog && this.lastCrawlerLog.feeds) {
+            status = 'Showing log from most recent crawler run';
+            logData = this.lastCrawlerLog;
 
-          // Add summary statistics
-          summary = {
-            totalFeeds: this.lastCrawlerLog.feeds.length,
-            successfulFeeds: this.lastCrawlerLog.feeds.filter(f => !f.exception && !f.rateLimited).length,
-            failedFeeds: this.lastCrawlerLog.feeds.filter(f => f.exception && !f.rateLimited).length,
-            rateLimitedFeeds: this.lastCrawlerLog.feeds.filter(f => f.rateLimited).length,
-            totalItems: this.lastCrawlerLog.feeds.reduce((sum, f) => sum + (f.items ? f.items.length : 0), 0)
-          };
-        } else {
-          status = 'No crawler runs have completed yet';
-          logData = null;
-        }
-
-        if (acceptsHtml) {
-          const startTime = Date.now();
-
-          // Load template if not already loaded
-          if (!htmlServer.hasTemplate('packages')) {
-            const templatePath = path.join(__dirname, 'packages-template.html');
-            htmlServer.loadTemplate('packages', templatePath);
+            // Add summary statistics
+            summary = {
+              totalFeeds: this.lastCrawlerLog.feeds.length,
+              successfulFeeds: this.lastCrawlerLog.feeds.filter(f => !f.exception && !f.rateLimited).length,
+              failedFeeds: this.lastCrawlerLog.feeds.filter(f => f.exception && !f.rateLimited).length,
+              rateLimitedFeeds: this.lastCrawlerLog.feeds.filter(f => f.rateLimited).length,
+              totalItems: this.lastCrawlerLog.feeds.reduce((sum, f) => sum + (f.items ? f.items.length : 0), 0)
+            };
+          } else {
+            status = 'No crawler runs have completed yet';
+            logData = null;
           }
 
-          const content = this.buildLogPageContent(status, logData, summary);
-          const stats = await this.gatherPackageStatistics();
-          stats.processingTime = Date.now() - startTime;
+          if (acceptsHtml) {
+            const startTime = Date.now();
 
-          const html = htmlServer.renderPage('packages', 'Crawler Log', content, stats);
-          res.setHeader('Content-Type', 'text/html');
-          res.send(html);
-        } else {
-          // Return JSON response
-          const response = {
-            status: status,
-            crawlerRunning: this.crawlerRunning,
-            log: logData,
-            note: status
-          };
+            // Load template if not already loaded
+            if (!htmlServer.hasTemplate('packages')) {
+              const templatePath = path.join(__dirname, 'packages-template.html');
+              htmlServer.loadTemplate('packages', templatePath);
+            }
 
-          if (summary) {
-            response.summary = summary;
+            const content = this.buildLogPageContent(status, logData, summary);
+            const stats = await this.gatherPackageStatistics();
+            stats.processingTime = Date.now() - startTime;
+
+            const html = htmlServer.renderPage('packages', 'Crawler Log', content, stats);
+            res.setHeader('Content-Type', 'text/html');
+            res.send(html);
+          } else {
+            // Return JSON response
+            const response = {
+              status: status,
+              crawlerRunning: this.crawlerRunning,
+              log: logData,
+              note: status
+            };
+
+            if (summary) {
+              response.summary = summary;
+            }
+
+            res.json(response);
           }
-
-          res.json(response);
+          pckLog.error("/log");
+        } catch (error) {
+          pckLog.error('Error in /packages/log:', error);
+          if (req.headers.accept && req.headers.accept.includes('text/html')) {
+            htmlServer.sendErrorResponse(res, 'packages', error);
+          } else {
+            res.status(500).json({error: 'Failed to get crawler log', message: error.message});
+          }
         }
-        pckLog.error("/log");
-      } catch (error) {
-        pckLog.error('Error in /packages/log:', error);
-        if (req.headers.accept && req.headers.accept.includes('text/html')) {
-          htmlServer.sendErrorResponse(res, 'packages', error);
-        } else {
-          res.status(500).json({error: 'Failed to get crawler log', message: error.message});
-        }
+      } finally {
+        this.stats.countRequest('log', Date.now() - start);
       }
     });
 
@@ -1041,231 +1057,278 @@ class PackagesModule {
     this.router.get('/broken', this.validateQueryParams({ 
       filter: { maxLength: 100, pattern: /^[a-zA-Z0-9._-]*$/ } 
     }), async (req, res) => {
-      this.countRequest();
+      const start = Date.now();
       try {
-        const {filter} = req.query;
-        await this.serveBroken(req, res, filter);
-        pckLog.info("/broken");
-      } catch (error) {
-        pckLog.error('Error in /packages/broken:', error);
-        res.status(500).json({error: 'Internal server error'});
+        try {
+          const {filter} = req.query;
+          await this.serveBroken(req, res, filter);
+          pckLog.info("/broken");
+        } catch (error) {
+          pckLog.error('Error in /packages/broken:', error);
+          res.status(500).json({error: 'Internal server error'});
+        }
+      } finally {
+        this.stats.countRequest('broken', Date.now() - start);
       }
     });
 
     // GET /packages/:id/:version
     this.router.get('/:id/:version', (req, res, next) => {
-      this.countRequest();
-
-      // Validate path parameters
-      const { id, version } = req.params;
-      
-      if (!id || !version || 
-          !/^[a-zA-Z0-9._-]+$/.test(id) || 
-          !/^[a-zA-Z0-9._-]+$/.test(version)) {
-        return res.status(400).json({error: 'Invalid package id or version format'});
-      }
-      
-      if (id.length > 100 || version.length > 50) {
-        return res.status(400).json({error: 'Package id or version too long'});
-      }
-      
-      next();
-      pckLog.info(`/download/${id}/${version}`);
-    }, async (req, res) => {
+      const start = Date.now();
       try {
+
+        // Validate path parameters
         const {id, version} = req.params;
-        await this.serveDownload(req.secure, id, version, res);
+
+        if (!id || !version ||
+          !/^[a-zA-Z0-9._-]+$/.test(id) ||
+          !/^[a-zA-Z0-9._-]+$/.test(version)) {
+          return res.status(400).json({error: 'Invalid package id or version format'});
+        }
+
+        if (id.length > 100 || version.length > 50) {
+          return res.status(400).json({error: 'Package id or version too long'});
+        }
+
+        next();
         pckLog.info(`/download/${id}/${version}`);
-      } catch (error) {
-        pckLog.error('Error in /packages/:id/:version:', error);
-        res.status(500).json({error: 'Internal server error'});
+      } finally {
+        this.stats.countRequest('version', Date.now() - start);
+      }
+    }, async (req, res) => {
+      const start = Date.now();
+      try {
+        try {
+          const {id, version} = req.params;
+          await this.serveDownload(req.secure, id, version, res);
+          pckLog.info(`/download/${id}/${version}`);
+        } catch (error) {
+          pckLog.error('Error in /packages/:id/:version:', error);
+          res.status(500).json({error: 'Internal server error'});
+        }
+      } finally {
+        this.stats.countRequest('version', Date.now() - start);
       }
     });
 
     // GET /packages/:page.html
     this.router.get('/:page.html', (req, res, next) => {
-      this.countRequest();
-
-      const { page } = req.params;
-      
-      if (!page || !/^[a-zA-Z0-9_-]+$/.test(page) || page.length > 50) {
-        return res.status(400).json({error: 'Invalid page name'});
-      }
-      
-      next();
-      pckLog.info(`/page/${page}`);
-    }, async (req, res) => {
+      const start = Date.now();
       try {
+
         const {page} = req.params;
-        await this.servePage(`${page}.html`, req, res, req.secure);
+
+        if (!page || !/^[a-zA-Z0-9_-]+$/.test(page) || page.length > 50) {
+          return res.status(400).json({error: 'Invalid page name'});
+        }
+
+        next();
         pckLog.info(`/page/${page}`);
-      } catch (error) {
-        pckLog.error('Error in /packages/:page.html:', error);
-        res.status(500).json({error: 'Internal server error'});
+      } finally {
+        this.stats.countRequest('page', Date.now() - start);
+      }
+    }, async (req, res) => {
+      const start = Date.now();
+      try {
+        try {
+          const {page} = req.params;
+          await this.servePage(`${page}.html`, req, res, req.secure);
+          pckLog.info(`/page/${page}`);
+        } catch (error) {
+          pckLog.error('Error in /packages/:page.html:', error);
+          res.status(500).json({error: 'Internal server error'});
+        }
+      } finally {
+        this.stats.countRequest('page', Date.now() - start);
       }
     });
 
     // GET /packages/:id - Get package versions
     this.router.get('/:id([^/]+)', async (req, res) => {
-      this.countRequest();
-
+      const start = Date.now();
       try {
-        const {id} = req.params;
-        const {sort} = req.query;
 
-        // Don't process routes that are handled elsewhere
-        if (['catalog', 'log', 'broken', 'stats', 'status', 'search', 'updates'].includes(id) ||
-          id.endsWith('.html') || id === '-') {
-          return; // Let other routes handle these
+        try {
+          const {id} = req.params;
+          const {sort} = req.query;
+
+          // Don't process routes that are handled elsewhere
+          if (['catalog', 'log', 'broken', 'stats', 'status', 'search', 'updates'].includes(id) ||
+            id.endsWith('.html') || id === '-') {
+            return; // Let other routes handle these
+          }
+
+          await this.serveVersions(id, sort, req.secure, req, res);
+          pckLog.info(`/id/${id}`);
+        } catch (error) {
+          pckLog.error('Error in /packages/:id:', error);
+          res.status(500).json({error: 'Internal server error'});
         }
-
-        await this.serveVersions(id, sort, req.secure, req, res);
-        pckLog.info(`/id/${id}`);
-      } catch (error) {
-        pckLog.error('Error in /packages/:id:', error);
-        res.status(500).json({error: 'Internal server error'});
+      } finally {
+        this.stats.countRequest('id', Date.now() - start);
       }
     });
 
     // Main packages endpoint
     this.router.get('/', this.validateQueryParams(searchParams), async (req, res) => {
-      this.countRequest();
-
+      const start = Date.now();
       try {
-        await this.serveSearch(req, res);
-        pckLog.info(`/`);
-      } catch (error) {
-        pckLog.error('Error in /packages/:', error);
-        res.status(500).json({error: 'Internal server error'});
+
+        try {
+          await this.serveSearch(req, res);
+          pckLog.info(`/`);
+        } catch (error) {
+          pckLog.error('Error in /packages/:', error);
+          res.status(500).json({error: 'Internal server error'});
+        }
+
+      } finally {
+        this.stats.countRequest('home', Date.now() - start);
       }
     });
 
     // Module status endpoint (existing)
     this.router.get('/status', (req, res) => {
-      this.countRequest();
-
-      const status = this.getStatus();
-      res.json(status);
-      pckLog.info('Serve Status');
+      const start = Date.now();
+      try {
+        const status = this.getStatus();
+        res.json(status);
+        pckLog.info('Serve Status');
+      } finally {
+        this.stats.countRequest('status', Date.now() - start);
+      }
     });
 
     // Manual crawler trigger (existing)
     this.router.post('/crawl', async (req, res) => {
-      this.countRequest();
-
+      const start = Date.now();
       try {
-        await this.runCrawler();
-        res.json({
-          message: 'Crawler completed successfully',
-          timestamp: new Date().toISOString()
-        });
-        pckLog.info('Serve Crawler');
-      } catch (error) {
-        pckLog.error('Manual crawler failed:', error);
-        res.status(500).json({
-          error: 'Crawler failed',
-          message: error.message
-        });
+        try {
+          await this.runCrawler();
+          res.json({
+            message: 'Crawler completed successfully',
+            timestamp: new Date().toISOString()
+          });
+          pckLog.info('Serve Crawler');
+        } catch (error) {
+          pckLog.error('Manual crawler failed:', error);
+          res.status(500).json({
+            error: 'Crawler failed',
+            message: error.message
+          });
+        }
+      } finally {
+        this.stats.countRequest('crawl', Date.now() - start);
       }
     });
 
     // Crawler statistics endpoint (existing)
     this.router.get('/stats', async (req, res) => {
-      this.countRequest();
-
+      const start = Date.now();
       try {
-        const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
+        try {
+          const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
 
-        if (acceptsHtml) {
-          const startTime = Date.now();
+          if (acceptsHtml) {
+            const startTime = Date.now();
 
-          // Load template if not already loaded
-          if (!htmlServer.hasTemplate('packages')) {
-            const templatePath = path.join(__dirname, 'packages-template.html');
-            htmlServer.loadTemplate('packages', templatePath);
-          }
-
-          const content = await this.buildStatsPageContent();
-          const stats = await this.gatherPackageStatistics();
-          stats.processingTime = Date.now() - startTime;
-
-          const html = htmlServer.renderPage('packages', 'Package Statistics', content, stats);
-          res.setHeader('Content-Type', 'text/html');
-          res.send(html);
-        } else {
-          // JSON version (keep your existing logic)
-          const dbCounts = await this.getDatabaseTableCounts();
-          res.json({
-            database: {
-              packages: dbCounts.packages,
-              versions: dbCounts.packageVersions
-            },
-            crawler: {
-              enabled: this.config.crawler.enabled,
-              schedule: this.config.crawler.schedule,
-              lastRun: this.lastRunTime,
-              totalRuns: this.totalRuns,
-              lastLog: this.lastCrawlerLog || null
-            },
-            paths: {
-              database: this.config.database,
-              mirror: this.config.mirrorPath
-            },
-            config: {
-              masterUrl: this.config.masterUrl
+            // Load template if not already loaded
+            if (!htmlServer.hasTemplate('packages')) {
+              const templatePath = path.join(__dirname, 'packages-template.html');
+              htmlServer.loadTemplate('packages', templatePath);
             }
-          });
-        }
-        pckLog.info('Serve Stats');
 
-      } catch (error) {
-        pckLog.error('Error generating stats:', error);
-        if (req.headers.accept && req.headers.accept.includes('text/html')) {
-          htmlServer.sendErrorResponse(res, 'packages', error);
-        } else {
-          res.status(500).json({error: 'Failed to generate stats', message: error.message});
+            const content = await this.buildStatsPageContent();
+            const stats = await this.gatherPackageStatistics();
+            stats.processingTime = Date.now() - startTime;
+
+            const html = htmlServer.renderPage('packages', 'Package Statistics', content, stats);
+            res.setHeader('Content-Type', 'text/html');
+            res.send(html);
+          } else {
+            // JSON version (keep your existing logic)
+            const dbCounts = await this.getDatabaseTableCounts();
+            res.json({
+              database: {
+                packages: dbCounts.packages,
+                versions: dbCounts.packageVersions
+              },
+              crawler: {
+                enabled: this.config.crawler.enabled,
+                schedule: this.config.crawler.schedule,
+                lastRun: this.lastRunTime,
+                totalRuns: this.totalRuns,
+                lastLog: this.lastCrawlerLog || null
+              },
+              paths: {
+                database: this.config.database,
+                mirror: this.config.mirrorPath
+              },
+              config: {
+                masterUrl: this.config.masterUrl
+              }
+            });
+          }
+          pckLog.info('Serve Stats');
+
+        } catch (error) {
+          pckLog.error('Error generating stats:', error);
+          if (req.headers.accept && req.headers.accept.includes('text/html')) {
+            htmlServer.sendErrorResponse(res, 'packages', error);
+          } else {
+            res.status(500).json({error: 'Failed to generate stats', message: error.message});
+          }
         }
+      } finally {
+        this.stats.countRequest('stats', Date.now() - start);
       }
     });
 
     // Search endpoint (existing)
     this.router.get('/search', async (req, res) => {
-      this.countRequest();
+      const start = Date.now();
+      try {
 
-      const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
+        const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
 
-      if (acceptsHtml) {
-        try {
-          const startTime = Date.now();
+        if (acceptsHtml) {
+          try {
+            const startTime = Date.now();
 
-          // Load template if not already loaded
-          if (!htmlServer.hasTemplate('packages')) {
-            const templatePath = path.join(__dirname, 'packages-template.html');
-            htmlServer.loadTemplate('packages', templatePath);
+            // Load template if not already loaded
+            if (!htmlServer.hasTemplate('packages')) {
+              const templatePath = path.join(__dirname, 'packages-template.html');
+              htmlServer.loadTemplate('packages', templatePath);
+            }
+
+            const content = '<div class="alert alert-info"><h4>Search Coming Soon</h4><p>Package search functionality will be implemented here.</p></div>';
+            const stats = await this.gatherPackageStatistics();
+            stats.processingTime = Date.now() - startTime;
+
+            const html = htmlServer.renderPage('packages', 'Package Search', content, stats);
+            res.setHeader('Content-Type', 'text/html');
+            res.send(html);
+          } catch (error) {
+            htmlServer.sendErrorResponse(res, 'packages', error);
           }
-
-          const content = '<div class="alert alert-info"><h4>Search Coming Soon</h4><p>Package search functionality will be implemented here.</p></div>';
-          const stats = await this.gatherPackageStatistics();
-          stats.processingTime = Date.now() - startTime;
-
-          const html = htmlServer.renderPage('packages', 'Package Search', content, stats);
-          res.setHeader('Content-Type', 'text/html');
-          res.send(html);
-        } catch (error) {
-          htmlServer.sendErrorResponse(res, 'packages', error);
+        } else {
+          res.json({message: 'Package search functionality coming soon'});
         }
-      } else {
-        res.json({message: 'Package search functionality coming soon'});
+      } finally {
+        this.stats.countRequest('search', Date.now() - start);
       }
     });
 
     // Catch-all for unsupported operations (place this last)
     this.router.all('*', (req, res) => {
-      this.countRequest();
-
-      res.status(404).json({
-        error: `The operation ${req.method} ${req.path} is not supported`
-      });
+      const start = Date.now();
+      try {
+        res.status(404).json({
+          error: `The operation ${req.method} ${req.path} is not supported`
+        });
+      } finally {
+        this.stats.countRequest('*', Date.now() - start);
+      }
     });
   }
 
@@ -2767,9 +2830,6 @@ class PackagesModule {
     return content;
   }
 
-  countRequest() {
-    this.stats.requestCount++;
-  }
 }
 
 module.exports = PackagesModule;

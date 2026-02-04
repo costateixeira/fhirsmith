@@ -2,6 +2,7 @@ const fs = require('fs').promises;
 const sqlite3 = require('sqlite3').verbose();
 const { VersionUtilities } = require('../../library/version-utilities');
 const ValueSet = require("../library/valueset");
+const row = require("../library/valueset");
 
 // Columns that can be returned directly without parsing JSON
 const INDEXED_COLUMNS = ['id', 'url', 'version', 'date', 'description', 'name', 'publisher', 'status', 'title'];
@@ -18,6 +19,84 @@ class ValueSetDatabase {
    */
   constructor(dbPath) {
     this.dbPath = dbPath;
+    this._db = null;          // Shared read-only connection
+    this._writeDb = null;     // Write connection (opened only when needed)
+  }
+
+  /**
+   * Get a read-only database connection (opens lazily if needed)
+   * @returns {Promise<sqlite3.Database>}
+   * @private
+   */
+  _getReadConnection() {
+    return new Promise((resolve, reject) => {
+      if (this._db) {
+        resolve(this._db);
+        return;
+      }
+
+      this._db = new sqlite3.Database(this.dbPath, sqlite3.OPEN_READONLY, (err) => {
+        if (err) {
+          this._db = null;
+          reject(new Error(`Failed to open database: ${err.message}`));
+        } else {
+          resolve(this._db);
+        }
+      });
+    });
+  }
+
+  /**
+   * Get a read-write database connection (opens lazily if needed)
+   * @returns {Promise<sqlite3.Database>}
+   * @private
+   */
+  _getWriteConnection() {
+    return new Promise((resolve, reject) => {
+      if (this._writeDb) {
+        resolve(this._writeDb);
+        return;
+      }
+
+      this._writeDb = new sqlite3.Database(this.dbPath, (err) => {
+        if (err) {
+          this._writeDb = null;
+          reject(new Error(`Failed to open database for writing: ${err.message}`));
+        } else {
+          resolve(this._writeDb);
+        }
+      });
+    });
+  }
+
+  /**
+   * Close all database connections
+   * @returns {Promise<void>}
+   */
+  async close() {
+    const closePromises = [];
+
+    if (this._db) {
+      closePromises.push(new Promise((resolve) => {
+        this._db.close((err) => {
+          if (err) console.warn(`Warning closing read connection: ${err.message}`);
+          this._db = null;
+          resolve();
+        });
+      }));
+    }
+
+    if (this._writeDb) {
+      closePromises.push(new Promise((resolve) => {
+        this._writeDb.close((err) => {
+          if (err) console.warn(`Warning closing write connection: ${err.message}`);
+          this._writeDb = null;
+          resolve();
+        });
+      }));
+    }
+
+    await Promise.all(closePromises);
   }
 
   /**
@@ -38,6 +117,9 @@ class ValueSetDatabase {
    * @returns {Promise<void>}
    */
   async create() {
+    // Close any existing connections first
+    await this.close();
+
     return new Promise((resolve, reject) => {
       const db = new sqlite3.Database(this.dbPath, (err) => {
         if (err) {
@@ -136,69 +218,60 @@ class ValueSetDatabase {
       throw new Error('ValueSet must have a url property');
     }
 
+    const db = await this._getWriteConnection();
+
     return new Promise((resolve, reject) => {
-      const db = new sqlite3.Database(this.dbPath, (err) => {
+      // Step 1: Delete existing related records
+      db.run('DELETE FROM valueset_identifiers WHERE valueset_id = ?', [valueSet.id], (err) => {
         if (err) {
-          reject(new Error(`Failed to open database: ${err.message}`));
+          reject(new Error(`Failed to delete identifiers: ${err.message}`));
           return;
         }
 
-        // Step 1: Delete existing related records
-        db.run('DELETE FROM valueset_identifiers WHERE valueset_id = ?', [valueSet.id], (err) => {
+        db.run('DELETE FROM valueset_jurisdictions WHERE valueset_id = ?', [valueSet.id], (err) => {
           if (err) {
-            db.close();
-            reject(new Error(`Failed to delete identifiers: ${err.message}`));
+            reject(new Error(`Failed to delete jurisdictions: ${err.message}`));
             return;
           }
 
-          db.run('DELETE FROM valueset_jurisdictions WHERE valueset_id = ?', [valueSet.id], (err) => {
+          db.run('DELETE FROM valueset_systems WHERE valueset_id = ?', [valueSet.id], (err) => {
             if (err) {
-              db.close();
-              reject(new Error(`Failed to delete jurisdictions: ${err.message}`));
+              reject(new Error(`Failed to delete systems: ${err.message}`));
               return;
             }
 
-            db.run('DELETE FROM valueset_systems WHERE valueset_id = ?', [valueSet.id], (err) => {
+            // Step 2: Insert main record
+            const effectiveStart = valueSet.effectivePeriod?.start || null;
+            const effectiveEnd = valueSet.effectivePeriod?.end || null;
+            const expansionId = valueSet.expansion?.identifier || null;
+
+            db.run(`
+                INSERT OR REPLACE INTO valuesets (
+                id, url, version, date, description, effectivePeriod_start, effectivePeriod_end,
+                expansion_identifier, name, publisher, status, title, content, last_seen
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
+            `, [
+              valueSet.id,
+              valueSet.url,
+              valueSet.version || null,
+              valueSet.date || null,
+              valueSet.description || null,
+              effectiveStart,
+              effectiveEnd,
+              expansionId,
+              valueSet.name || null,
+              valueSet.publisher || null,
+              valueSet.status || null,
+              valueSet.title || null,
+              JSON.stringify(valueSet)
+            ], (err) => {
               if (err) {
-                db.close();
-                reject(new Error(`Failed to delete systems: ${err.message}`));
+                reject(new Error(`Failed to insert main record: ${err.message}`));
                 return;
               }
 
-              // Step 2: Insert main record
-              const effectiveStart = valueSet.effectivePeriod?.start || null;
-              const effectiveEnd = valueSet.effectivePeriod?.end || null;
-              const expansionId = valueSet.expansion?.identifier || null;
-
-              db.run(`
-                  INSERT OR REPLACE INTO valuesets (
-                  id, url, version, date, description, effectivePeriod_start, effectivePeriod_end,
-                  expansion_identifier, name, publisher, status, title, content, last_seen
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
-              `, [
-                valueSet.id,
-                valueSet.url,
-                valueSet.version || null,
-                valueSet.date || null,
-                valueSet.description || null,
-                effectiveStart,
-                effectiveEnd,
-                expansionId,
-                valueSet.name || null,
-                valueSet.publisher || null,
-                valueSet.status || null,
-                valueSet.title || null,
-                JSON.stringify(valueSet)
-              ], (err) => {
-                if (err) {
-                  db.close();
-                  reject(new Error(`Failed to insert main record: ${err.message}`));
-                  return;
-                }
-
-                // Step 3: Insert related records
-                this._insertRelatedRecords(db, valueSet, resolve, reject);
-              });
+              // Step 3: Insert related records
+              this._insertRelatedRecords(db, valueSet, resolve, reject);
             });
           });
         });
@@ -221,7 +294,6 @@ class ValueSetDatabase {
     const operationComplete = () => {
       pendingOperations--;
       if (pendingOperations === 0 && !hasError) {
-        db.close();
         resolve();
       }
     };
@@ -229,7 +301,6 @@ class ValueSetDatabase {
     const operationError = (err) => {
       if (!hasError) {
         hasError = true;
-        db.close();
         reject(err);
       }
     };
@@ -303,9 +374,8 @@ class ValueSetDatabase {
       }
     }
 
-    // If no pending operations, close immediately
+    // If no pending operations, resolve immediately
     if (pendingOperations === 0) {
-      db.close();
       resolve();
     }
   }
@@ -331,64 +401,51 @@ class ValueSetDatabase {
    * @returns {Promise<Map<string, Object>>} Map of all ValueSets keyed by various combinations
    */
   async loadAllValueSets(source) {
+    const db = await this._getReadConnection();
+
     return new Promise((resolve, reject) => {
-      const db = new sqlite3.Database(this.dbPath, sqlite3.OPEN_READONLY, (err) => {
+      db.all('SELECT id, url, version, content FROM valuesets', [], (err, rows) => {
         if (err) {
-          reject(new Error(`Failed to open database for loading: ${err.message}`));
+          reject(new Error(`Failed to load value sets: ${err.message}`));
           return;
         }
 
-        db.all('SELECT id, url, version, content FROM valuesets', [], (err, rows) => {
-          if (err) {
-            db.close();
-            reject(new Error(`Failed to load value sets: ${err.message}`));
-            return;
-          }
+        try {
+          this.vsCount = rows.length;
+          const valueSetMap = new Map();
 
-          try {
-            this.vsCount = rows.length;
-            const valueSetMap = new Map();
+          for (const row of rows) {
+            const valueSet = new ValueSet(JSON.parse(row.content));
+            valueSet.sourcePackage = source;
 
-            for (const row of rows) {
-              const valueSet = new ValueSet(JSON.parse(row.content));
-              valueSet.sourcePackage = source;
+            // Store by URL and id alone
+            valueSetMap.set(row.url, valueSet);
+            valueSetMap.set(row.id, valueSet);
 
-              // Store by URL and id alone
-              valueSetMap.set(row.url, valueSet);
-              valueSetMap.set(row.id, valueSet);
+            if (row.version) {
+              // Store by url|version
+              const versionKey = `${row.url}|${row.version}`;
+              valueSetMap.set(versionKey, valueSet);
 
-              if (row.version) {
-                // Store by url|version
-                const versionKey = `${row.url}|${row.version}`;
-                valueSetMap.set(versionKey, valueSet);
-
-                // If version is semver, also store by url|major.minor
-                try {
-                  if (VersionUtilities.isSemVer(row.version)) {
-                    const majorMinor = VersionUtilities.getMajMin(row.version);
-                    if (majorMinor) {
-                      const majorMinorKey = `${row.url}|${majorMinor}`;
-                      valueSetMap.set(majorMinorKey, valueSet);
-                    }
+              // If version is semver, also store by url|major.minor
+              try {
+                if (VersionUtilities.isSemVer(row.version)) {
+                  const majorMinor = VersionUtilities.getMajMin(row.version);
+                  if (majorMinor) {
+                    const majorMinorKey = `${row.url}|${majorMinor}`;
+                    valueSetMap.set(majorMinorKey, valueSet);
                   }
-                } catch (error) {
-                  // Ignore version parsing errors, just don't add major.minor key
                 }
+              } catch (error) {
+                // Ignore version parsing errors, just don't add major.minor key
               }
             }
-
-            db.close((err) => {
-              if (err) {
-                reject(new Error(`Failed to close database after loading: ${err.message}`));
-              } else {
-                resolve(valueSetMap);
-              }
-            });
-          } catch (error) {
-            db.close();
-            reject(new Error(`Failed to parse value set content: ${error.message}`));
           }
-        });
+
+          resolve(valueSetMap);
+        } catch (error) {
+          reject(new Error(`Failed to parse value set content: ${error.message}`));
+        }
       });
     });
   }
@@ -399,7 +456,7 @@ class ValueSetDatabase {
    * @param {Array<string>|null} elements - Optional list of elements to return (for optimization)
    * @returns {Promise<Array<Object>>} List of matching ValueSets
    */
-  async search(spaceId, searchParams, elements = null) {
+  async search(spaceId, map, searchParams, elements = null) {
     // Check if we can optimize by selecting only indexed columns
     const canOptimize = elements && elements.length > 0 &&
       elements.every(e => INDEXED_COLUMNS.includes(e));
@@ -409,63 +466,46 @@ class ValueSetDatabase {
       ? (elements.includes('id') ? elements : ['id', ...elements])
       : null;
 
+    const db = await this._getReadConnection();
+
     return new Promise((resolve, reject) => {
-      const db = new sqlite3.Database(this.dbPath, sqlite3.OPEN_READONLY, (err) => {
+      const { query, params } = this._buildSearchQuery(searchParams, columnsToSelect);
+
+      db.all(query, params, (err, rows) => {
         if (err) {
-          reject(new Error(`Failed to open database for search: ${err.message}`));
+          reject(new Error(`Search query failed: ${err.message}`));
           return;
         }
 
-        const { query, params } = this._buildSearchQuery(searchParams, columnsToSelect);
-
-        db.all(query, params, (err, rows) => {
-          if (err) {
-            db.close();
-            reject(new Error(`Search query failed: ${err.message}`));
-            return;
-          }
-
-          try {
-            let results;
-            if (canOptimize) {
-              // Construct objects directly from columns - much faster!
-              results = rows.map(row => {
-                const obj = { resourceType: 'ValueSet' };
-                for (const elem of columnsToSelect) {
-                  if (row[elem] !== null && row[elem] !== undefined) {
-                    if (elem === 'id' && spaceId) {
-                      obj[elem] = `${spaceId}-${row[elem]}`;
-                    } else {
-                      obj[elem] = row[elem];
-                    }
+        try {
+          let results;
+          if (canOptimize) {
+            // Construct objects directly from columns - much faster!
+            results = rows.map(row => {
+              const obj = { resourceType: 'ValueSet' };
+              for (const elem of columnsToSelect) {
+                if (row[elem] !== null && row[elem] !== undefined) {
+                  if (elem === 'id' && spaceId) {
+                    obj[elem] = `${spaceId}-${row[elem]}`;
+                  } else {
+                    obj[elem] = row[elem];
                   }
                 }
-                return obj;
-              });
-            } else {
-              // Fall back to parsing JSON
-              results = rows.map(row => {
-                const parsed = JSON.parse(row.content);
-                // Prefix id with spaceId if provided
-                if (spaceId && parsed.id) {
-                  parsed.id = `${spaceId}-${parsed.id}`;
-                }
-                return parsed;
-              });
-            }
-
-            db.close((err) => {
-              if (err) {
-                reject(new Error(`Failed to close database after search: ${err.message}`));
-              } else {
-                resolve(results);
               }
+              return obj;
             });
-          } catch (error) {
-            db.close();
-            reject(new Error(`Failed to parse search results: ${error.message}`));
+          } else {
+            // Fall back to parsing JSON
+            results = rows.map(row => {
+              const vs = map.get(row.id);
+              return vs;
+            });
           }
-        });
+
+          resolve(results);
+        } catch (error) {
+          reject(new Error(`Failed to parse search results: ${error.message}`));
+        }
       });
     });
   }
@@ -476,76 +516,66 @@ class ValueSetDatabase {
    * @returns {Promise<number>} Number of records deleted
    */
   async deleteOldValueSets(cutoffTimestamp) {
+    const db = await this._getWriteConnection();
+
     return new Promise((resolve, reject) => {
-      const db = new sqlite3.Database(this.dbPath, (err) => {
+      // Get URLs to delete first
+      db.all('SELECT url FROM valuesets WHERE last_seen < ?', [cutoffTimestamp], (err, rows) => {
         if (err) {
-          reject(new Error(`Failed to open database for cleanup: ${err.message}`));
+          reject(new Error(`Failed to find old records: ${err.message}`));
           return;
         }
 
-        // Get URLs to delete first
-        db.all('SELECT url FROM valuesets WHERE last_seen < ?', [cutoffTimestamp], (err, rows) => {
-          if (err) {
-            db.close();
-            reject(new Error(`Failed to find old records: ${err.message}`));
-            return;
+        if (rows.length === 0) {
+          resolve(0);
+          return;
+        }
+
+        const idsToDelete = rows.map(row => row.id);
+        let deletedCount = 0;
+        let pendingDeletes = 0;
+        let hasError = false;
+
+        const deleteComplete = () => {
+          pendingDeletes--;
+          if (pendingDeletes === 0 && !hasError) {
+            // Finally delete main records
+            db.run('DELETE FROM valuesets WHERE last_seen < ?', [cutoffTimestamp], function(err) {
+              if (err) {
+                reject(new Error(`Failed to delete old records: ${err.message}`));
+              } else {
+                deletedCount = this.changes;
+                resolve(deletedCount);
+              }
+            });
           }
+        };
 
-          if (rows.length === 0) {
-            db.close();
-            resolve(0);
-            return;
+        const deleteError = (err) => {
+          if (!hasError) {
+            hasError = true;
+            reject(err);
           }
+        };
 
-          const idsToDelete = rows.map(row => row.id);
-          let deletedCount = 0;
-          let pendingDeletes = 0;
-          let hasError = false;
+        // Delete related records first
+        const placeholders = idsToDelete.map(() => '?').join(',');
 
-          const deleteComplete = () => {
-            pendingDeletes--;
-            if (pendingDeletes === 0 && !hasError) {
-              // Finally delete main records
-              db.run('DELETE FROM valuesets WHERE last_seen < ?', [cutoffTimestamp], function(err) {
-                if (err) {
-                  db.close();
-                  reject(new Error(`Failed to delete old records: ${err.message}`));
-                } else {
-                  deletedCount = this.changes;
-                  db.close();
-                  resolve(deletedCount);
-                }
-              });
-            }
-          };
+        pendingDeletes = 3; // identifiers, jurisdictions, systems
 
-          const deleteError = (err) => {
-            if (!hasError) {
-              hasError = true;
-              db.close();
-              reject(err);
-            }
-          };
+        db.run(`DELETE FROM valueset_identifiers WHERE valueset_id IN (${placeholders})`, idsToDelete, (err) => {
+          if (err) deleteError(new Error(`Failed to delete identifier records: ${err.message}`));
+          else deleteComplete();
+        });
 
-          // Delete related records first
-          const placeholders = idsToDelete.map(() => '?').join(',');
+        db.run(`DELETE FROM valueset_jurisdictions WHERE valueset_id IN (${placeholders})`, idsToDelete, (err) => {
+          if (err) deleteError(new Error(`Failed to delete jurisdiction records: ${err.message}`));
+          else deleteComplete();
+        });
 
-          pendingDeletes = 3; // identifiers, jurisdictions, systems
-
-          db.run(`DELETE FROM valueset_identifiers WHERE valueset_id IN (${placeholders})`, idsToDelete, (err) => {
-            if (err) deleteError(new Error(`Failed to delete identifier records: ${err.message}`));
-            else deleteComplete();
-          });
-
-          db.run(`DELETE FROM valueset_jurisdictions WHERE valueset_id IN (${placeholders})`, idsToDelete, (err) => {
-            if (err) deleteError(new Error(`Failed to delete jurisdiction records: ${err.message}`));
-            else deleteComplete();
-          });
-
-          db.run(`DELETE FROM valueset_systems WHERE valueset_id IN (${placeholders})`, idsToDelete, (err) => {
-            if (err) deleteError(new Error(`Failed to delete system records: ${err.message}`));
-            else deleteComplete();
-          });
+        db.run(`DELETE FROM valueset_systems WHERE valueset_id IN (${placeholders})`, idsToDelete, (err) => {
+          if (err) deleteError(new Error(`Failed to delete system records: ${err.message}`));
+          else deleteComplete();
         });
       });
     });
@@ -556,65 +586,64 @@ class ValueSetDatabase {
    * @returns {Promise<Object>} Statistics object
    */
   async getStatistics() {
+    const db = await this._getReadConnection();
+
     return new Promise((resolve, reject) => {
-      const db = new sqlite3.Database(this.dbPath, sqlite3.OPEN_READONLY, (err) => {
+      const queries = [
+        'SELECT COUNT(*) as total FROM valuesets',
+        'SELECT status, COUNT(*) as count FROM valuesets GROUP BY status',
+        'SELECT COUNT(DISTINCT system) as systems FROM valueset_systems'
+      ];
+
+      const results = {};
+      let completed = 0;
+      let hasError = false;
+
+      const checkComplete = () => {
+        completed++;
+        if (completed === queries.length && !hasError) {
+          resolve(results);
+        }
+      };
+
+      const handleError = (err) => {
+        if (!hasError) {
+          hasError = true;
+          reject(err);
+        }
+      };
+
+      // Total count
+      db.get(queries[0], [], (err, row) => {
         if (err) {
-          reject(new Error(`Failed to open database for statistics: ${err.message}`));
+          handleError(err);
           return;
         }
+        results.totalValueSets = row.total;
+        checkComplete();
+      });
 
-        const queries = [
-          'SELECT COUNT(*) as total FROM valuesets',
-          'SELECT status, COUNT(*) as count FROM valuesets GROUP BY status',
-          'SELECT COUNT(DISTINCT system) as systems FROM valueset_systems'
-        ];
+      // Status breakdown
+      db.all(queries[1], [], (err, rows) => {
+        if (err) {
+          handleError(err);
+          return;
+        }
+        results.byStatus = {};
+        for (const row of rows) {
+          results.byStatus[row.status || 'null'] = row.count;
+        }
+        checkComplete();
+      });
 
-        const results = {};
-        let completed = 0;
-
-        const checkComplete = () => {
-          completed++;
-          if (completed === queries.length) {
-            db.close();
-            resolve(results);
-          }
-        };
-
-        // Total count
-        db.get(queries[0], [], (err, row) => {
-          if (err) {
-            db.close();
-            reject(err);
-            return;
-          }
-          results.totalValueSets = row.total;
-          checkComplete();
-        });
-
-        // Status breakdown
-        db.all(queries[1], [], (err, rows) => {
-          if (err) {
-            db.close();
-            reject(err);
-            return;
-          }
-          results.byStatus = {};
-          for (const row of rows) {
-            results.byStatus[row.status || 'null'] = row.count;
-          }
-          checkComplete();
-        });
-
-        // System count
-        db.get(queries[2], [], (err, row) => {
-          if (err) {
-            db.close();
-            reject(err);
-            return;
-          }
-          results.totalSystems = row.systems;
-          checkComplete();
-        });
+      // System count
+      db.get(queries[2], [], (err, row) => {
+        if (err) {
+          handleError(err);
+          return;
+        }
+        results.totalSystems = row.systems;
+        checkComplete();
       });
     });
   }
@@ -712,7 +741,7 @@ class ValueSetDatabase {
       selectClause = `SELECT DISTINCT ${columns}`;
     } else {
       // Full content needed
-      selectClause = 'SELECT DISTINCT v.content';
+      selectClause = 'SELECT DISTINCT v.id';
     }
 
     const query = `
@@ -736,30 +765,17 @@ class ValueSetDatabase {
    * @returns {Promise<string[]>} Array of ValueSet URLs
    */
   async listAllValueSets() {
+    const db = await this._getReadConnection();
+
     return new Promise((resolve, reject) => {
-      const db = new sqlite3.Database(this.dbPath, sqlite3.OPEN_READONLY, (err) => {
+      db.all('SELECT url FROM valuesets ORDER BY url', [], (err, rows) => {
         if (err) {
-          reject(new Error(`Failed to open database for listing: ${err.message}`));
+          reject(new Error(`Failed to list value sets: ${err.message}`));
           return;
         }
 
-        db.all('SELECT url FROM valuesets ORDER BY url', [], (err, rows) => {
-          if (err) {
-            db.close();
-            reject(new Error(`Failed to list value sets: ${err.message}`));
-            return;
-          }
-
-          const urls = rows.map(row => row.url);
-
-          db.close((err) => {
-            if (err) {
-              reject(new Error(`Failed to close database after listing: ${err.message}`));
-            } else {
-              resolve(urls);
-            }
-          });
-        });
+        const urls = rows.map(row => row.url);
+        resolve(urls);
       });
     });
   }

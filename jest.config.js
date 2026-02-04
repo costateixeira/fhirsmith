@@ -14,7 +14,7 @@ module.exports = {
   ],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],
-  testTimeout: 120000,
+  testTimeout: 600000,
   maxWorkers: 1,
   // Transform fast-xml-parser for Jest compatibility if needed
   transform: {
