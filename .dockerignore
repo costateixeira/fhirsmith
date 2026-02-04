@@ -1,0 +1,32 @@
+# Dependencies - must be rebuilt for container architecture
+node_modules/
+
+# Development/test files
+.git/
+.gitignore
+*.md
+tests/
+test-results/
+coverage/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local data and logs
+data/
+logs/
+*.log
+
+# Local config that shouldn't be in container
+.env
+.env.*
+config/config.json
+
+# Build artifacts
+*.tgz
+
+# Claude Code
+.claude/
