@@ -33,6 +33,7 @@ const {ParametersXML} = require("./xml/parameters-xml");
 const {OperationOutcomeXML} = require("./xml/operationoutcome-xml");
 const {ValueSetXML} = require("./xml/valueset-xml");
 const {ConceptMapXML} = require("./xml/conceptmap-xml");
+const {BundleXML} = require("./xml/bundle-xml");
 const {TxHtmlRenderer} = require("./tx-html");
 const {Renderer} = require("./library/renderer");
 const {OperationsWorker} = require("./workers/operations");
@@ -69,6 +70,16 @@ class TXModule {
   }
 
   acceptsXml(req) {
+<<<<<<< Updated upstream
+=======
+    // Check _format query parameter first (takes precedence per FHIR spec)
+    const format = req.query._format || req.query.format || req.body?._format;
+    if (format) {
+      const f = format.toLowerCase();
+      return f === 'xml' || f.includes('fhir+xml') || f.includes('xml+fhir');
+    }
+    // Fall back to Accept header
+>>>>>>> Stashed changes
     const accept = req.headers.accept || '';
     return accept.includes('application/fhir+xml') || accept.includes('application/xml+fhir');
   }
@@ -273,6 +284,8 @@ class TXModule {
           } else {
             const jsonStr = JSON.stringify(data);
             responseSize = Buffer.byteLength(jsonStr, 'utf8');
+            // Set proper FHIR content-type for JSON responses
+            res.setHeader('Content-Type', 'application/fhir+json; charset=utf-8');
             result = originalJson(data);
           }
 
@@ -871,6 +884,7 @@ class TXModule {
     switch (res.resourceType) {
       case "CodeSystem" : return CodeSystemXML._jsonToXml(res);
       case "ValueSet" : return ValueSetXML.toXml(res);
+      case "Bundle" : return BundleXML.toXml(res, this.fhirVersion);
       case "CapabilityStatement" : return CapabilityStatementXML.toXml(res, "R5");
       case "TerminologyCapabilities" : return TerminologyCapabilitiesXML.toXml(res, "R5");
       case "Parameters": return ParametersXML.toXml(res, this.fhirVersion);

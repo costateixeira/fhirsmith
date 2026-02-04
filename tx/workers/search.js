@@ -30,11 +30,18 @@ class SearchWorker extends TerminologyWorker {
 
   // Allowed search parameters
   static ALLOWED_PARAMS = [
-    '_offset', '_count', '_elements', '_sort',
+    '_offset', '_count', '_elements', '_sort', '_summary', '_total', '_format',
     'url', 'version', 'content-mode', 'date', 'description',
     'supplements', 'identifier', 'jurisdiction', 'name',
     'publisher', 'status', 'system', 'title', 'text'
   ];
+
+  // Summary element fields for each resource type (FHIR summary elements)
+  static SUMMARY_ELEMENTS = {
+    CodeSystem: ['url', 'version', 'name', 'title', 'status', 'experimental', 'date', 'publisher', 'description', 'jurisdiction', 'content'],
+    ValueSet: ['url', 'version', 'name', 'title', 'status', 'experimental', 'date', 'publisher', 'description', 'jurisdiction'],
+    ConceptMap: ['url', 'version', 'name', 'title', 'status', 'experimental', 'date', 'publisher', 'description', 'jurisdiction']
+  };
 
   // Sortable fields
   static SORT_FIELDS = ['id', 'url', 'version', 'date', 'name', 'vurl'];
@@ -57,6 +64,8 @@ class SearchWorker extends TerminologyWorker {
       const elements = params._elements ? decodeURIComponent(params._elements).split(',').map(e => e.trim()) : null;
       const count = Math.min(elements ? 2000 : 200, Math.max(1, parseInt(params._count) || 20));
       const sort = params._sort || "id";
+      const summary = params._summary; // true, text, data, count, false
+      const total = params._total; // none, estimate, accurate
 
       // Get matching resources
       let matches = [];
@@ -83,9 +92,9 @@ class SearchWorker extends TerminologyWorker {
 
       // Build and return the bundle
       const bundle = this.buildSearchBundle(
-        req, resourceType, matches, offset, count, elements
+        req, resourceType, matches, offset, count, elements, summary, total
       );
-      req.logInfo = `${bundle.entry.length} matches`;
+      req.logInfo = `${bundle.entry ? bundle.entry.length : 0} matches`;
       return res.json(bundle);
 
     } catch (error) {
@@ -266,8 +275,17 @@ class SearchWorker extends TerminologyWorker {
   /**
    * Build a FHIR search Bundle with pagination
    */
-  buildSearchBundle(req, resourceType, allMatches, offset, count, elements) {
-    const total = allMatches.length;
+  buildSearchBundle(req, resourceType, allMatches, offset, count, elements, summary, totalParam) {
+    const totalCount = allMatches.length;
+
+    // Handle _summary=count - only return total, no entries
+    if (summary === 'count') {
+      return {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        total: totalCount
+      };
+    }
 
     // Get the slice for this page
     const pageResults = allMatches.slice(offset, offset + count);
@@ -317,7 +335,7 @@ class SearchWorker extends TerminologyWorker {
     }
 
     // Next link (if more results)
-    if (offset + count < total) {
+    if (offset + count < totalCount) {
       const nextParams = new URLSearchParams(searchParams);
       nextParams.set('_offset', offset + count);
       links.push({
@@ -327,7 +345,7 @@ class SearchWorker extends TerminologyWorker {
     }
 
     // Last link
-    const lastOffset = Math.max(0, Math.floor((total - 1) / count) * count);
+    const lastOffset = Math.max(0, Math.floor((totalCount - 1) / count) * count);
     const lastParams = new URLSearchParams(searchParams);
     lastParams.set('_offset', lastOffset);
     links.push({
@@ -335,12 +353,18 @@ class SearchWorker extends TerminologyWorker {
       url: `${baseUrl}?${lastParams.toString()}`
     });
 
+    // Determine which elements to include based on _summary
+    let effectiveElements = elements;
+    if (summary === 'true' && !elements) {
+      effectiveElements = SearchWorker.SUMMARY_ELEMENTS[resourceType] || [];
+    }
+
     // Build entries
     const entries = pageResults.map(resource => {
-      // Apply _elements filter if specified
+      // Apply _elements or _summary filter if specified
       let filteredResource = resource;
-      if (elements) {
-        filteredResource = this.filterElements(resource, elements);
+      if (effectiveElements) {
+        filteredResource = this.filterElements(resource, effectiveElements);
       }
 
       return {
@@ -352,13 +376,21 @@ class SearchWorker extends TerminologyWorker {
       };
     });
 
-    return {
+    // Build the bundle
+    const bundle = {
       resourceType: 'Bundle',
       type: 'searchset',
-      total: total,
+      total: totalCount,
       link: links,
       entry: entries
     };
+
+    // Add total unless _total=none
+    if (totalParam !== 'none') {
+      bundle.total = totalCount;
+    }
+
+    return bundle;
   }
 
   /**
