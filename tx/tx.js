@@ -70,8 +70,6 @@ class TXModule {
   }
 
   acceptsXml(req) {
-<<<<<<< Updated upstream
-=======
     // Check _format query parameter first (takes precedence per FHIR spec)
     const format = req.query._format || req.query.format || req.body?._format;
     if (format) {
@@ -79,7 +77,6 @@ class TXModule {
       return f === 'xml' || f.includes('fhir+xml') || f.includes('xml+fhir');
     }
     // Fall back to Accept header
->>>>>>> Stashed changes
     const accept = req.headers.accept || '';
     return accept.includes('application/fhir+xml') || accept.includes('application/xml+fhir');
   }
