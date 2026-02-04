@@ -856,7 +856,9 @@ class PackageContentLoader {
     }
 
     fhirVersion() {
-        return this.package.fhirVersions[0];
+        // Handle both modern 'fhirVersions' and older 'fhir-version-list' formats
+        const versions = this.package.fhirVersions || this.package['fhir-version-list'];
+        return versions ? versions[0] : undefined;
     }
 
     id() {
