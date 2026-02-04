@@ -151,7 +151,7 @@ describe('PackageValueSetProvider', () => {
 
       // All results should have publisher containing 'HL7'
       for (const vs of results) {
-        expect(vs.publisher).toContain('HL7');
+        expect(vs.jsonObj.publisher).toContain('HL7');
       }
 
       console.log(`Found ${results.length} ValueSets with HL7 publisher`);
@@ -197,7 +197,7 @@ describe('PackageValueSetProvider', () => {
       // All results should match both criteria
       for (const vs of results) {
         expect(vs.status).toBe('active');
-        expect(vs.publisher).toContain('HL7');
+        expect(vs.jsonObj.publisher).toContain('HL7');
       }
 
       console.log(`Found ${results.length} active HL7 ValueSets`);

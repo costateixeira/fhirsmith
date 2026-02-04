@@ -82,8 +82,9 @@ class Library {
     }
   }
 
-  constructor(configFile) {
+  constructor(configFile, log) {
     this.configFile = configFile;
+    this.log = log;
     // Only synchronous initialization here
     this.codeSystemFactories = new Map();
     this.codeSystemProviders = [];
@@ -102,7 +103,7 @@ class Library {
     let system = "System".padEnd(50);
     let version = "Version".padEnd(62);
     let source = "Source"
-    console.log(`${time}${system}${version}${source}`);
+    this.log.info(`${time}${system}${version}${source}`);
     this.lastTime = Date.now();
     // this.lastMemory = process.memoryUsage();
   }
@@ -112,7 +113,7 @@ class Library {
     let time = Math.floor(Date.now() - this.lastTime).toString().padStart(5)+" ";
     let system = url.padEnd(50);
     let version = (ver == null ? "" : ver).padEnd(62);
-    console.log(`${time}${system}${version}${source}`);
+    this.log.info(`${time}${system}${version}${source}`);
     this.lastTime = Date.now();
   }
 
@@ -123,7 +124,7 @@ class Library {
     let ver = "Version".padEnd(20);
     let cs = "CS".padEnd(6);
     let vs = "VS".padEnd(6);
-    console.log(`${time}${id}${ver}${cs}${vs}`);
+    this.log.info(`${time}${id}${ver}${cs}${vs}`);
     this.lastTime = Date.now();
   }
 
@@ -133,7 +134,7 @@ class Library {
     let ver = verp.padEnd(20);
     let cs = csp.toString().padEnd(6);
     let vs = vsp.toString().padEnd(6);
-    console.log(`${time}${id}${ver}${cs}${vs}`);
+    this.log.info(`${time}${id}${ver}${cs}${vs}`);
     this.lastTime = Date.now();
   }
 
@@ -149,21 +150,21 @@ class Library {
     const config = yaml.parse(yamlContent);
     this.baseUrl = config.base.url;
 
-    console.log('Fetching Data');
+    this.log.info('Fetching Data from '+this.baseUrl);
 
     for (const source of config.sources) {
       await this.processSource(source, this.packageManager, "fetch");
     }
 
-    console.log("Downloaded "+((this.totalDownloaded + this.packageManager.totalDownloaded)/ 1024)+" kB");
+    this.log.info("Downloaded "+((this.totalDownloaded + this.packageManager.totalDownloaded)/ 1024)+" kB");
 
-    console.log('Loading Code Systems');
+    this.log.info('Loading Code Systems');
     this.#logSystemHeader();
 
     for (const source of config.sources) {
       await this.processSource(source, this.packageManager, "cs");
     }
-    console.log('Loading Packages');
+    this.log.info('Loading Packages');
     this.#logPackagesHeader();
 
     for (const source of config.sources) {
@@ -180,8 +181,8 @@ class Library {
       external: endMemory.external - this.startMemory.external
     };
 
-    console.log(`Loading Time: ${(totalTime / 1000).toLocaleString()}s`);
-    console.log(`Memory Used: ${(memoryIncrease.rss / 1024 / 1024).toFixed(2)} MB`);
+    this.log.info(`Loading Time: ${(totalTime / 1000).toLocaleString()}s`);
+    this.log.info(`Memory Used: ${(memoryIncrease.rss / 1024 / 1024).toFixed(2)} MB`);
 
     this.assignIds();
   }
@@ -449,7 +450,7 @@ class Library {
     }
 
     // File doesn't exist, download it
-    console.log(`Downloading: ${fileName}`);
+    this.log.info(`Downloading: ${fileName}`);
 
     const downloadUrl = this.baseUrl.endsWith('/') ? this.baseUrl + fileName : this.baseUrl + '/' + fileName;
 
@@ -575,7 +576,7 @@ class Library {
     // Load FHIR core packages first
     const fhirPackages = this.#getFhirPackagesForVersion(fhirVersion);
 
-    console.log(`Loading FHIR ${fhirVersion} packages`);
+    this.log.info(`Loading FHIR ${fhirVersion} packages`);
     this.#logPackagesHeader();
 
     // Load FHIR packages - these will be added to valueSetProviders first
@@ -654,6 +655,21 @@ class Library {
       cmp.assignIds(ids);
     }
 
+  }
+
+  async close() {
+    for (let csp of this.codeSystemProviders) {
+      csp.close();
+    }
+    for (let csp of this.codeSystemFactories.values()) {
+      csp.close();
+    }
+    for (let vsp of this.valueSetProviders) {
+      vsp.close();
+    }
+    for (let cmp of this.conceptMapProviders) {
+      cmp.close();
+    }
   }
 }
 

@@ -457,284 +457,316 @@ class TokenModule {
 
   // Web interface handlers
   async renderDashboard(req, res) {
-    this.countRequest();
-
+    const start = Date.now();
     try {
-      if (!req.isAuthenticated()) {
-        return res.redirect('/token/login');
-      }
 
-      const user = req.user;
-      const apiKeys = await this.getUserApiKeys(user.id);
-      const usageStats = await this.getUserUsageStats(user.id);
+      try {
+        if (!req.isAuthenticated()) {
+          return res.redirect('/token/login');
+        }
 
-      const content = this.buildDashboardContent(user, apiKeys, usageStats);
-      
-      if (htmlServer.hasTemplate('token')) {
-        htmlServer.sendHtmlResponse(res, 'token', 'API Key Dashboard', content);
-      } else {
-        res.send(this.buildSimpleHtml('API Key Dashboard', content));
+        const user = req.user;
+        const apiKeys = await this.getUserApiKeys(user.id);
+        const usageStats = await this.getUserUsageStats(user.id);
+
+        const content = this.buildDashboardContent(user, apiKeys, usageStats);
+
+        if (htmlServer.hasTemplate('token')) {
+          htmlServer.sendHtmlResponse(res, 'token', 'API Key Dashboard', content);
+        } else {
+          res.send(this.buildSimpleHtml('API Key Dashboard', content));
+        }
+      } catch (error) {
+        this.log.error('Error rendering dashboard:', error);
+        res.status(500).json({error: 'Internal server error'});
       }
-    } catch (error) {
-      this.log.error('Error rendering dashboard:', error);
-      res.status(500).json({ error: 'Internal server error' });
+    } finally {
+      this.stats.countRequest('dashboard', Date.now() - start);
     }
   }
 
   renderLogin(req, res) {
-    this.countRequest();
+    const start = Date.now();
+    try {
 
-    if (req.isAuthenticated()) {
-      return res.redirect('/token');
-    }
+      if (req.isAuthenticated()) {
+        return res.redirect('/token');
+      }
 
-    const oauth = this.config.oauth || {};
-    const providers = Object.keys(oauth).filter(provider => oauth[provider]);
-    const error = req.query.error;
-    
-    const content = this.buildLoginContent(providers, error);
-    
-    if (htmlServer.hasTemplate('token')) {
-      htmlServer.sendHtmlResponse(res, 'token', 'Login', content);
-    } else {
-      res.send(this.buildSimpleHtml('Login', content));
+      const oauth = this.config.oauth || {};
+      const providers = Object.keys(oauth).filter(provider => oauth[provider]);
+      const error = req.query.error;
+
+      const content = this.buildLoginContent(providers, error);
+
+      if (htmlServer.hasTemplate('token')) {
+        htmlServer.sendHtmlResponse(res, 'token', 'Login', content);
+      } else {
+        res.send(this.buildSimpleHtml('Login', content));
+      }
+    } finally {
+      this.stats.countRequest('login', Date.now() - start);
     }
   }
 
   async handleLogout(req, res) {
-    this.countRequest();
+    const start = Date.now();
+    try {
 
-    const userId = req.user ? req.user.id : null;
-    
-    req.logout((err) => {
-      if (err) {
-        this.log.error('Logout error:', err);
-      }
-      
-      req.session.destroy((err) => {
+      const userId = req.user ? req.user.id : null;
+
+      req.logout((err) => {
         if (err) {
-          this.log.error('Session destruction error:', err);
+          this.log.error('Logout error:', err);
         }
-        
-        if (userId) {
-          this.logSecurityEvent(userId, 'logout', req.ip, req.get('User-Agent'), {});
-        }
-        
-        res.redirect('/token/login');
+
+        req.session.destroy((err) => {
+          if (err) {
+            this.log.error('Session destruction error:', err);
+          }
+
+          if (userId) {
+            this.logSecurityEvent(userId, 'logout', req.ip, req.get('User-Agent'), {});
+          }
+
+          res.redirect('/token/login');
+        });
       });
-    });
+    } finally {
+      this.stats.countRequest('logout', Date.now() - start);
+    }
   }
 
   // API Key management
   async createApiKey(req, res) {
-    this.countRequest();
-
+    const start = Date.now();
     try {
-      const { name, scopes = 'read' } = req.body;
-      const userId = req.user.id;
 
-      if (!name || name.length < 3) {
-        return res.status(400).json({ error: 'Key name must be at least 3 characters' });
-      }
+      try {
+        const {name, scopes = 'read'} = req.body;
+        const userId = req.user.id;
 
-      // Check key limit per user
-      const existingKeys = await this.getUserApiKeys(userId);
-      const maxKeys = this.config.apiKeys?.maxKeysPerUser || 10;
-      
-      if (existingKeys.length >= maxKeys) {
-        return res.status(400).json({ 
-          error: `Maximum ${maxKeys} API keys allowed per user` 
+        if (!name || name.length < 3) {
+          return res.status(400).json({error: 'Key name must be at least 3 characters'});
+        }
+
+        // Check key limit per user
+        const existingKeys = await this.getUserApiKeys(userId);
+        const maxKeys = this.config.apiKeys?.maxKeysPerUser || 10;
+
+        if (existingKeys.length >= maxKeys) {
+          return res.status(400).json({
+            error: `Maximum ${maxKeys} API keys allowed per user`
+          });
+        }
+
+        // Generate API key
+        const keyData = crypto.randomBytes(32);
+        const keyPrefix = 'tk_' + crypto.randomBytes(4).toString('hex');
+        const keySuffix = keyData.toString('hex');
+        const fullKey = keyPrefix + keySuffix;
+
+        const keyHash = await bcrypt.hash(fullKey, 12);
+
+        // Store in database
+        const keyId = await this.storeApiKey(userId, keyHash, keyPrefix, name, scopes, req.ip);
+
+        // Log key creation
+        await this.logSecurityEvent(userId, 'api_key_created', req.ip, req.get('User-Agent'), {
+          key_id: keyId,
+          key_name: name,
+          scopes
         });
+
+        res.json({
+          apiKey: fullKey,
+          message: 'API key created successfully',
+          warning: 'Please save this key now. You will not be able to see it again.'
+        });
+      } catch (error) {
+        this.log.error('Error creating API key:', error);
+        res.status(500).json({error: 'Failed to create API key'});
       }
-
-      // Generate API key
-      const keyData = crypto.randomBytes(32);
-      const keyPrefix = 'tk_' + crypto.randomBytes(4).toString('hex');
-      const keySuffix = keyData.toString('hex');
-      const fullKey = keyPrefix + keySuffix;
-      
-      const keyHash = await bcrypt.hash(fullKey, 12);
-
-      // Store in database
-      const keyId = await this.storeApiKey(userId, keyHash, keyPrefix, name, scopes, req.ip);
-
-      // Log key creation
-      await this.logSecurityEvent(userId, 'api_key_created', req.ip, req.get('User-Agent'), {
-        key_id: keyId,
-        key_name: name,
-        scopes
-      });
-
-      res.json({ 
-        apiKey: fullKey, 
-        message: 'API key created successfully',
-        warning: 'Please save this key now. You will not be able to see it again.'
-      });
-    } catch (error) {
-      this.log.error('Error creating API key:', error);
-      res.status(500).json({ error: 'Failed to create API key' });
+    } finally {
+      this.stats.countRequest('createKey', Date.now() - start);
     }
   }
 
   async deleteApiKey(req, res) {
-    this.countRequest();
-
+    const start = Date.now();
     try {
-      const keyId = parseInt(req.params.id);
-      const userId = req.user.id;
 
-      if (isNaN(keyId)) {
-        return res.status(400).json({ error: 'Invalid key ID' });
+      try {
+        const keyId = parseInt(req.params.id);
+        const userId = req.user.id;
+
+        if (isNaN(keyId)) {
+          return res.status(400).json({error: 'Invalid key ID'});
+        }
+
+        const deleted = await this.removeApiKey(keyId, userId);
+
+        if (!deleted) {
+          return res.status(404).json({error: 'API key not found'});
+        }
+
+        // Log key deletion
+        await this.logSecurityEvent(userId, 'api_key_deleted', req.ip, req.get('User-Agent'), {
+          key_id: keyId
+        });
+
+        res.json({message: 'API key deleted successfully'});
+      } catch (error) {
+        this.log.error('Error deleting API key:', error);
+        res.status(500).json({error: 'Failed to delete API key'});
       }
-
-      const deleted = await this.removeApiKey(keyId, userId);
-      
-      if (!deleted) {
-        return res.status(404).json({ error: 'API key not found' });
-      }
-
-      // Log key deletion
-      await this.logSecurityEvent(userId, 'api_key_deleted', req.ip, req.get('User-Agent'), {
-        key_id: keyId
-      });
-
-      res.json({ message: 'API key deleted successfully' });
-    } catch (error) {
-      this.log.error('Error deleting API key:', error);
-      res.status(500).json({ error: 'Failed to delete API key' });
+    } finally {
+      this.stats.countRequest('deletekey', Date.now() - start);
     }
   }
 
   // JSON API for other servers
   async validateApiKey(req, res) {
-    this.countRequest();
-
+    const start = Date.now();
     try {
-      const apiKey = req.params.key;
-      
-      if (!apiKey || !apiKey.startsWith('tk_')) {
-        return res.status(400).json({ 
-          valid: false, 
-          error: 'Invalid key format' 
-        });
-      }
 
-      const keyInfo = await this.findApiKeyByValue(apiKey);
-      
-      if (!keyInfo) {
-        return res.status(404).json({ 
-          valid: false, 
-          error: 'Key not found' 
-        });
-      }
+      try {
+        const apiKey = req.params.key;
 
-      if (!keyInfo.is_active) {
-        return res.status(403).json({ 
-          valid: false, 
-          error: 'Key inactive' 
-        });
-      }
-
-      // Check expiration
-      if (keyInfo.expires_at && new Date(keyInfo.expires_at) < new Date()) {
-        return res.status(403).json({ 
-          valid: false, 
-          error: 'Key expired' 
-        });
-      }
-
-      // Update last used timestamp
-      await this.updateKeyLastUsed(keyInfo.id, req.ip);
-
-      const allowedRequests = this.config.apiKeys?.defaultAllowedRequests || 50;
-
-      res.json({
-        valid: true,
-        user: {
-          id: keyInfo.user_id,
-          email: keyInfo.email,
-          name: keyInfo.name
-        },
-        key: {
-          id: keyInfo.id,
-          name: keyInfo.key_name,
-          scopes: keyInfo.scopes ? keyInfo.scopes.split(',') : ['read'],
-          created_at: keyInfo.created_at
-        },
-        allowedRequests,
-        usage: {
-          today: await this.getTodayUsage(keyInfo.id)
+        if (!apiKey || !apiKey.startsWith('tk_')) {
+          return res.status(400).json({
+            valid: false,
+            error: 'Invalid key format'
+          });
         }
-      });
-    } catch (error) {
-      this.log.error('Error validating API key:', error);
-      res.status(500).json({ 
-        valid: false, 
-        error: 'Validation failed' 
-      });
+
+        const keyInfo = await this.findApiKeyByValue(apiKey);
+
+        if (!keyInfo) {
+          return res.status(404).json({
+            valid: false,
+            error: 'Key not found'
+          });
+        }
+
+        if (!keyInfo.is_active) {
+          return res.status(403).json({
+            valid: false,
+            error: 'Key inactive'
+          });
+        }
+
+        // Check expiration
+        if (keyInfo.expires_at && new Date(keyInfo.expires_at) < new Date()) {
+          return res.status(403).json({
+            valid: false,
+            error: 'Key expired'
+          });
+        }
+
+        // Update last used timestamp
+        await this.updateKeyLastUsed(keyInfo.id, req.ip);
+
+        const allowedRequests = this.config.apiKeys?.defaultAllowedRequests || 50;
+
+        res.json({
+          valid: true,
+          user: {
+            id: keyInfo.user_id,
+            email: keyInfo.email,
+            name: keyInfo.name
+          },
+          key: {
+            id: keyInfo.id,
+            name: keyInfo.key_name,
+            scopes: keyInfo.scopes ? keyInfo.scopes.split(',') : ['read'],
+            created_at: keyInfo.created_at
+          },
+          allowedRequests,
+          usage: {
+            today: await this.getTodayUsage(keyInfo.id)
+          }
+        });
+      } catch (error) {
+        this.log.error('Error validating API key:', error);
+        res.status(500).json({
+          valid: false,
+          error: 'Validation failed'
+        });
+      }
+    } finally {
+      this.stats.countRequest('validate', Date.now() - start);
     }
   }
 
   async recordUsage(req, res) {
-    this.countRequest();
-
+    const start = Date.now();
     try {
-      const apiKey = req.params.key;
-      const { count = 1 } = req.body;
 
-      if (!apiKey || !apiKey.startsWith('tk_')) {
-        return res.status(400).json({ error: 'Invalid key format' });
+      try {
+        const apiKey = req.params.key;
+        const {count = 1} = req.body;
+
+        if (!apiKey || !apiKey.startsWith('tk_')) {
+          return res.status(400).json({error: 'Invalid key format'});
+        }
+
+        if (!Number.isInteger(count) || count < 1 || count > 1000) {
+          return res.status(400).json({error: 'Count must be between 1 and 1000'});
+        }
+
+        const keyInfo = await this.findApiKeyByValue(apiKey);
+        if (!keyInfo || !keyInfo.is_active) {
+          return res.status(404).json({error: 'Key not found or inactive'});
+        }
+
+        await this.incrementUsage(keyInfo.id, count, req.ip);
+
+        res.json({
+          message: 'Usage recorded',
+          recorded_count: count,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        this.log.error('Error recording usage:', error);
+        res.status(500).json({error: 'Failed to record usage'});
       }
-
-      if (!Number.isInteger(count) || count < 1 || count > 1000) {
-        return res.status(400).json({ error: 'Count must be between 1 and 1000' });
-      }
-
-      const keyInfo = await this.findApiKeyByValue(apiKey);
-      if (!keyInfo || !keyInfo.is_active) {
-        return res.status(404).json({ error: 'Key not found or inactive' });
-      }
-
-      await this.incrementUsage(keyInfo.id, count, req.ip);
-      
-      res.json({ 
-        message: 'Usage recorded',
-        recorded_count: count,
-        timestamp: new Date().toISOString()
-      });
-    } catch (error) {
-      this.log.error('Error recording usage:', error);
-      res.status(500).json({ error: 'Failed to record usage' });
+    } finally {
+      this.stats.countRequest('usage', Date.now() - start);
     }
   }
 
   async getUsageStats(req, res) {
-    this.countRequest();
-
+    const start = Date.now();
     try {
-      const apiKey = req.params.key;
-      const days = Math.min(parseInt(req.query.days) || 30, 365); // Max 1 year
 
-      if (!apiKey || !apiKey.startsWith('tk_')) {
-        return res.status(400).json({ error: 'Invalid key format' });
+      try {
+        const apiKey = req.params.key;
+        const days = Math.min(parseInt(req.query.days) || 30, 365); // Max 1 year
+
+        if (!apiKey || !apiKey.startsWith('tk_')) {
+          return res.status(400).json({error: 'Invalid key format'});
+        }
+
+        const keyInfo = await this.findApiKeyByValue(apiKey);
+        if (!keyInfo) {
+          return res.status(404).json({error: 'Key not found'});
+        }
+
+        const stats = await this.getApiKeyUsageStats(keyInfo.id, days);
+
+        res.json({
+          key_id: keyInfo.id,
+          key_name: keyInfo.key_name,
+          stats,
+          period_days: days
+        });
+      } catch (error) {
+        this.log.error('Error getting usage stats:', error);
+        res.status(500).json({error: 'Failed to get usage stats'});
       }
-
-      const keyInfo = await this.findApiKeyByValue(apiKey);
-      if (!keyInfo) {
-        return res.status(404).json({ error: 'Key not found' });
-      }
-
-      const stats = await this.getApiKeyUsageStats(keyInfo.id, days);
-      
-      res.json({ 
-        key_id: keyInfo.id,
-        key_name: keyInfo.key_name,
-        stats,
-        period_days: days
-      });
-    } catch (error) {
-      this.log.error('Error getting usage stats:', error);
-      res.status(500).json({ error: 'Failed to get usage stats' });
+    } finally {
+      this.stats.countRequest('stats', Date.now() - start);
     }
   }
 
@@ -1262,11 +1294,6 @@ class TokenModule {
         });
       });
     }
-  }
-
-
-  countRequest() {
-    this.stats.requestCount++;
   }
 }
 

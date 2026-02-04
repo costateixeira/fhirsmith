@@ -101,6 +101,10 @@ class AbstractValueSetProvider {
   async listAllValueSets() {
     return [];
   }
+
+  async close() {
+
+  }
 }
 
 module.exports = {

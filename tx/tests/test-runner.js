@@ -127,7 +127,7 @@ async function loadValidator() {
     validator = new FhirValidator(validatorJarPath, log);
     const validatorConfig = {
         version : '4.0',
-        txServer : 'http://tx-dev.fhir.org',
+        txServer : 'http://localhost:'+TEST_PORT+'/r5',
         txLog : path.join(__dirname, '../logs/text-cases.log'),
         port: VALIDATOR_PORT,
         timeout: 60000

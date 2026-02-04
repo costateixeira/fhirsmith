@@ -55,6 +55,13 @@ const PORT = process.env.PORT || config.server.port || 3000;
 app.use(express.raw({ type: 'application/fhir+json', limit: '50mb' }));
 app.use(express.raw({ type: 'application/fhir+xml', limit: '50mb' }));
 app.use(express.json({ limit: '50mb' }));
+app.use((req, res, next) => {
+  const requestId = req.headers['x-request-id'];
+  if (requestId) {
+    res.setHeader('X-Request-Id', requestId);
+  }
+  next();
+});
 
 // app.use(cors(config.server.cors));
 
@@ -110,6 +117,7 @@ async function initializeModules() {
       await modules.packages.initialize(config.modules.packages);
       app.use('/packages', modules.packages.router);
     } catch (error) {
+      console.error('Failed to initialize Server:', error);
       serverLog.error('Failed to initialize Packages module:', error);
       throw error;
     }

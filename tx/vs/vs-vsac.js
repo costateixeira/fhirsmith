@@ -353,6 +353,11 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
   async listAllValueSets() {
     return await this.database.listAllValueSets();
   }
+
+  async close() {
+    await this.database.close();
+  }
+
 }
 
 // Usage examples:

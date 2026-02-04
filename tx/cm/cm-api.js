@@ -98,6 +98,11 @@ class AbstractConceptMapProvider {
   cmCount() {
     return 0;
   }
+
+  async close() {
+
+  }
+
 }
 
 module.exports = {

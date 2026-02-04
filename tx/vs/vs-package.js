@@ -46,6 +46,9 @@ class PackageValueSetProvider extends AbstractValueSetProvider {
     this.initialized = true;
   }
 
+  async close() {
+    await this.database.close();
+  }
   /**
    * Populate the database with value sets from the package
    * @returns {Promise<void>}
@@ -121,7 +124,7 @@ class PackageValueSetProvider extends AbstractValueSetProvider {
     this._validateSearchParams(searchParams);
 
     if (this.USE_DATABASE_SEARCH) {
-      return await this.database.search(this.spaceId, searchParams, elements);
+      return await this.database.search(this.spaceId, this.valueSetMap, searchParams, elements);
     } else {
       const matches = [];
       const seen = new Set(); // Track by URL to avoid duplicates from versioned keys
@@ -194,8 +197,7 @@ class PackageValueSetProvider extends AbstractValueSetProvider {
         if (isMatch) {
           seen.add(vsUrl);
           // Return with prefixed id
-          const result = { ...json, id: `${this.spaceId}-${json.id}` };
-          matches.push(result);
+          matches.push(json);
         }
       }
 
@@ -308,19 +310,38 @@ class PackageValueSetProvider extends AbstractValueSetProvider {
   }
 
   async fetchValueSetById(id) {
-    if (!this.spaceId) {
-      return this.valueSetMap.get(id);
-    } else if (id.startsWith(this.spaceId+"-")) {
-      let key = id.substring(this.spaceId.length + 1);
-      return this.valueSetMap.get(key);
-    } else {
-      return null;
-    }
+    return this.valueSetMap.get(id);
   }
 
   // eslint-disable-next-line no-unused-vars
   assignIds(ids) {
-    // nothing - we don't do any assigning.
+    if (!this.spaceId) {
+      return;
+    }
+
+    const prefix = this.spaceId + '-';
+    const alreadyPrefixed = new Set();
+
+    // Get all current entries - we'll iterate and modify
+    const entries = Array.from(this.valueSetMap.entries());
+
+    for (const [key, vs] of entries) {
+      // Skip if we've already processed this ValueSet instance
+      if (alreadyPrefixed.has(vs)) {
+        continue;
+      }
+
+      // Update the id on the ValueSet itself
+      if (vs.id && !vs.id.startsWith(prefix)) {
+        const oldId = vs.id;
+        vs.id = prefix + oldId;
+
+        // Add to map under the new id as well
+        this.valueSetMap.set(vs.id, vs);
+      }
+
+      alreadyPrefixed.add(vs);
+    }
   }
 
   vsCount() {

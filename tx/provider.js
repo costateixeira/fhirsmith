@@ -116,7 +116,15 @@ class Provider {
 
 
   async loadNpm(packageManager, cacheFolder,  details, isDefault, mode) {
-    const packagePath = await packageManager.fetch(details, null);
+    // Parse packageId and version from details (e.g., "hl7.terminology.r4#6.0.2")
+    let packageId = details;
+    let version = null;
+    if (details.includes('#')) {
+      const parts = details.split('#');
+      packageId = parts[0];
+      version = parts[1];
+    }
+    const packagePath = await packageManager.fetch(packageId, version);
     if (mode === "fetch" || mode === "cs") {
       return;
     }

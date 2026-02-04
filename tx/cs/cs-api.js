@@ -775,6 +775,10 @@ class CodeSystemFactoryProvider {
     return false;
   }
 
+  // nothing here - might be overriden
+  async close() {
+
+  }
 }
 
 module.exports = {
