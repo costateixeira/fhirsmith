@@ -1,11 +1,14 @@
-FROM node:20-alpine
+FROM node:24-alpine
 
 # Create app directory
 WORKDIR /app
 
+# Install build dependencies for native modules (bcrypt, sqlite3)
+RUN apk add --no-cache python3 make g++
+
 # Install app dependencies
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm install --omit=dev
 
 # Bundle app source
 COPY . .
