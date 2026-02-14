@@ -11,6 +11,8 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const folders = require('./library/folder-setup');  // <-- ADD: load early
+const { statSync, readdirSync } = require('fs');
+const { execSync } = require('os'); // not needed, we'll use statfs
 
 // Load configuration BEFORE logger
 let config;
@@ -341,7 +343,7 @@ async function buildRootPageContent() {
   content += `<td><strong>Heap Total:</strong> ${heapTotalMB} MB</td>`;
   content += `<td><strong>Process Memory:</strong> ${rssMB} MB</td>`;
   content += '</tr>';
-
+  content += getLogStats();
   content += '</table>';
 
 
@@ -473,6 +475,52 @@ app.get('/health', async (req, res) => {
 
   res.json(healthStatus);
 });
+
+/**
+ * Get log directory statistics: file count, total size, and disk space info
+ * @returns {string} HTML table row(s) with log stats
+ */
+function getLogStats() {
+  const logDir = folders.logsDir();
+
+  try {
+    const files = readdirSync(logDir).filter(f => f.endsWith('.log'));
+    let totalSize = 0;
+    for (const file of files) {
+      totalSize += statSync(path.join(logDir, file)).size;
+    }
+
+    const sizeMB = (totalSize / 1024 / 1024).toFixed(2);
+
+    let diskInfo = '';
+    try {
+      // statfs available in Node 18.15+
+      const stats = fs.statfsSync(logDir);
+      const blockSize = stats.bsize;
+      const freeSpace = stats.bavail * blockSize;
+      const totalSpace = stats.blocks * blockSize;
+      const freeGB = (freeSpace / 1024 / 1024 / 1024).toFixed(2);
+      const totalGB = (totalSpace / 1024 / 1024 / 1024).toFixed(2);
+      diskInfo = `<td><strong>Disk Space:</strong> ${freeGB} GB of ${totalGB} GB</td>`;
+    } catch {
+      diskInfo = '<td><strong>Disk Space:</strong> unavailable</td>';
+    }
+
+    // Log rotation limit from logger config
+    const loggerOpts = Logger.getInstance().options;
+    const maxFiles = loggerOpts.file.maxFiles;
+    const maxSize = loggerOpts.file.maxSize;
+    const limitInfo = `${maxFiles} files × ${maxSize} each`;
+
+    return '<tr>'
+      + `<td><strong>Existing Logs:</strong> ${files.length} (${sizeMB} MB)</td>`
+      + `<td><strong>Retention Policy:</strong> ${limitInfo}</td>`
+      + diskInfo
+      + '</tr>';
+  } catch (e) {
+    return `<tr><td colspan="3"><strong>Logs:</strong> unable to read (${e.message})</td></tr>`;
+  }
+}
 
 // Initialize everything
 async function startServer() {
