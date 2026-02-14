@@ -50,6 +50,8 @@ A comprehensive CLI tool for importing various medical terminology standards int
 | **LOINC** | `loinc` | Logical Observation Identifiers Names and Codes | 45-120 min |
 | **LOINC Subset** | `loinc-subset` | Create LOINC subsets for testing | 5-15 min |
 | **SNOMED CT** | `snomed` | SNOMED Clinical Terms | 2-6 hours |
+| **RxNorm** | `rxnorm` | Prescribable drug nomenclature (NLM) | 15-45 min |
+| **RxNorm Subset** | `rxnorm-subset` | Create RxNorm subsets for testing | 10-30 min |
 | **UNII** | `unii` | Unique Ingredient Identifier (FDA) | 15-45 min |
 | **NDC** | `ndc` | National Drug Code Directory | 30-90 min |
 
@@ -60,9 +62,11 @@ To import:
 ```bash
 tx-import loinc import
 tx-import snomed import
+tx-import rxnorm import
 tx-import unii import
 tx-import ndc import
 tx-import loinc-subset subset
+tx-import rxnorm-subset subset
 ```
 
 See additional commands below. 
@@ -70,9 +74,10 @@ See additional commands below.
 ## Basic Functionality
 
 * LOINC: Import from a full Download (all files, including accessories)
-* SNOMED: Import from a full snapshot download 
+* SNOMED: Import from a full snapshot download
+* RxNorm: Import from RxNorm Full Monthly Release (RRF files)
 * UNII: Import from a set of past downloads (see discussion below about UNII)
-* NDC: import from NDC downloads 
+* NDC: import from NDC downloads
 
 In addition, there's functionality to create test subsets for LOINC and RxNorm.
 For SNOMED CT, use the SCT subset functionality (documented in the tx-ecosystem IG).
@@ -220,10 +225,16 @@ tx-import loinc-subset subset \
 
 **Import SNOMED CT:**
 ```bash
-# Interactive mode (will prompt for edition selection)
+# Interactive mode - auto-detects edition and version from RF2 files
 tx-import snomed import
 
-# International Edition
+# Fully automatic (auto-detects edition/version, no prompts)
+tx-import snomed import \
+  --source /path/to/rf2/files \
+  --dest ./data/snomed.cache \
+  --yes
+
+# Manual edition/version specification
 tx-import snomed import \
   --source /path/to/rf2/files \
   --dest ./data/snomed.cache \
@@ -231,7 +242,7 @@ tx-import snomed import \
   --version "20250801" \
   --yes
 
-# With custom URI
+# With custom URI (overrides edition/version)
 tx-import snomed import \
   --source /path/to/rf2/files \
   --dest ./data/snomed.cache \
@@ -239,9 +250,16 @@ tx-import snomed import \
   --yes
 ```
 
+**Auto-Detection:**
+The importer automatically detects the edition and version from RF2 files by:
+1. Parsing filenames like `sct2_Concept_Snapshot_INT_20250201.txt`
+2. Reading the `moduleId` and `effectiveTime` from the first concept record
+
+In interactive mode, you'll be asked to confirm the detected values. With `--yes`, the detected values are used automatically.
+
 **Supported Editions:**
 - International (900000000000207008)
-- US Edition (731000124108) 
+- US Edition (731000124108)
 - UK Edition (83821000000107)
 - Australian Edition (32506021000036107)
 - [And many more...]
@@ -256,6 +274,96 @@ rf2_files/
 └── Refset/
     └── [various refset files]
 ```
+
+### RxNorm Import
+
+**Import RxNorm Data:**
+```bash
+# Interactive mode
+tx-import rxnorm import
+
+# Batch mode
+tx-import rxnorm import \
+  --source /path/to/RxNorm_full_MMDDYYYY/rrf \
+  --dest ./data/rxnorm.db \
+  --version "RXNORM-2025-02-03" \
+  --yes
+
+# Skip stem generation for faster import
+tx-import rxnorm import \
+  --source /path/to/rrf/files \
+  --dest ./data/rxnorm.db \
+  --no-stems \
+  --yes
+```
+
+**Options:**
+- `--no-indexes`: Skip index creation for faster import
+- `--no-stems`: Skip stem generation (word stems used for text search)
+
+**Required RRF Structure:**
+```
+rrf_files/
+├── RXNCONSO.RRF    (required - concepts/names)
+├── RXNREL.RRF      (required - relationships)
+├── RXNSTY.RRF      (required - semantic types)
+├── RXNSAB.RRF      (optional - source info)
+├── RXNATOMARCHIVE.RRF (optional - archived atoms)
+└── RXNCUI.RRF      (optional - concept history)
+```
+
+**Source File Format:**
+RxNorm uses Rich Release Format (RRF), which is pipe-delimited with fields ending in `|`.
+Download the "RxNorm Full Monthly Release" from the [NLM RxNorm page](https://www.nlm.nih.gov/research/umls/rxnorm/docs/rxnormfiles.html).
+
+**Version Auto-Detection:**
+The importer can auto-detect the version from directory names like `RxNorm_full_08042025`.
+
+### RxNorm Subset Creation
+
+**Create Test Subset:**
+```bash
+# Interactive mode
+tx-import rxnorm-subset subset
+
+# With parameters
+tx-import rxnorm-subset subset \
+  --source /path/to/rxnorm/rrf \
+  --dest ./rxnorm-subset \
+  --codes ./my-codes.txt \
+  --yes
+
+# Without relationship expansion (faster, smaller subset)
+tx-import rxnorm-subset subset \
+  --source /path/to/rxnorm/rrf \
+  --dest ./rxnorm-subset \
+  --codes ./my-codes.txt \
+  --no-expand \
+  --yes
+```
+
+**Codes File Format** (`my-codes.txt`):
+```
+# One RxNorm CUI per line
+# Comments start with #
+161    # acetaminophen
+1191   # aspirin
+5640   # ibuprofen
+```
+
+**Options:**
+- `--no-expand`: Skip relationship expansion (just include listed codes)
+- `--include-synonyms`: Include synonym (SY) term types
+- `--include-archived`: Include archived concepts from RXNATOMARCHIVE
+- `--max-iterations <n>`: Maximum relationship expansion iterations (default: 5)
+
+**Relationship Expansion:**
+By default, the subset tool expands your target codes to include related concepts:
+- Ingredients of drug products
+- Drug forms and dose forms
+- Components and constituents
+
+This ensures that if you include a branded drug, you also get its ingredients, which are required for terminology operations.
 
 ### UNII Import
 
@@ -448,6 +556,8 @@ tx-import help
 
 - **LOINC**: SQLite database with normalized tables
 - **SNOMED CT**: Binary cache file optimized for fast loading
+- **RxNorm**: SQLite database with RRF tables and word stems
 - **UNII**: SQLite database with simple structure
 - **NDC**: SQLite database supporting multiple versions
 - **LOINC Subset**: File-based subset matching original structure
+- **RxNorm Subset**: RRF file-based subset matching original structure
