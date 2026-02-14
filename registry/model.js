@@ -141,7 +141,7 @@ class ServerInformation {
       if (result) result += '. ';
       result += 'Authoritative for the following CodeSystems: <ul>';
       this.authCSList.forEach(cs => {
-        const escaped = escape(cs).replace('*', '<b>*</b>');
+        const escaped = escape(cs).replace(/\*/g, '<b>*</b>');
         result += `<li>${escaped}</li>`;
       });
       result += '</ul>';
@@ -151,7 +151,7 @@ class ServerInformation {
       if (result) result += '. ';
       result += 'Authoritative for the following ValueSets: <ul>';
       this.authVSList.forEach(vs => {
-        const escaped = escape(vs).replace('*', '<b>*</b>');
+        const escaped = escape(vs).replace(/\*/g, '<b>*</b>');
         result += `<li>${escaped}</li>`;
       });
       result += '</ul>';
