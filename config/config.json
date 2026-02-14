@@ -1,0 +1,54 @@
+{
+  "server": {
+    "port": 3000,
+    "cors": {
+      "origin": true,
+      "credentials": true
+    }
+  },
+  "modules": {
+    "shl": {
+      "enabled": false
+    },
+    "vcl": {
+      "enabled": false
+    },
+    "xig": {
+      "enabled": false
+    },
+    "packages": {
+      "enabled": false
+    },
+    "registry": {
+      "enabled": false,
+      "masterUrl": "https://fhir.github.io/ig-registry/tx-servers.json",
+      "crawlInterval": 30,
+      "timeout": 30000,
+      "userAgent": "NodeServer/1.0",
+      "apiKeys": {}
+    },
+    "publisher": {
+      "enabled": false
+    },
+    "npmprojector": {
+      "enabled": false
+    },
+    "token": {
+      "enabled": false
+    },
+    "tx": {
+      "enabled": true,
+      "librarySource": "/app/config/library.yml",
+      "cacheTimeout": 30,
+      "expansionCacheSize": 1000,
+      "expansionCacheMemoryThreshold": 0,
+      "endpoints": [
+        {
+          "path": "/tx/r4",
+          "fhirVersion": "4.0.1",
+          "context": null
+        }
+      ]
+    }
+  }
+}

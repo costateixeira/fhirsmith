@@ -47,3 +47,4 @@ tx/tests/test-cases-summary.txt
 bin/validator_cli.jar.version
 
 *.log
+/.package-cache

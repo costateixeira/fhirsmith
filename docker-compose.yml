@@ -1,0 +1,57 @@
+#version: '3.8'
+
+services:
+  nodeserver:
+    build: .
+    image: ghcr.io/costateixeira/nodeserver:local
+    # image: ghcr.io/healthintersections/fhirsmith/fhirsmith:cibuild    
+    volumes:
+      # config.json must be in ./data folder (not ./config) since server reads from data dir
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./logs:/app/logs
+      # /app/.package-cache is for testing only
+      - ./package-cache:/app/.package-cache
+    expose:
+      - "3000"
+    ports:
+      - "3000:3000"
+    networks:
+      fhir_network:
+        aliases: [nodeserver]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+#  nginx:
+#    image: nginx:latest
+#    container_name: nodeserver-nginx
+#    ports:
+#      - "80:80"
+#      - "443:443"
+#    depends_on:
+#      nodeserver:
+#        condition: service_started
+#    networks:
+#      - fhir_network
+#    restart: unless-stopped
+#    volumes:
+#      - ./nginx:/etc/nginx/conf.d
+#      - ./certbot/www:/var/www/certbot
+#      - ./certbot/letsencrypt:/etc/letsencrypt
+#
+#  certbot:
+#    image: certbot/certbot
+#    container_name: nodeserver-certbot
+#    networks:
+#      - fhir_network
+#    volumes:
+#      - ./certbot/www:/var/www/certbot
+#      - ./certbot/letsencrypt:/etc/letsencrypt
+
+networks:
+  fhir_network:
+    driver: bridge

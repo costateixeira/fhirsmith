@@ -1,0 +1,9 @@
+GET http://localhost:3000/tx/r4/metadata
+GET http://localhost:3000/tx/r4/CodeSystem?_count=10
+GET http://localhost:3000/tx/r4/ValueSet?_count=10
+GET http://localhost:3000/tx/r4/CodeSystem/$lookup?system=http://snomed.info/sct&code=73211009
+GET http://localhost:3000/tx/r4/CodeSystem/$lookup?system=http://snomed.info/sct&code=22298006
+GET http://localhost:3000/tx/r4/CodeSystem/$lookup?system=http://loinc.org&code=8867-4
+GET http://localhost:3000/tx/r4/CodeSystem?url=http://snomed.info/sct
+GET http://localhost:3000/tx/r4/CodeSystem?url=http://loinc.org
+GET http://localhost:3000/health

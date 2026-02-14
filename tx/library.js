@@ -92,7 +92,9 @@ class Library {
     this.conceptMapProviders = [];
 
     // Create package manager for FHIR packages
-    const packageServers = ['https://packages2.fhir.org/packages'];
+    // packages2.fhir.org/packages is the primary, packages.fhir.org is fallback
+    // Some packages (e.g., hl7.terminology without version suffix) may only be on one server
+    const packageServers = ['https://packages2.fhir.org/packages', 'https://packages.fhir.org'];
     this.cacheFolder = folders.subDir('terminology-cache');  // <-- CHANGE
     this.packageManager = new PackageManager(packageServers, this.cacheFolder);
   }

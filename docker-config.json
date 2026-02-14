@@ -1,0 +1,38 @@
+{
+  "server": {
+    "port": 3000,
+    "cors": {
+      "origin": true,
+      "credentials": true
+    }
+  },
+  "modules": {
+    "shl": {
+      "enabled": false
+    },
+    "vcl": {
+      "enabled": false
+    },
+    "xig": {
+      "enabled": false
+    },
+    "packages": {
+      "enabled": false
+    },
+    "registry": {
+      "enabled": false
+    },
+    "publisher": {
+      "enabled": false
+    },
+    "npmprojector": {
+      "enabled": false
+    },
+    "token": {
+      "enabled": false
+    },
+    "tx": {
+      "enabled": false
+    }
+  }
+}

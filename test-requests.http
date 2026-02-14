@@ -1,0 +1,142 @@
+### TX Server Test Requests
+### Use with REST Client extension in VSCode
+
+@baseUrl = http://localhost:3000/tx/r4
+
+### ========================================
+### Metadata & Capability Statement
+### ========================================
+
+### Get server metadata (CapabilityStatement)
+GET {{baseUrl}}/metadata
+Accept: application/fhir+json
+
+###
+
+### ========================================
+### CodeSystem Operations
+### ========================================
+
+### List all CodeSystems
+GET {{baseUrl}}/CodeSystem
+Accept: application/fhir+json
+
+###
+
+### List CodeSystems (first 10)
+GET {{baseUrl}}/CodeSystem?_count=10
+Accept: application/fhir+json
+
+###
+
+### Search CodeSystem by URL (SNOMED CT)
+GET {{baseUrl}}/CodeSystem?url=http://snomed.info/sct
+Accept: application/fhir+json
+
+###
+
+### Search CodeSystem by URL (LOINC)
+GET {{baseUrl}}/CodeSystem?url=http://loinc.org
+Accept: application/fhir+json
+
+###
+
+### Lookup a SNOMED CT code (e.g., 73211009 = Diabetes mellitus)
+GET {{baseUrl}}/CodeSystem/$lookup?system=http://snomed.info/sct&code=73211009
+Accept: application/fhir+json
+
+###
+
+### Lookup a SNOMED CT code with display (e.g., 22298006 = Myocardial infarction)
+GET {{baseUrl}}/CodeSystem/$lookup?system=http://snomed.info/sct&code=22298006
+Accept: application/fhir+json
+
+###
+
+### Lookup LOINC code (e.g., 8867-4 = Heart rate)
+GET {{baseUrl}}/CodeSystem/$lookup?system=http://loinc.org&code=8867-4
+Accept: application/fhir+json
+
+###
+
+### Validate SNOMED code
+GET {{baseUrl}}/CodeSystem/$validate-code?url=http://snomed.info/sct&code=73211009
+Accept: application/fhir+json
+
+###
+
+### ========================================
+### ValueSet Operations
+### ========================================
+
+### List all ValueSets
+GET {{baseUrl}}/ValueSet
+Accept: application/fhir+json
+
+###
+
+### List ValueSets (first 10)
+GET {{baseUrl}}/ValueSet?_count=10
+Accept: application/fhir+json
+
+###
+
+### Expand a ValueSet by URL
+POST {{baseUrl}}/ValueSet/$expand
+Content-Type: application/fhir+json
+Accept: application/fhir+json
+
+{
+  "resourceType": "Parameters",
+  "parameter": [
+    {
+      "name": "url",
+      "valueUri": "http://hl7.org/fhir/ValueSet/languages"
+    },
+    {
+      "name": "count",
+      "valueInteger": 20
+    }
+  ]
+}
+
+###
+
+### Validate code against ValueSet
+POST {{baseUrl}}/ValueSet/$validate-code
+Content-Type: application/fhir+json
+Accept: application/fhir+json
+
+{
+  "resourceType": "Parameters",
+  "parameter": [
+    {
+      "name": "url",
+      "valueUri": "http://hl7.org/fhir/ValueSet/languages"
+    },
+    {
+      "name": "code",
+      "valueCode": "en"
+    },
+    {
+      "name": "system",
+      "valueUri": "urn:ietf:bcp:47"
+    }
+  ]
+}
+
+###
+
+### ========================================
+### Health Check
+### ========================================
+
+### Server health check
+GET http://localhost:3000/health
+Accept: application/json
+
+###
+
+### Root endpoint
+GET http://localhost:3000/
+Accept: application/json

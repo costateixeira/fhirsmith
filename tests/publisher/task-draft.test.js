@@ -14,7 +14,7 @@ describe('DraftTaskProcessor Integration Tests', () => {
 
   beforeAll(() => {
     // ADAPT THESE PATHS FOR YOUR ENVIRONMENT
-    testWorkspaceRoot = '/Users/grahamegrieve/temp/publisher/workspace';
+    testWorkspaceRoot = '/temp/publisher/workspace';
 
     testConfig = {
       workspaceRoot: testWorkspaceRoot

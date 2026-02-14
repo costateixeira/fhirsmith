@@ -1,0 +1,79 @@
+# Terminology Library Configuration
+# TX R4 with all available terminology sources
+
+base:
+  url: https://storage.googleapis.com/tx-fhir-org
+
+sources:
+  # Built-in code systems
+  - internal:lang
+  - internal:country
+  - internal:currency
+  - internal:mimetypes
+
+  # UCUM (local file in package-cache)
+  # ucum: expects path relative to /app
+  - ucum:data/terminology-cache/ucum-essence-2.2.xml
+
+  # LOINC (local file in package-cache)
+  - loinc:loinc-2.81-b.db
+
+  # CPT (local file in package-cache)
+  - cpt:cpt-2023-fragment-0.1.db
+
+  # RxNorm (local file in package-cache)
+  # - rxnorm:rxnorm_09032024.db
+
+  # NDC - National Drug Codes (local file in package-cache)
+  # - ndc:ndc-20211101.db
+
+  # UNII - FDA substance identifiers (local file in package-cache)
+  # - unii:unii_20240622.db
+
+  # OMOP vocabulary (local file in package-cache)
+  # - omop:omop_20230531_a.db
+
+  # SNOMED CT editions (local files in package-cache)
+  # Note: The one with ! is the default/primary edition
+  # - snomed:sct_intl_20240801.cache    # International (latest)
+  # - snomed:sct_intl_20240201.cache     # International
+  # - snomed:sct_intl_20230731.cache     # International (older)
+  # - snomed:sct_ips_20221130.cache      # IPS subset
+  # - snomed:sct_au_20230731.cache       # Australia
+  - snomed!:sct_be_20231115.cache       # Belgium
+  # - snomed:sct_ca_20220930.cache       # Canada
+  # - snomed:sct_ch_20230607.cache       # Switzerland
+  # - snomed:sct_dk_20240331.cache       # Denmark
+  # - snomed:sct_nl_20240930.cache       # Netherlands
+  # - snomed:sct_se_20231130.cache       # Sweden (latest)
+  # - snomed:sct_se_20220531.cache       # Sweden (older)
+  # - snomed:sct_uk_20230412.cache       # UK
+  # - snomed:sct_us_20240901.cache       # US
+
+  # FHIR Packages (npm: prefix)
+  # HL7 Terminology
+  - npm:hl7.terminology
+  # - npm:hl7.terminology.r4#5.5.0
+  # - npm:hl7.terminology.r4#5.0.0
+  - npm:hl7.terminology.r3#4.0.0
+
+  # FHIR Extensions
+  # - npm:hl7.fhir.uv.extensions.r4#5.1.0
+  # - npm:hl7.fhir.uv.extensions.r4#1.0.0
+
+  # US packages
+  # - npm:us.nlm.vsac#0.19.0
+  # - npm:us.nlm.vsac#0.11.0
+  # - npm:us.cdc.phinvads#0.12.0
+  # - npm:hl7.fhir.us.core#6.1.0
+
+  # IHE
+  - npm:ihe.formatcode.fhir#1.3.0
+  - npm:ihe.formatcode.fhir#1.1.0
+
+  # Other packages
+  # - npm:fhir.dicom#2024.2.20240331
+  # - npm:hl7.fhir.uv.sdc#3.0.0
+  - npm:hl7.fhir.uv.bulkdata#2.0.0
+  - npm:hl7.fhir.uv.smart-app-launch#2.1.0
+  - npm:hl7.fhir.be.drp#1.0.0

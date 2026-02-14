@@ -32,9 +32,9 @@ async function  finishTxTests() {
 function txTestSummary() {
     let set = Array.from(txTestModeSet()).join(',');
     if (error == 0) {
-      return `FHIRsmith passed all ${count} HL7 terminology service tests (modes ${set}, tests v${txTestVersion()}, runner v${validator.jarVersion()})`;
+      return `FHIRsmith passed all ${count} HL7 terminology service tests (modes ${set}, tests v${txTestVersion()})`;
     } else {
-      return `FHIRsmith failed all ${error} of ${count} HL7 terminology service tests (modes ${set}, tests v${txTestVersion()}, runner v${validator.jarVersion()})`;
+      return `FHIRsmith failed ${error} of ${count} HL7 terminology service tests (modes ${set}, tests v${txTestVersion()})`;
     }
 }
 
