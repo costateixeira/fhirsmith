@@ -18,6 +18,7 @@ const folders = require('../library/folder-setup');
 const escape = require('escape-html');
 
 const Logger = require('../library/logger');
+const {describeCron} = require("../library/cron-utilities");
 const xigLog = Logger.getInstance().child({ module: 'xig' });
 
 const router = express.Router();
@@ -1500,6 +1501,9 @@ function getMetadata(key) {
 function downloadFile(url, destination, maxRedirects = 5) {
   return new Promise((resolve, reject) => {
     xigLog.info(`Starting download from ${url}`);
+    if (globalStats) {
+      globalStats.task('XIG Download', `Downloading from ${url}`)
+    }
     const downloadMeta = {
       url: url,
       finalUrl: url,
@@ -1545,6 +1549,9 @@ function downloadFile(url, destination, maxRedirects = 5) {
           }
 
           if (response.statusCode !== 200) {
+            if (globalStats) {
+              globalStats.task('XIG Download', `Download failed:  ${response.statusCode}`)
+            }
             reject(Object.assign(
               new Error(`Download failed with HTTP ${response.statusCode}`),
               { downloadMeta }
@@ -1555,6 +1562,9 @@ function downloadFile(url, destination, maxRedirects = 5) {
           // Check content length
           const maxSize = 10 * 1024 * 1024 * 1024; // 10GB limit
           if (downloadMeta.contentLength && downloadMeta.contentLength > maxSize) {
+            if (globalStats) {
+              globalStats.task('XIG Download', `Download failed: too large`)
+            }
             reject(Object.assign(new Error('File too large'), { downloadMeta }));
             return;
           }
@@ -1565,6 +1575,9 @@ function downloadFile(url, destination, maxRedirects = 5) {
             downloadMeta.downloadedBytes += chunk.length;
             if (downloadMeta.downloadedBytes > maxSize) {
               request.destroy();
+              if (globalStats) {
+                globalStats.task('XIG Download', `Download failed: file too large`);
+              }
               fs.unlink(destination, () => {}); // Clean up
               reject(Object.assign(new Error('File too large'), { downloadMeta }));
               return;
@@ -1577,21 +1590,33 @@ function downloadFile(url, destination, maxRedirects = 5) {
             fileStream.close();
             downloadMeta.durationMs = Date.now() - downloadMeta.startTime;
             xigLog.info(`Download completed successfully. Downloaded ${downloadMeta.downloadedBytes} bytes to ${destination}`);
+            if (globalStats) {
+              globalStats.task('XIG Download', `Downloaded ${downloadMeta.downloadedBytes} bytes to ${destination}`);
+            }
             resolve(downloadMeta);
           });
 
           fileStream.on('error', (err) => {
+            if (globalStats) {
+              globalStats.task('XIG Download', `Download failed`);
+            }
             fs.unlink(destination, () => {}); // Delete partial file
             reject(Object.assign(err, { downloadMeta }));
           });
         });
 
         request.on('error', (err) => {
+          if (globalStats) {
+            globalStats.task('XIG Download', `Download Error`);
+          }
           reject(Object.assign(err, { downloadMeta }));
         });
 
         request.setTimeout(300000, () => { // 5 minutes timeout
           request.destroy();
+          if (globalStats) {
+            globalStats.task('XIG Download', `Download Timeout`);
+          }
           reject(Object.assign(new Error('Download timeout after 5 minutes'), { downloadMeta }));
         });
 
@@ -2918,6 +2943,9 @@ async function initializeXigModule(stats) {
       }, 5000);
     }
 
+    if (globalStats) {
+      globalStats.addTask('XIG Download', describeCron(this.config.crawler.schedule));
+    }
     // Check if auto-update is enabled
     // Note: This assumes we're called only when XIG is enabled
     cron.schedule('0 2 * * *', () => {
