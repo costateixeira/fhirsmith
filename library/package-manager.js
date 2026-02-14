@@ -588,6 +588,32 @@ class PackageManager {
     }
 
     /**
+     * Fetch a package directly from a URL (e.g., a CI build .tgz)
+     * @param {string} url - URL to a package.tgz file
+     * @returns {Promise<string>} Path to extracted package folder
+     */
+    async fetchUrl(url) {
+        // Derive a cache key from the URL
+        const urlHash = url.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const cacheKey = `url_${urlHash}`;
+
+        // Check cache first
+        const cachedPath = await this.checkCache(cacheKey, 'url');
+        if (cachedPath) {
+            return cachedPath;
+        }
+
+        console.log("Fetch Package from URL: " + url);
+        const client = new CIBuildClient();
+        const packageData = await client.fetchFromUrlSpecific(url);
+
+        this.totalDownloaded = this.totalDownloaded + packageData.length;
+        const extractedPath = await this.extractToCache(cacheKey, 'url', packageData);
+
+        return extractedPath;
+    }
+
+    /**
      * Extract package to cache folder
      * @param {string} packageId - Package identifier
      * @param {string} version - Specific version
