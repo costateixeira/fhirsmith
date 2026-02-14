@@ -81,9 +81,9 @@ class TxHtmlRenderer {
    * Check if request accepts HTML
    */
   acceptsHtml(req) {
-    let _fmt = req.query._format;
+    let _fmt = req.query._format || req.query.format || req.body?._format;
     if (_fmt && typeof _fmt !== 'string') {
-      _fmt = null
+      _fmt = null;
     }
     if (_fmt && _fmt == 'html') {
       return true;

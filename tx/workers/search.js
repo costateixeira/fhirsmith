@@ -31,11 +31,15 @@ class SearchWorker extends TerminologyWorker {
 
   // Allowed search parameters
   static ALLOWED_PARAMS = [
-    '_offset', '_count', '_elements', '_sort',
+    '_offset', '_count', '_elements', '_sort', '_summary', '_total',
     'url', 'version', 'content-mode', 'date', 'description',
     'supplements', 'identifier', 'jurisdiction', 'name',
     'publisher', 'status', 'system', 'title', 'text'
   ];
+
+  // Summary elements for _summary=true (common metadata fields)
+  static SUMMARY_ELEMENTS = ['resourceType', 'id', 'meta', 'url', 'version',
+    'name', 'title', 'status', 'date', 'publisher', 'description'];
 
   // Sortable fields
   static SORT_FIELDS = ['id', 'url', 'version', 'date', 'name', 'vurl'];
@@ -55,8 +59,27 @@ class SearchWorker extends TerminologyWorker {
     try {
       // Parse pagination parameters
       const offset = Math.max(0, parseInt(params._offset) || 0);
-      const elements = params._elements ? decodeURIComponent(params._elements).split(',').map(e => e.trim()) : null;
-      const count = Math.min(elements ? 2000 : 200, params._count && Utilities.isInteger(params._count) ? parseInt(params._count) : 20);
+      const summary = params._summary || 'false';
+      const totalMode = params._total || 'accurate';
+
+      // Determine elements based on _summary parameter
+      let elements;
+      switch (summary) {
+        case 'true':
+          elements = SearchWorker.SUMMARY_ELEMENTS;
+          break;
+        case 'text':
+          elements = ['resourceType', 'id', 'meta', 'text'];
+          break;
+        case 'data':
+          elements = null; // no filter for terminology
+          break;
+        default:
+          elements = params._elements ? decodeURIComponent(params._elements).split(',').map(e => e.trim()) : null;
+          break;
+      }
+
+      const count = summary === 'count' ? 0 : Math.min(elements ? 2000 : 200, params._count && Utilities.isInteger(params._count) ? parseInt(params._count) : 20);
       const sort = params._sort || "id";
 
       // Get matching resources
@@ -84,9 +107,9 @@ class SearchWorker extends TerminologyWorker {
 
       // Build and return the bundle
       const bundle = this.buildSearchBundle(
-        req, resourceType, matches, offset, count, elements
+        req, resourceType, matches, offset, count, elements, summary, totalMode
       );
-      req.logInfo = `${bundle.entry.length} matches`;
+      req.logInfo = summary === 'count' ? `count: ${bundle.total}` : `${bundle.entry.length} matches`;
       return res.json(bundle);
 
     } catch (error) {
@@ -268,8 +291,17 @@ class SearchWorker extends TerminologyWorker {
   /**
    * Build a FHIR search Bundle with pagination
    */
-  buildSearchBundle(req, resourceType, allMatches, offset, count, elements) {
+  buildSearchBundle(req, resourceType, allMatches, offset, count, elements, summary = 'false', totalMode = 'accurate') {
     const total = allMatches.length;
+
+    // For _summary=count, return just the count
+    if (summary === 'count') {
+      return {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        total: total
+      };
+    }
 
     // Get the slice for this page
     const pageResults = allMatches.slice(offset, offset + count);
@@ -354,13 +386,16 @@ class SearchWorker extends TerminologyWorker {
       };
     });
 
-    return {
+    const bundle = {
       resourceType: 'Bundle',
       type: 'searchset',
-      total: total,
       link: links,
       entry: entries
     };
+    if (totalMode !== 'none') {
+      bundle.total = total;
+    }
+    return bundle;
   }
 
   /**
