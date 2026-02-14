@@ -5,6 +5,7 @@ const Database = require('sqlite3').Database;
 const bcrypt = require('bcrypt');
 const session = require('express-session');
 const folders = require('../library/folder-setup');
+const escape = require('escape-html');
 
 
 class PublisherModule {
@@ -1096,7 +1097,7 @@ class PublisherModule {
                 content += '<a href="/publisher/tasks/' + task.id + '/output" class="btn btn-sm btn-outline-info me-1">View Output</a>';
               }
               if (task.failure_reason) {
-                content += '<span class="text-danger small me-1">' + this.escapeHtml(task.failure_reason) + '</span>';
+                content += '<span class="text-danger small me-1">' + escape(task.failure_reason) + '</span>';
               }
             }
 
@@ -1343,7 +1344,7 @@ class PublisherModule {
           // Build log section
           if (buildLog) {
             content += '<h4>Build Log</h4>';
-            content += '<div class="output-viewer">' + this.escapeHtml(buildLog) + '</div>';
+            content += '<div class="output-viewer">' + escape(buildLog) + '</div>';
           } else if (task.status === 'building') {
             content += '<h4>Build Log</h4>';
             content += '<p><em>Build in progress... Log will appear when available.</em></p>';
@@ -1424,28 +1425,28 @@ class PublisherModule {
 
         const htmlServer = require('../library/html-server');
 
-        let content = '<h3>Task History: #' + task.id + ' — ' + this.escapeHtml(task.npm_package_id) + '#' + this.escapeHtml(task.version) + '</h3>';
+        let content = '<h3>Task History: #' + task.id + ' — ' + escape(task.npm_package_id) + '#' + escape(task.version) + '</h3>';
 
         // Task details summary card
         content += '<div class="card mb-4"><div class="card-body">';
         content += '<div class="row">';
         content += '<div class="col-md-6">';
         content += '<p><strong>Status:</strong> <span class="badge bg-' + this.getStatusColor(task.status) + '">' + task.status + '</span></p>';
-        content += '<p><strong>Package:</strong> <code>' + this.escapeHtml(task.npm_package_id) + '</code></p>';
-        content += '<p><strong>Version:</strong> ' + this.escapeHtml(task.version) + '</p>';
-        content += '<p><strong>Website:</strong> ' + this.escapeHtml(task.website_name) + '</p>';
+        content += '<p><strong>Package:</strong> <code>' + escape(task.npm_package_id) + '</code></p>';
+        content += '<p><strong>Version:</strong> ' + escape(task.version) + '</p>';
+        content += '<p><strong>Website:</strong> ' + escape(task.website_name) + '</p>';
         content += '</div>';
         content += '<div class="col-md-6">';
-        content += '<p><strong>GitHub:</strong> ' + this.escapeHtml(task.github_org) + '/' + this.escapeHtml(task.github_repo) + ' (' + this.escapeHtml(task.git_branch) + ')</p>';
-        content += '<p><strong>Created by:</strong> ' + this.escapeHtml(task.user_name) + ' (' + this.escapeHtml(task.user_login) + ')</p>';
+        content += '<p><strong>GitHub:</strong> ' + escape(task.github_org) + '/' + escape(task.github_repo) + ' (' + escape(task.git_branch) + ')</p>';
+        content += '<p><strong>Created by:</strong> ' + escape(task.user_name) + ' (' + escape(task.user_login) + ')</p>';
         if (task.approved_by_name) {
-          content += '<p><strong>Approved by:</strong> ' + this.escapeHtml(task.approved_by_name) + '</p>';
+          content += '<p><strong>Approved by:</strong> ' + escape(task.approved_by_name) + '</p>';
         }
         if (task.local_folder) {
-          content += '<p><strong>Local folder:</strong> <code>' + this.escapeHtml(task.local_folder) + '</code></p>';
+          content += '<p><strong>Local folder:</strong> <code>' + escape(task.local_folder) + '</code></p>';
         }
         if (task.failure_reason) {
-          content += '<p><strong>Failure reason:</strong> <span class="text-danger">' + this.escapeHtml(task.failure_reason) + '</span></p>';
+          content += '<p><strong>Failure reason:</strong> <span class="text-danger">' + escape(task.failure_reason) + '</span></p>';
         }
         content += '</div>';
         content += '</div>';
@@ -1455,7 +1456,7 @@ class PublisherModule {
         if (task.announcement) {
           content += '<div class="card mb-4"><div class="card-body">';
           content += '<h5>Announcement</h5>';
-          content += '<pre class="mb-0" style="white-space: pre-wrap;">' + this.escapeHtml(task.announcement) + '</pre>';
+          content += '<pre class="mb-0" style="white-space: pre-wrap;">' + escape(task.announcement) + '</pre>';
           content += '</div></div>';
         }
 
@@ -1464,7 +1465,7 @@ class PublisherModule {
 
         // Status transition timestamps from the task record
         if (task.queued_at) {
-          events.push({ timestamp: task.queued_at, type: 'status', icon: '📋', label: 'Task queued', detail: 'Created by ' + this.escapeHtml(task.user_name), css: '' });
+          events.push({ timestamp: task.queued_at, type: 'status', icon: '📋', label: 'Task queued', detail: 'Created by ' + escape(task.user_name), css: '' });
         }
         if (task.building_at) {
           events.push({ timestamp: task.building_at, type: 'status', icon: '🔨', label: 'Draft build started', detail: '', css: '' });
@@ -1473,14 +1474,14 @@ class PublisherModule {
           events.push({ timestamp: task.waiting_approval_at, type: 'status', icon: '⏳', label: 'Waiting for approval', detail: 'Draft build completed', css: '' });
         }
         if (task.publishing_at) {
-          const approver = task.approved_by_name ? 'Approved by ' + this.escapeHtml(task.approved_by_name) : '';
+          const approver = task.approved_by_name ? 'Approved by ' + escape(task.approved_by_name) : '';
           events.push({ timestamp: task.publishing_at, type: 'status', icon: '🚀', label: 'Publishing started', detail: approver, css: '' });
         }
         if (task.completed_at) {
           events.push({ timestamp: task.completed_at, type: 'status', icon: '✅', label: 'Completed', detail: '', css: 'text-success' });
         }
         if (task.failed_at) {
-          events.push({ timestamp: task.failed_at, type: 'status', icon: '❌', label: 'Failed', detail: task.failure_reason ? this.escapeHtml(task.failure_reason) : '', css: 'text-danger' });
+          events.push({ timestamp: task.failed_at, type: 'status', icon: '❌', label: 'Failed', detail: task.failure_reason ? escape(task.failure_reason) : '', css: 'text-danger' });
         }
 
         // Task log entries
@@ -1489,7 +1490,7 @@ class PublisherModule {
             timestamp: log.timestamp,
             type: 'log',
             icon: log.level === 'error' ? '🔴' : log.level === 'warn' ? '🟡' : '🔵',
-            label: this.escapeHtml(log.message),
+            label: escape(log.message),
             detail: '',
             css: log.level === 'error' ? 'text-danger' : log.level === 'warn' ? 'text-warning' : 'text-muted'
           });
@@ -1497,8 +1498,8 @@ class PublisherModule {
 
         // User actions
         for (const action of actions) {
-          const who = action.user_name ? this.escapeHtml(action.user_name) + ' (' + this.escapeHtml(action.user_login) + ')' : 'Unknown';
-          const ip = action.ip_address ? ' from ' + this.escapeHtml(action.ip_address) : '';
+          const who = action.user_name ? escape(action.user_name) + ' (' + escape(action.user_login) + ')' : 'Unknown';
+          const ip = action.ip_address ? ' from ' + escape(action.ip_address) : '';
           let actionLabel = action.action;
           if (action.action === 'create_task') actionLabel = 'Created task';
           else if (action.action === 'approve_task') actionLabel = 'Approved task';
@@ -1578,15 +1579,6 @@ class PublisherModule {
     } finally {
       this.stats.countRequest('task-history', Date.now() - start);
     }
-  }
-
-  escapeHtml(text) {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
   }
 
   async renderWebsites(req, res) {

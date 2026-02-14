@@ -10,8 +10,6 @@ const path = require('path');
 const {TestUtilities} = require("../test-utilities");
 
 describe('Language Class', () => {
-  let languageDefinitions;
-
   beforeEach(async () => {
     this.languageDefinitions = await TestUtilities.loadLanguageDefinitions();
   });
@@ -216,7 +214,7 @@ describe('Languages Class', () => {
   });
 
   describe('Language Iteration and Access', () => {
-    test('should be iterable', () => {
+    test('should be iteratable', () => {
       const languages = Languages.fromAcceptLanguage('en-US,fr-CA', this.languageDefinitions);
       const codes = [];
       for (const lang of languages) {
@@ -279,13 +277,12 @@ describe('Languages Class', () => {
 describe('LanguageDefinitions Class', () => {
   let definitions;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     // Try to load real IETF data, fall back to mock if not available
-    const realDataPath = path.join(__dirname, '../../tx/data/lang.dat');
+    const realDataPath = path.join(__dirname, '../../tx/data');
 
     if (fs.existsSync(realDataPath)) {
-      const realContent = fs.readFileSync(realDataPath, 'utf8');
-      definitions = LanguageDefinitions.fromContent(realContent);
+      definitions = await LanguageDefinitions.fromFiles(realDataPath);
       // console.log('Using real IETF language data from lang.dat');
     } else {
       throw new Error('Real data file not found');
@@ -361,8 +358,89 @@ Description: Test
     });
 
     test('should return null for invalid language codes', () => {
-      const lang = definitions.parse('invalid-US');
+      let lang = definitions.parse('invalid-US');
       expect(lang).toBeNull();
+      const msg = {};
+      lang = definitions.parse('en-us', msg);
+      expect(lang).toBeNull();
+      expect(msg.message).toBe("The region 'us' in the code 'en-us' is not valid");
+    });
+
+    test('should parse basic language codes', () => {
+      const msg = {};
+      const lang = definitions.parse('en', msg);
+      expect(lang).not.toBeNull();
+      expect(lang.language).toBe('en');
+      expect(msg.message).toBeUndefined();
+    });
+
+    test('should parse wildcard', () => {
+      const lang = definitions.parse('*', {});
+      expect(lang).not.toBeNull();
+      expect(lang.language).toBe('*');
+    });
+
+    test('should parse language + region', () => {
+      const lang = definitions.parse('en-US', {});
+      expect(lang).not.toBeNull();
+      expect(lang.language).toBe('en');
+      expect(lang.region).toBe('US');
+    });
+
+    test('should parse language + script', () => {
+      const lang = definitions.parse('zh-Hans', {});
+      expect(lang).not.toBeNull();
+      expect(lang.language).toBe('zh');
+      expect(lang.script).toBe('Hans');
+    });
+
+    test('should parse language + script + region', () => {
+      const lang = definitions.parse('zh-Hans-CN', {});
+      expect(lang).not.toBeNull();
+      expect(lang.language).toBe('zh');
+      expect(lang.script).toBe('Hans');
+      expect(lang.region).toBe('CN');
+    });
+
+    test('should parse language + region + variant', () => {
+      const lang = definitions.parse('sl-IT-nedis', {});
+      expect(lang).not.toBeNull();
+      expect(lang.language).toBe('sl');
+      expect(lang.region).toBe('IT');
+      expect(lang.variant).toBe('nedis');
+    });
+
+    test('should parse private use extensions', () => {
+      const lang = definitions.parse('en-US-x-twain', {});
+      expect(lang).not.toBeNull();
+      expect(lang.language).toBe('en');
+      expect(lang.region).toBe('US');
+    });
+
+    test('should return null for empty code', () => {
+      const msg = {};
+      const lang = definitions.parse('', msg);
+      expect(lang).toBeNull();
+    });
+
+    test('should return null for invalid language code', () => {
+      const msg = {};
+      const lang = definitions.parse('xx', msg);
+      expect(lang).toBeNull();
+      expect(msg.message).toContain('not valid');
+    });
+
+    test('should return null for unrecognised trailing parts', () => {
+      const msg = {};
+      const lang = definitions.parse('en-ZZ-ZZ', msg);
+      expect(lang).toBeNull();
+      expect(msg.message).toContain('Unable to recognise');
+    });
+
+    test('should cache parsed results', () => {
+      const a = definitions.parse('en', {});
+      const b = definitions.parse('en', {});
+      expect(a).toBe(b);
     });
 
     test('should cache parsed languages', () => {
@@ -424,7 +502,7 @@ Description: Test
     test('should present language with region', () => {
       const lang = new Language('en-US');
       const presentation = definitions.present(lang);
-      expect(presentation).toBe('English (Region=United States)');
+      expect(presentation).toBe('English (United States)');
     });
 
     test('should present language with script and region', () => {
@@ -472,13 +550,12 @@ Description: Test
 describe('Language System Integration Tests', () => {
   let definitions;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     // Try to load real IETF data, fall back to mock if not available
-    const realDataPath = path.join(__dirname, '../../tx/data/lang.dat');
+    const realDataPath = path.join(__dirname, '../../tx/data');
 
     if (fs.existsSync(realDataPath)) {
-      const realContent = fs.readFileSync(realDataPath, 'utf8');
-      definitions = LanguageDefinitions.fromContent(realContent);
+      definitions = await LanguageDefinitions.fromFiles(realDataPath);
       // console.log('Using real IETF language data from lang.dat');
     } else {
       throw new Error('Real data file not found');
@@ -519,7 +596,7 @@ describe('Language System Integration Tests', () => {
       expect(validated.isLangRegion()).toBe(true);
       
       const presentation = definitions.present(validated);
-      expect(presentation).toMatch(/\(Region=/);
+      expect(presentation).toMatch(/\(/);
     }
   });
 

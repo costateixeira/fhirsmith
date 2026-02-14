@@ -224,6 +224,9 @@ class CPTServices extends CodeSystemProvider {
 
   }
 
+  isNotClosed() {
+    return true;
+  }
   async extendLookup(ctxt, props, params) {
     validateArrayParameter(props, 'props', String);
     validateArrayParameter(params, 'params', Object);
@@ -545,7 +548,7 @@ class CPTServices extends CodeSystemProvider {
     if (concept) {
       return concept;
     }
-    return `Code ${code} is not in the specified filter`;
+    return null;
   }
 
   async filterCheck(filterContext, set, concept) {

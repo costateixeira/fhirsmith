@@ -2,7 +2,6 @@ const fs = require('fs').promises;
 const sqlite3 = require('sqlite3').verbose();
 const { VersionUtilities } = require('../../library/version-utilities');
 const ValueSet = require("../library/valueset");
-const row = require("../library/valueset");
 
 // Columns that can be returned directly without parsing JSON
 const INDEXED_COLUMNS = ['id', 'url', 'version', 'date', 'description', 'name', 'publisher', 'status', 'title'];
@@ -280,6 +279,37 @@ class ValueSetDatabase {
   }
 
   /**
+   * Just update the timestamp on the valueset
+   * @param {Object} valueSet - The ValueSet resource
+   * @returns {Promise<void>}
+   */
+  async seeValueSet(valueSet) {
+    if (!valueSet.url) {
+      throw new Error('ValueSet must have a url property');
+    }
+
+    const db = await this._getWriteConnection();
+
+    return new Promise((resolve, reject) => {
+      db.run(`
+          update valuesets
+          set last_seen = strftime('%s', 'now')
+          where url = ?
+            and version = ?
+      `, [
+        valueSet.url,
+        valueSet.version
+      ], (err) => {
+        if (err) {
+          reject(new Error(`Failed to update value Set: ${err.message}`));
+          return;
+        }
+        resolve();
+      });
+    });
+  }
+
+  /**
    * Insert related records for a ValueSet
    * @param {sqlite3.Database} db - Database connection
    * @param {Object} valueSet - ValueSet resource
@@ -381,22 +411,6 @@ class ValueSetDatabase {
   }
 
   /**
-   * Insert multiple ValueSets in a batch operation
-   * @param {Array<Object>} valueSets - Array of ValueSet resources
-   * @returns {Promise<void>}
-   */
-  async batchUpsertValueSets(valueSets) {
-    if (valueSets.length === 0) {
-      return;
-    }
-
-    // Process sequentially to avoid database locking
-    for (const valueSet of valueSets) {
-      await this.upsertValueSet(valueSet);
-    }
-  }
-
-  /**
    * Load all ValueSets from the database
    * @returns {Promise<Map<string, Object>>} Map of all ValueSets keyed by various combinations
    */
@@ -419,27 +433,7 @@ class ValueSetDatabase {
             valueSet.sourcePackage = source;
 
             // Store by URL and id alone
-            valueSetMap.set(row.url, valueSet);
-            valueSetMap.set(row.id, valueSet);
-
-            if (row.version) {
-              // Store by url|version
-              const versionKey = `${row.url}|${row.version}`;
-              valueSetMap.set(versionKey, valueSet);
-
-              // If version is semver, also store by url|major.minor
-              try {
-                if (VersionUtilities.isSemVer(row.version)) {
-                  const majorMinor = VersionUtilities.getMajMin(row.version);
-                  if (majorMinor) {
-                    const majorMinorKey = `${row.url}|${majorMinor}`;
-                    valueSetMap.set(majorMinorKey, valueSet);
-                  }
-                }
-              } catch (error) {
-                // Ignore version parsing errors, just don't add major.minor key
-              }
-            }
+            this.addToMap(valueSetMap, row.id, row.url, row.version, valueSet);
           }
 
           resolve(valueSetMap);
@@ -448,6 +442,30 @@ class ValueSetDatabase {
         }
       });
     });
+  }
+
+  addToMap(valueSetMap, id, url, version, valueSet) {
+    valueSetMap.set(url, valueSet);
+    valueSetMap.set(id, valueSet);
+
+    if (version) {
+      // Store by url|version
+      const versionKey = `${url}|${version}`;
+      valueSetMap.set(versionKey, valueSet);
+
+      // If version is semver, also store by url|major.minor
+      try {
+        if (VersionUtilities.isSemVer(version)) {
+          const majorMinor = VersionUtilities.getMajMin(version);
+          if (majorMinor) {
+            const majorMinorKey = `${url}|${majorMinor}`;
+            valueSetMap.set(majorMinorKey, valueSet);
+          }
+        }
+      } catch (error) {
+        // Ignore version parsing errors, just don't add major.minor key
+      }
+    }
   }
 
   /**

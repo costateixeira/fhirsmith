@@ -28,10 +28,11 @@ const {SnomedImporter} = require("../../tx/importers/import-sct.module");
 const { OperationContext } = require('../../tx/operation-context');
 const {Designations} = require("../../tx/library/designations");
 const {TestUtilities} = require("../test-utilities");
+const folders = require('../../library/folder-setup');
 
 // Shared cache file paths and utilities
-const testCachePath = path.resolve(__dirname, '../../data/snomed-testing.cache');
-const fallbackCachePath = path.resolve(__dirname, '../../data/sct_intl_20250201.cache');
+const testCachePath = folders.ensureFilePath('snomed-testing.cache');
+const fallbackCachePath = folders.ensureFilePath('sct_intl_20250201.cache');
 
 function findAvailableCacheFile() {
   if (fs.existsSync(testCachePath)) {

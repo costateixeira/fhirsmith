@@ -33,10 +33,22 @@ const {ParametersXML} = require("./xml/parameters-xml");
 const {OperationOutcomeXML} = require("./xml/operationoutcome-xml");
 const {ValueSetXML} = require("./xml/valueset-xml");
 const {ConceptMapXML} = require("./xml/conceptmap-xml");
-const {BundleXML} = require("./xml/bundle-xml");
 const {TxHtmlRenderer} = require("./tx-html");
 const {Renderer} = require("./library/renderer");
 const {OperationsWorker} = require("./workers/operations");
+const {RelatedWorker} = require("./workers/related");
+const {codeSystemFromR5} = require("./xversion/xv-codesystem");
+const {operationOutcomeFromR5} = require("./xversion/xv-operationoutcome");
+const {parametersFromR5} = require("./xversion/xv-parameters");
+const {conceptMapFromR5} = require("./xversion/xv-conceptmap");
+const {valueSetFromR5} = require("./xversion/xv-valueset");
+const {terminologyCapabilitiesFromR5} = require("./xversion/xv-terminologyCapabilities");
+const {capabilityStatementFromR5} = require("./xversion/xv-capabiliityStatement");
+const {bundleFromR5} = require("./xversion/xv-bundle");
+const {convertResourceToR5} = require("./xversion/xv-resource");
+const ClosureWorker = require("./workers/closure");
+const {BundleXML} = require("./xml/bundle-xml");
+// const {writeFileSync} = require("fs");
 
 class TXModule {
   timers = [];
@@ -70,17 +82,48 @@ class TXModule {
   }
 
   acceptsXml(req) {
-    // Check _format query parameter first (takes precedence per FHIR spec)
-    const format = req.query._format || req.query.format || req.body?._format;
-    if (format) {
-      const f = format.toLowerCase();
-      return f === 'xml' || f.includes('fhir+xml') || f.includes('xml+fhir');
+    let _fmt = req.query._format || req.query.format || req.body?._format;
+    if (_fmt && typeof _fmt !== 'string') {
+      _fmt = null;
     }
-    // Fall back to Accept header
-    const accept = req.headers.accept || '';
-    return accept.includes('application/fhir+xml') || accept.includes('application/xml+fhir');
+    if (_fmt && _fmt == 'xml') {
+      return 'application/fhir+xml';
+    }
+    if (!_fmt) {
+      _fmt = req.headers.accept || '';
+    }
+    if (_fmt.includes('application/fhir+xml')) {
+      return 'application/fhir+xml';
+    } else if (_fmt.includes('application/xml+fhir')) {
+      return 'application/xml+fhir';
+    } else if (_fmt.includes('application/xml')) {
+      return 'application/xml';
+    } else {
+      return null;
+    }
   }
 
+  acceptsJson(req) {
+    let _fmt = req.query._format || req.query.format || req.body?._format;
+    if (_fmt && typeof _fmt !== 'string') {
+      _fmt = null;
+    }
+    if (_fmt && _fmt == 'json') {
+      return 'application/fhir+json';
+    }
+    if (!_fmt) {
+      _fmt = req.headers.accept || '';
+    }
+    if (_fmt.includes('application/fhir+json')) {
+      return 'application/fhir+json';
+    } else if (_fmt.includes('application/json+fhir')) {
+      return 'application/json+fhir';
+    } else if (_fmt.includes('application/json')) {
+      return 'application/json';
+    } else {
+      return 'application/fhir+json';
+    }
+  }
 
   /**
    * Initialize the TX module
@@ -111,9 +154,9 @@ class TXModule {
     }
 
     // Load language definitions
-    const langPath = path.join(__dirname, 'data', 'lang.dat');
+    const langPath = path.join(__dirname, 'data');
     this.log.info(`Loading language definitions from: ${langPath}`);
-    this.languages = await LanguageDefinitions.fromFile(langPath);
+    this.languages = await LanguageDefinitions.fromFiles(langPath);
     this.log.info('Language definitions loaded');
 
     // Initialize i18n support
@@ -139,7 +182,7 @@ class TXModule {
 
     // Load the library from YAML
     this.log.info(`Loading library from: ${config.librarySource}`);
-    this.library = new Library(config.librarySource, this.log);
+    this.library = new Library(config.librarySource, config.vsacCfg, this.log, this.stats);
     this.log.info(`Load...`);
     await this.library.load();
     this.log.info('Library loaded successfully');
@@ -188,8 +231,8 @@ class TXModule {
       path: endpointPath,
       fhirVersion,
       context: context || null,
-      resourceCache: new ResourceCache(),
-      expansionCache: new ExpansionCache(expansionCacheSize, expansionCacheMemoryThreshold)
+      resourceCache: new ResourceCache(this.stats),
+      expansionCache: new ExpansionCache(this.stats, expansionCacheSize, expansionCacheMemoryThreshold)
     };
     // Create the provider once for this endpoint
     endpointInfo.provider = await this.library.cloneWithFhirVersion(fhirVersion, context, endpointPath);
@@ -198,6 +241,9 @@ class TXModule {
     // cacheTimeout is in minutes, default to 30 minutes
     const cacheTimeoutMs = cacheTimeoutMinutes * 60 * 1000;
     const pruneIntervalMs = 5 * 60 * 1000; // Run every 5 minutes
+    if (this.stats) {
+      this.stats.addTask("Client Cache", "5 min");
+    }
     this.timers.push(setInterval(() => {
       endpointInfo.resourceCache.prune(cacheTimeoutMs);
     }, pruneIntervalMs));
@@ -205,6 +251,9 @@ class TXModule {
 
     // Set up periodic memory pressure check for expansion cache (if threshold configured)
     if (expansionCacheMemoryThreshold > 0) {
+      if (this.stats) {
+        this.stats.addTask("Expansion Cache", "5 min");
+      }
       this.timers.push(setInterval(() => {
         if (endpointInfo.expansionCache.checkMemoryPressure()) {
           this.log.info(`Expansion cache memory pressure detected for ${endpointPath}, evicted oldest half`);
@@ -252,7 +301,9 @@ class TXModule {
         try {
           const duration = Date.now() - req.txStartTime;
           const isHtml = txhtml.acceptsHtml(req);
-          const isXml = this.acceptsXml(req);
+          const xmlFmt = this.acceptsXml(req);
+          const jsonFmt = this.acceptsJson(req);
+          data = this.transformResourceForVersion(data, endpointInfo.fhirVersion);
 
           let responseSize;
           let result;
@@ -264,30 +315,31 @@ class TXModule {
             responseSize = Buffer.byteLength(html, 'utf8');
             res.setHeader('Content-Type', 'text/html');
             result = res.send(html);
-          } else if (isXml) {
+          } else if (xmlFmt) {
             try {
               const xml = this.convertResourceToXml(data);
               responseSize = Buffer.byteLength(xml, 'utf8');
-              res.setHeader('Content-Type', 'application/fhir+xml');
+              res.setHeader('Content-Type', xmlFmt);
               result = res.send(xml);
             } catch (err) {
               console.error(err);
               // Fall back to JSON if XML conversion not supported
               this.log.warn(`XML conversion failed for ${data.resourceType}: ${err.message}, falling back to JSON`);
+              res.setHeader('Content-Type', jsonFmt);
               const jsonStr = JSON.stringify(data);
               responseSize = Buffer.byteLength(jsonStr, 'utf8');
               result = originalJson(data);
             }
           } else {
             const jsonStr = JSON.stringify(data);
+            res.setHeader('Content-Type', jsonFmt);
+            this.checkProperJson(jsonStr);
             responseSize = Buffer.byteLength(jsonStr, 'utf8');
-            // Set proper FHIR content-type for JSON responses
-            res.setHeader('Content-Type', 'application/fhir+json; charset=utf-8');
             result = originalJson(data);
           }
 
           // Log the request with request ID
-          const format = isHtml ? 'html' : (isXml ? 'xml' : 'json');
+          const format = isHtml ? 'html' : (xmlFmt ? 'xml' : 'json');
           let li = req.logInfo ? "(" + req.logInfo + ")" : "";
           this.log.info(`[${requestId}] ${req.method} ${format} ${res.statusCode} ${duration}ms ${responseSize}: ${req.originalUrl} ${li})`);
 
@@ -374,11 +426,24 @@ class TXModule {
             });
           }
         }
+      } else if (contentType != 'application/x-www-form-urlencoded') {
+        return res.status(415).json({
+          resourceType: 'OperationOutcome',
+          issue: [{
+            severity: 'error',
+            code: 'invalid',
+            diagnostics: `Unsupported Media Type: ${contentType}`
+          }]
+        });
       }
 
+      if (req.body) {
+        req.body = convertResourceToR5(req.body, req.txEndpoint.fhirVersion);
+      }
       next();
     });
 
+    app.use(express.urlencoded({ extended: true }));
 
     // Set up routes
     this.setupRoutes(router);
@@ -500,6 +565,26 @@ class TXModule {
       }
     });
 
+    // ValueSet/$related(GET and POST)
+    router.get('/ValueSet/\\$related', async (req, res) => {
+      const start = Date.now();
+      try {
+        let worker = new RelatedWorker(req.txOpContext, this.log, req.txProvider, this.languages, this.i18n);
+        await worker.handle(req, res);
+      } finally {
+        this.countRequest('$related', Date.now() - start);
+      }
+    });
+    router.post('/ValueSet/\\$related', async (req, res) => {
+      const start = Date.now();
+      try {
+        let worker = new RelatedWorker(req.txOpContext, this.log, req.txProvider, this.languages, this.i18n);
+        await worker.handle(req, res);
+      } finally {
+        this.countRequest('$related', Date.now() - start);
+      }
+    });
+
     // ValueSet/$batch-validate-code (GET and POST)
     router.get('/ValueSet/\\$batch-validate-code', async (req, res) => {
       const start = Date.now();
@@ -564,7 +649,7 @@ class TXModule {
     router.get('/ConceptMap/\\$closure', async (req, res) => {
       const start = Date.now();
       try {
-        let worker = new TranslateWorker(req.txOpContext, this.log, req.txProvider, this.languages, this.i18n);
+        let worker = new ClosureWorker(req.txOpContext, this.log, req.txProvider, this.languages, this.i18n);
         await worker.handle(req, res, this.log);
       } finally {
         this.countRequest('$closure', Date.now() - start);
@@ -573,7 +658,7 @@ class TXModule {
     router.post('/ConceptMap/\\$closure', async (req, res) => {
       const start = Date.now();
       try {
-        let worker = new TranslateWorker(req.txOpContext, this.log, req.txProvider, this.languages, this.i18n);
+        let worker = new ClosureWorker(req.txOpContext, this.log, req.txProvider, this.languages, this.i18n);
         await worker.handle(req, res, this.log);
       } finally {
         this.countRequest('$closure', Date.now() - start);
@@ -660,6 +745,27 @@ class TXModule {
         await worker.handleValueSetInstance(req, res, this.log);
       } finally {
         this.countRequest('$validate', Date.now() - start);
+      }
+    });
+
+
+    // ValueSet/[id]/$related
+    router.get('/ValueSet/:id/\\$related', async (req, res) => {
+      const start = Date.now();
+      try {
+        let worker = new RelatedWorker(req.txOpContext, this.log, req.txProvider, this.languages, this.i18n);
+        await worker.handleInstance(req, res, this.log);
+      } finally {
+        this.countRequest('$related', Date.now() - start);
+      }
+    });
+    router.post('/ValueSet/:id/\\$related', async (req, res) => {
+      const start = Date.now();
+      try {
+        let worker = new RelatedWorker(req.txOpContext, this.log, req.txProvider, this.languages, this.i18n);
+        await worker.handleInstance(req, res, this.log);
+      } finally {
+        this.countRequest('$related', Date.now() - start);
       }
     });
 
@@ -933,6 +1039,39 @@ class TXModule {
     }
     return count;
   }
+
+  ec = 0;
+
+  checkProperJson() { // jsonStr) {
+  //   const errors = [];
+  //   if (jsonStr.includes("[]")) errors.push("Found [] in json");
+  //   if (jsonStr.includes('""')) errors.push('Found "" in json');
+  //
+  //   if (errors.length > 0) {
+  //     this.ec++;
+  //     const filename = `/Users/grahamegrieve/temp/tx-err-log/err${this.ec}.json`;
+  //     writeFileSync(filename, jsonStr);
+  //     throw new Error(errors.join('; '));
+  //   }
+  }
+
+  transformResourceForVersion(data, fhirVersion) {
+    if (fhirVersion == "5.0" || !data.resourceType) {
+        return data;
+    }
+    switch (data.resourceType) {
+      case "CodeSystem": return codeSystemFromR5(data, fhirVersion);
+      case "CapabilityStatement": return capabilityStatementFromR5(data, fhirVersion);
+      case "TerminologyCapabilities": return terminologyCapabilitiesFromR5(data, fhirVersion);
+      case "ValueSet": return valueSetFromR5(data, fhirVersion);
+      case "ConceptMap": return conceptMapFromR5(data, fhirVersion);
+      case "Parameters": return parametersFromR5(data, fhirVersion);
+      case "OperationOutcome": return operationOutcomeFromR5(data, fhirVersion);
+      case "Bundle": return bundleFromR5(data, fhirVersion);
+      default: return data;
+    }
+  }
+
 }
 
 module.exports = TXModule;

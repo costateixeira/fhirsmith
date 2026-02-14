@@ -14,7 +14,6 @@ const {
 } = require('../../tx/cs/cs-api');
 
 const { UcumService } = require('../../tx/library/ucum-service');
-const { Languages, Language } = require('../../library/languages');
 const {OperationContext} = require("../../tx/operation-context");
 const {TestUtilities} = require("../test-utilities");
 
@@ -241,7 +240,7 @@ describe('UCUM Provider Integration Tests', () => {
       const filterContext = new FilterExecutionContext();
 
       // Create filter for mass units (canonical: 'g')
-      await provider.filter(filterContext, 'canonical', 'equals', 'g');
+      await provider.filter(filterContext, 'canonical', '=', 'g');
       const filters = await provider.executeFilters(filterContext);
 
       // Test units that should match (all mass units)

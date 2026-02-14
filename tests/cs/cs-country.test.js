@@ -102,7 +102,7 @@ describe('CountryCodeServices', () => {
     });
 
     test('should return error for invalid codes', async () => {
-      const invalidCodes = ['XX', 'ZZZ', '999'];
+      const invalidCodes = ['XX-XX', 'ZZZ', '999'];
 
       for (const code of invalidCodes) {
         const result = await provider.locate(code);

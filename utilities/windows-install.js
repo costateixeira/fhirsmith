@@ -1,6 +1,8 @@
 // npm install -g node-windows
 // npm link node-windows
 
+// the idea here is that you hack this into shape for what you want
+
 var Service = require('node-windows').Service;
 
 // Create a new service object

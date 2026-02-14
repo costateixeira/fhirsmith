@@ -770,7 +770,7 @@ class SnomedExpressionParser {
    */
   rule(test, message) {
     if (!test) {
-      throw new Error(message + ' at character ' + this.cursor);
+      throw new Error(message + ' at character ' + (this.cursor+1));
     }
   }
 

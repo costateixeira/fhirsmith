@@ -37,13 +37,13 @@ class MetadataHandler {
     if (mode === 'terminology') {
       this.logInfo = 'termcaps';
       const tc = new TerminologyCapabilities(await this.buildTerminologyCapabilities(endpoint, provider));
-      return res.json(tc.toJSON(endpoint.fhirVersion));
+      return res.json(tc.jsonObj);
     }
     this.logInfo = 'metadata';
 
     // Default: return CapabilityStatement
     const cs = new CapabilityStatement(this.buildCapabilityStatement(endpoint, provider));
-    return res.json(cs.toJSON(endpoint.fhirVersion));
+    return res.json(cs.jsonObj);
   }
 
   /**

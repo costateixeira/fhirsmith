@@ -190,24 +190,75 @@ Available tags:
 
 ### Windows Installation
 
-You can install as a windows service using [windows-install.js](windows-install.js). You might need to 
+You can install as a windows service using [windows-install.js](utilities/windows-install.js). You might need to 
 hack that. 
 
 ## Releases
 
 This project follows [Semantic Versioning](https://semver.org/) and uses a [CHANGELOG.md](CHANGELOG.md) file to track changes.
 
-To create a new release:
+### What's in a Release
 
-1. Update CHANGELOG.md with your changes under a new version section
-2. Commit your changes
-3. Tag the commit with the new version: `git tag vX.Y.Z`
-4. Push the tag: `git push origin vX.Y.Z`
+Each GitHub Release includes:
+- **Release notes** extracted from CHANGELOG.md
+- **Source code** archives (zip and tar.gz)
+- **Docker images** pushed to GitHub Container Registry:
+  - `ghcr.io/healthintersections/fhirsmith:latest`
+  - `ghcr.io/healthintersections/fhirsmith:vX.Y.Z`
+  - `ghcr.io/healthintersections/fhirsmith:X.Y.Z`
+- **npm package** published to npmjs.org as `fhirsmith` *(if you add this)*
+
+### Creating a Release
 
 GitHub Actions will automatically:
 - Run tests
 - Create a GitHub Release with notes from CHANGELOG.md
 - Build and publish Docker images with appropriate tags
+
+**Prerequisites:**
+- All tests passing on main branch
+- CHANGELOG.md updated with changes
+
+**Steps:**
+1. Update `CHANGELOG.md` with your changes under a new version section:
+```markdown
+   ## [vX.Y.Z] - YYYY-MM-DD
+   ### Added
+   - New feature description
+   ### Changed
+   - Change description
+   ### Fixed
+   - Bug fix description
+```
+2. Update `package.json` to have the same release version
+
+3. Commit your changes:
+```bash
+   git commit -m "Prepare release vX.Y.Z"
+   git push origin main:XXXXXX
+```
+
+do it via a PR
+
+4. Tag and push the release:
+```bash
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+```
+
+5. Monitor the release:
+   - Check [GitHub Actions](https://github.com/HealthIntersections/fhirsmith/actions) for the Release workflow
+   - Verify the [GitHub Release](https://github.com/HealthIntersections/fhirsmith/releases) was created
+   - Confirm Docker images are available at [GHCR](https://github.com/HealthIntersections/fhirsmith/pkgs/container/fhirsmith)
+
+6. Update `package.json` to have the next release version -SNAPSHOT
+
+**If a release fails:**
+- Delete the tag: `git tag -d vX.Y.Z && git push origin :refs/tags/vX.Y.Z`
+- Fix the issue
+- Re-tag and push
+
+### Creating a Release
 
 ## License
 

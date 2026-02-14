@@ -24,7 +24,7 @@ class Renderer {
       if (arg.systemUri !== undefined && arg.version !== undefined && arg.code !== undefined && arg.display !== undefined) {
         // It's a Coding
         return this.displayCodedCoding(arg);
-      } else if (arg.coding !== undefined) {
+      } else if (arg.coding !== undefined || arg.text) {
         // It's a CodeableConcept
         return this.displayCodedCodeableConcept(arg);
       } else if (arg.systemUri !== undefined && arg.version !== undefined) {
@@ -74,11 +74,15 @@ class Renderer {
 
   displayCodedCodeableConcept(code) {
     let result = '';
-    for (const c of code.coding) {
-      if (result) {
-        result = result + ', ';
+    if (code.text && !code.coding) {
+      result = '"'+code.text+'"';
+    } else {
+      for (const c of code.coding || []) {
+        if (result) {
+          result = result + ', ';
+        }
+        result = result + this.displayCodedCoding(c);
       }
-      result = result + this.displayCodedCoding(c);
     }
     return '[' + result + ']';
   }
@@ -1280,7 +1284,7 @@ class Renderer {
     return div_.toString();
   }
 
-  async renderCapabilityRest(x, rest, cs) {
+  async renderCapabilityRest(x, rest) {
     x.h3().tx(`REST ${rest.mode || 'server'} Definition`);
 
     if (rest.documentation) {

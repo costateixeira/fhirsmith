@@ -6,6 +6,7 @@
 //
 
 const { TerminologyWorker } = require('./worker');
+const {Utilities} = require("../../library/utilities");
 
 class SearchWorker extends TerminologyWorker {
   /**
@@ -62,7 +63,7 @@ class SearchWorker extends TerminologyWorker {
       // Parse pagination parameters
       const offset = Math.max(0, parseInt(params._offset) || 0);
       const elements = params._elements ? decodeURIComponent(params._elements).split(',').map(e => e.trim()) : null;
-      const count = Math.min(elements ? 2000 : 200, Math.max(1, parseInt(params._count) || 20));
+      const count = Math.min(elements ? 2000 : 200, params._count && Utilities.isInteger(params._count) ? parseInt(params._count) : 20);
       const sort = params._sort || "id";
       const summary = params._summary; // true, text, data, count, false
       const total = params._total; // none, estimate, accurate
@@ -98,6 +99,7 @@ class SearchWorker extends TerminologyWorker {
       return res.json(bundle);
 
     } catch (error) {
+      console.log(error);
       req.logInfo = "error "+(error.msgId || error.className);
       this.log.error(error);
       return res.status(500).json({

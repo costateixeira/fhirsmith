@@ -195,17 +195,7 @@ npm run test:jest
 
 ## Data Persistence
 
-The crawler can save and load its state:
-
-```javascript
-// Save current state
-const data = crawler.saveData();
-fs.writeFileSync('registry-data.json', JSON.stringify(data));
-
-// Load saved state
-const savedData = JSON.parse(fs.readFileSync('registry-data.json'));
-crawler.loadData(savedData);
-```
+The crawler saves and loads its state in [data]/registry-data.json
 
 ## Development
 

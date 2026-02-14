@@ -2,12 +2,13 @@ const path = require('path');
 const { describe, beforeAll, afterAll, test, expect } = require('@jest/globals');
 const { PackageManager, PackageContentLoader} = require('../../library/package-manager');
 const { PackageConceptMapProvider } = require('../../tx/cm/cm-package');
+const folders = require('../../library/folder-setup');
 
 describe('PackageConceptMapProvider', () => {
   let packageManager;
   let packagePath;
   let provider;
-  const packageCacheDir = path.join(__dirname, '../../data/terminology-cache');
+  const packageCacheDir = folders.ensureFolder('data/terminology-cache');
   const packageId = 'ch.fhir.ig.ch-core';
   const packageVersion = '2.0.0';
 

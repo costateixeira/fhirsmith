@@ -1,6 +1,7 @@
 const fs = require('fs');
 const os = require('os');
-const {validateParameter, validateOptionalParameter, Utilities} = require("./utilities");
+const {validateOptionalParameter, Utilities} = require("./utilities");
+const {join} = require("node:path");
 
 /**
  * Language part types for matching depth
@@ -22,6 +23,7 @@ class LanguageEntry {
   constructor() {
     this.code = '';
     this.displays = [];
+    this.translations = new Map(); // language code -> translated display name
   }
 }
 
@@ -120,7 +122,7 @@ class Language {
     if (index < parts.length) {
       this.language = parts[index];
       if (this.language != '*' && languageDefinitions && !languageDefinitions.languages.has(this.language)) {
-        throw new Error("The language '"+this.language+"' in the code '"+this.language+"' is not valid");
+        throw new Error("The language '"+this.language+"' in the code '"+this.code+"' is not valid");
       }
       index++;
     }
@@ -130,7 +132,7 @@ class Language {
       const part = parts[index];
       if (part.length === 3 && /^[a-zA-Z]{3}$/.test(part)) {
         if (languageDefinitions && !languageDefinitions.extLanguages.has(part)) {
-          throw new Error("The extLanguage '"+part+"' in the code '"+code+"' is not valid");
+          throw new Error("The extLanguage '"+part+"' in the code '"+this.code+"' is not valid");
         }
         this.extLang.push(part.toLowerCase());
         index++;
@@ -144,7 +146,7 @@ class Language {
       const part = parts[index];
       if (part.length === 4 && /^[a-zA-Z]{4}$/.test(part)) {
         if (languageDefinitions && !languageDefinitions.scripts.has(part)) {
-          throw new Error("The script '"+part+"' in the code '"+code+"' is not valid");
+          throw new Error("The script '"+part+"' in the code '"+this.code+"' is not valid");
         }
         this.script = part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
         index++;
@@ -157,7 +159,7 @@ class Language {
       if ((part.length === 2 && /^[a-zA-Z]{2}$/.test(part)) ||
         (part.length === 3 && /^[0-9]{3}$/.test(part))) {
         if (languageDefinitions && !languageDefinitions.regions.has(part)) {
-          throw new Error("The region '"+part+"' in the code '"+code+"' is not valid");
+          throw new Error("The region '"+part+"' in the code '"+this.code+"' is not valid");
         }
         this.region = part.toUpperCase();
         index++;
@@ -187,9 +189,10 @@ class Language {
       } else if (part.length === 1 && part !== 'x') {
         // Extension
         this.extension = part + '-' + parts.slice(index + 1).join('-');
+        index++;
         break;
       } else {
-        index++;
+        throw new Error("Unable to recognised '"+parts[index]+"' as a valid part in the language code "+this.code);
       }
     }
   }
@@ -496,10 +499,12 @@ class LanguageDefinitions {
   /**
    * Load definitions from IETF language subtag registry file
    */
-  static async fromFile(filePath) {
+  static async fromFiles(filePath) {
     const definitions = new LanguageDefinitions();
-    const content = fs.readFileSync(filePath, 'utf8');
+    const content = fs.readFileSync(join(filePath, "lang.dat"), 'utf8');
     definitions._load(content);
+    definitions._loadTranslations(join(filePath, "languages.csv"), definitions.languages);
+    definitions._loadTranslations(join(filePath, "regions.csv"), definitions.regions);
     return definitions;
   }
 
@@ -590,6 +595,88 @@ class LanguageDefinitions {
   }
 
   /**
+   * Load translations from a CSV file into an existing map of entries.
+   * CSV format: code,english,french,german,spanish,arabic,chinese,russian,japanese,swahili
+   * The language codes for the translation columns:
+   */
+  _loadTranslations(csvPath, targetMap) {
+    if (!fs.existsSync(csvPath)) {
+      return;
+    }
+    const content = fs.readFileSync(csvPath, 'utf8');
+    const lines = content.split('\n');
+    if (lines.length < 2) return;
+
+    const header = this._parseCsvLine(lines[0]);
+    // header[0] = 'code', header[1..] = language names mapped to codes
+    const langCodeMap = {
+      'english': 'en',
+      'french': 'fr',
+      'german': 'de',
+      'spanish': 'es',
+      'arabic': 'ar',
+      'chinese': 'zh',
+      'russian': 'ru',
+      'japanese': 'ja',
+      'swahili': 'sw'
+    };
+
+    const columnLangs = header.slice(1).map(h => langCodeMap[h.toLowerCase()] || h.toLowerCase());
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      const fields = this._parseCsvLine(line);
+      if (fields.length < 2) continue;
+
+      const code = fields[0];
+      const entry = targetMap.get(code);
+      if (!entry) continue;
+
+      for (let j = 1; j < fields.length && j < header.length; j++) {
+        const langCode = columnLangs[j - 1];
+        const value = fields[j];
+        if (value) {
+          entry.translations.set(langCode, value);
+        }
+      }
+    }
+  }
+
+  /**
+   * Parse a single CSV line, handling quoted fields with commas
+   */
+  _parseCsvLine(line) {
+    const fields = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQuotes) {
+        if (ch === '"' && i + 1 < line.length && line[i + 1] === '"') {
+          current += '"';
+          i++;
+        } else if (ch === '"') {
+          inQuotes = false;
+        } else {
+          current += ch;
+        }
+      } else {
+        if (ch === '"') {
+          inQuotes = true;
+        } else if (ch === ',') {
+          fields.push(current);
+          current = '';
+        } else {
+          current += ch;
+        }
+      }
+    }
+    fields.push(current);
+    return fields;
+  }
+
+  /**
    * Load language entry
    */
   _loadLanguage(vars) {
@@ -671,37 +758,54 @@ class LanguageDefinitions {
    *
    * @return {Language} parsed language (or null)
    */
-  parse(code) {
-    if (!code) return null;
+  parse(code, msg) {
+    if (!code) {
+      if (msg) {
+        msg.message = 'No code provided';
+      }
+      return null;
+    }
 
     // Check cache first
     if (this.parsed.has(code)) {
       return this.parsed.get(code);
     }
 
-    const parts = code.split('-');
-    let index = 0;
-
-    // Validate language
-    if (index >= parts.length) return null;
-    const langCode = parts[index].toLowerCase();
-    if (!this.languages.has(langCode) && langCode !== '*') {
-      return null; // Invalid language code
+    try {
+      const lang = new Language(code, this);
+      // Cache the result
+      this.parsed.set(code, lang);
+      return lang;
+    } catch (e) {
+      if (msg) {
+        msg.message = e.message;
+      }
+      return null;
     }
-
-    const lang = new Language(code);
-
-    // Cache the result
-    this.parsed.set(code, lang);
-    return lang;
   }
 
   /**
-   * Get display name for language
+   * Get display name for language, optionally translated
    */
   getDisplayForLang(code, displayIndex = 0) {
     const lang = this.languages.get(code);
     return lang && lang.displays[displayIndex] ? lang.displays[displayIndex] : code;
+  }
+
+  /**
+   * Get translated display name for a language code
+   * @param {string} code - the language subtag
+   * @param {string} displayLang - the language to translate into (e.g. 'fr', 'de')
+   * @returns {string} translated name, or English name, or the code itself
+   */
+  getTranslatedDisplayForLang(code, displayLang) {
+    const lang = this.languages.get(code);
+    if (!lang) return code;
+    if (displayLang) {
+      const translated = lang.translations.get(displayLang);
+      if (translated) return translated;
+    }
+    return lang.displays[0] || code;
   }
 
   /**
@@ -710,6 +814,22 @@ class LanguageDefinitions {
   getDisplayForRegion(code, displayIndex = 0) {
     const region = this.regions.get(code);
     return region && region.displays[displayIndex] ? region.displays[displayIndex] : code;
+  }
+
+  /**
+   * Get translated display name for a region code
+   * @param {string} code - the region subtag
+   * @param {string} displayLang - the language to translate into (e.g. 'fr', 'de')
+   * @returns {string} translated name, or English name, or the code itself
+   */
+  getTranslatedDisplayForRegion(code, displayLang) {
+    const region = this.regions.get(code);
+    if (!region) return code;
+    if (displayLang) {
+      const translated = region.translations.get(displayLang);
+      if (translated) return translated;
+    }
+    return region.displays[0] || code;
   }
 
   /**
@@ -734,18 +854,21 @@ class LanguageDefinitions {
     }
 
     let result = this.getDisplayForLang(lang.language, displayIndex);
-
     const parts = [];
-    if (lang.script) {
-      parts.push(`Script=${this.getDisplayForScript(lang.script, 0)}`);
-    }
-    if (lang.region) {
-      parts.push(`Region=${this.getDisplayForRegion(lang.region, 0)}`);
-    }
-    if (lang.variant) {
-      const variant = this.variants.get(lang.variant);
-      const variantDisplay = variant && variant.displays[0] ? variant.displays[0] : lang.variant;
-      parts.push(`Variant=${variantDisplay}`);
+    if (lang.region && !lang.script && !lang.variant) {
+      parts.push(`${this.getDisplayForRegion(lang.region, 0)}`);
+    } else {
+      if (lang.script) {
+        parts.push(`Script=${this.getDisplayForScript(lang.script, 0)}`);
+      }
+      if (lang.region) {
+        parts.push(`Region=${this.getDisplayForRegion(lang.region, 0)}`);
+      }
+      if (lang.variant) {
+        const variant = this.variants.get(lang.variant);
+        const variantDisplay = variant && variant.displays[0] ? variant.displays[0] : lang.variant;
+        parts.push(`Variant=${variantDisplay}`);
+      }
     }
 
     if (parts.length > 0) {

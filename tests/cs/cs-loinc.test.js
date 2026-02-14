@@ -7,10 +7,11 @@ const { OperationContext } = require('../../tx/operation-context');
 const {validateParameter} = require("../../library/utilities");
 const {Designations} = require("../../tx/library/designations");
 const {TestUtilities} = require("../test-utilities");
+const folders = require('../../library/folder-setup');
 
 describe('LOINC Module Import', () => {
   const testSourceDir = path.resolve(__dirname, '../../tx/data/loinc');
-  const testDbPath = path.resolve(__dirname, '../../data/loinc-testing.db');
+  const testDbPath = folders.ensureFilePath('loinc-testing.db');
 
   beforeAll(() => {
     // Ensure data directory exists

@@ -11,6 +11,11 @@ const {VersionUtilities} = require("../../library/version-utilities");
 
 class FilterExecutionContext {
   filters = [];
+  forIterate = false;
+
+  constructor(forIterate) {
+    this.forIterate = forIterate;
+  }
 }
 
 class CodeSystemProvider {
@@ -122,6 +127,17 @@ class CodeSystemProvider {
   isNotClosed() {
     return false;
   }
+
+  /**
+   * returns true if the code system is case sensitive when comparing codes.
+   * this is true by default
+   *
+   * @returns {boolean}
+   */
+  isCaseSensitive() {
+    return true;
+  }
+
   /**
    * @param {Languages} languages language specification
    * @returns {boolean} defined properties for the code system
@@ -489,7 +505,7 @@ class CodeSystemProvider {
    * @param {boolean} iterate true if the conceptSets that result from this will be iterated, and false if they'll be used to locate a single code
    * @returns {FilterExecutionContext} filter (or null, it no use for this)
    * */
-  async getPrepContext(iterate) { return new FilterExecutionContext(); }
+  async getPrepContext(iterate) { return new FilterExecutionContext(iterate); }
 
   /**
    * executes a text search filter (whatever that means) and returns a FilterConceptSet
@@ -662,6 +678,18 @@ class CodeSystemProvider {
   valueSet() {
     return null;
   }
+
+
+  // Helper to check if a property should be included
+  _hasProp = (props, name, defaultValue = true) => {
+    if (!props || props.length === 0) {
+      return defaultValue;
+    }
+    const lowerName = name.toLowerCase();
+    return props.some(p =>
+      p.toLowerCase() === lowerName || p === '*'
+    );
+  };
 }
 
 class CodeSystemFactoryProvider {

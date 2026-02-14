@@ -184,6 +184,10 @@ class MimeTypeServices extends CodeSystemProvider {
     return null;
   }
 
+  isNotClosed() {
+    return true;
+  }
+
 }
 
 class MimeTypeServicesFactory extends CodeSystemFactoryProvider {

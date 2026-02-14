@@ -26,7 +26,7 @@ tests/library/.last-integration-test-run
 
 package-cache/
 
-passwords.ini
+data/passwords.ini
 
 test-cache/
 
@@ -34,9 +34,9 @@ tests/vs/.vsac-last-run
 
 data/terminology-cache/
 
-shl/private-key.pem
+data/shl/private-key.pem
 
-shl/public-key.pem
+data/shl/public-key.pem
 
 data/bin/validator_cli.jar.version
 
@@ -47,3 +47,9 @@ tx/tests/test-cases-summary.txt
 bin/validator_cli.jar.version
 
 *.log
+
+test-cases-summary.txt
+
+tx/data/CodeSystem-cpt.db
+
+coverage/

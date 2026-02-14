@@ -13,6 +13,17 @@ const LoincProviderContextKind = {
   ANSWER: 3   // lpckAnswer
 };
 
+const classTypes = {
+  '1': 'Laboratory class',
+  '2': 'Clinical class',
+  '3': 'Claims attachments',
+  '4': 'Surveys',
+  'Laboratory class' : '1',
+  'Clinical class' : '2',
+  'Claims attachments' : '3',
+  'Surveys' : '4'
+};
+
 class DescriptionCacheEntry {
   constructor(display, lang, value, dtype) {
     this.display = display;
@@ -293,10 +304,10 @@ class LoincServices extends CodeSystemProvider {
 
     // Run all property queries in parallel — they're independent reads on the same key
     await Promise.all([
-      this.#addRelationshipProperties(ctxt, params),
-      this.#addConceptProperties(ctxt, params),
-      this.#addStatusProperty(ctxt, params),
-      this.#addRelatedNames(ctxt, params)
+      this.#addRelationshipProperties(ctxt, props, params),
+      this.#addConceptProperties(ctxt, props,params),
+      this.#addStatusProperty(ctxt, props,params),
+      this.#addRelatedNames(ctxt, props,params)
     ]);
   }
 
@@ -311,7 +322,7 @@ class LoincServices extends CodeSystemProvider {
     }
   }
 
-  async #addRelationshipProperties(ctxt, params) {
+  async #addRelationshipProperties(ctxt, props, params) {
     return new Promise((resolve, reject) => {
       const sql = `
           SELECT RelationshipTypes.Description as Relationship, Codes.Code, Codes.Description as Value
@@ -326,7 +337,9 @@ class LoincServices extends CodeSystemProvider {
           reject(err);
         } else {
           for (const row of rows) {
-            this.#addCodeProperty(params, 'property', row.Relationship, row.Code);
+            if (this._hasProp(props, row.Relationship, true)) {
+              this.#addCodeProperty(params, 'property', row.Relationship, row.Code);
+            }
           }
           resolve();
         }
@@ -334,7 +347,7 @@ class LoincServices extends CodeSystemProvider {
     });
   }
 
-  async #addConceptProperties(ctxt, params) {
+  async #addConceptProperties(ctxt, props, params) {
     return new Promise((resolve, reject) => {
       const sql = `
           SELECT PropertyTypes.Description, PropertyValues.Value
@@ -349,7 +362,14 @@ class LoincServices extends CodeSystemProvider {
           reject(err);
         } else {
           for (const row of rows) {
-            this.#addStringProperty(params, 'property', row.Description, row.Value);
+            if (this._hasProp(props, row.Description, true)) {
+              if (row.Description == 'CLASSTYPE') {
+                this.#addStringProperty(params, 'property', row.Description, classTypes[row.Value])
+                  .part.push({name: 'description', valueString: row.Value});
+              } else {
+                this.#addStringProperty(params, 'property', row.Description, row.Value);
+              }
+            }
           }
           resolve();
         }
@@ -357,7 +377,7 @@ class LoincServices extends CodeSystemProvider {
     });
   }
 
-  async #addStatusProperty(ctxt, params) {
+  async #addStatusProperty(ctxt, props, params) {
     return new Promise((resolve, reject) => {
       const sql = 'SELECT StatusKey FROM Codes WHERE CodeKey = ? AND StatusKey != 0';
 
@@ -367,7 +387,9 @@ class LoincServices extends CodeSystemProvider {
         } else if (row) {
           const statusDesc = this.statusCodes.get(row.StatusKey.toString());
           if (row.StatusKey && statusDesc) {
-            this.#addStringProperty(params, 'property', 'STATUS', statusDesc);
+            if (this._hasProp(props, 'STATUS', true)) {
+              this.#addStringProperty(params, 'property', 'STATUS', statusDesc);
+            }
           }
           resolve();
         } else {
@@ -377,14 +399,20 @@ class LoincServices extends CodeSystemProvider {
     });
   }
 
-  async #addRelatedNames(ctxt, params) {
+  async #addRelatedNames(ctxt, props, params) {
     const loaded = await this.#loadRelatedNames(ctxt);
     for (let d of loaded) {
-      this.#addProperty(params, 'property', 'RELATEDNAMES2', d.value, d.lang);
+      if (this._hasProp(props, 'RELATEDNAMES2', true)) {
+        this.#addProperty(params, 'property', 'RELATEDNAMES2', d.value, d.lang);
+      }
     }
   }
 
-  async #addAllDesignations(ctxt, params) {
+  async #addAllDesignations(ctxt, props, params) {
+    if (!this._hasProp(props, 'designation', true)) {
+      return;
+    }
+
     return new Promise((resolve, reject) => {
       const sql = `
           SELECT Languages.Code as Lang, DescriptionTypes.Description as DType, Descriptions.Value
@@ -457,6 +485,7 @@ class LoincServices extends CodeSystemProvider {
     }
 
     params.push(property);
+    return property;
   }
 
   async #getDisplaysForContext(ctxt, langs) {
@@ -689,11 +718,11 @@ class LoincServices extends CodeSystemProvider {
 
     // LIST filter
     if (prop === 'LIST' && op === '=' && this.codes.has(value)) {
-      sql = `SELECT TargetKey as Key FROM Relationships
+      sql = `SELECT DISTINCT TargetKey as Key FROM Relationships
              WHERE RelationshipTypeKey = ${this.relationships.get('Answer')}
                AND SourceKey IN (SELECT CodeKey FROM Codes WHERE Code = '${this.#sqlWrapString(value)}')
              ORDER BY SourceKey ASC`;
-      lsql = `SELECT COUNT(TargetKey) FROM Relationships
+      lsql = `SELECT COUNT(DISTINCT TargetKey) FROM Relationships
               WHERE RelationshipTypeKey = ${this.relationships.get('Answer')}
                 AND SourceKey IN (SELECT CodeKey FROM Codes WHERE Code = '${this.#sqlWrapString(value)}')
                 AND TargetKey = `;
@@ -701,16 +730,16 @@ class LoincServices extends CodeSystemProvider {
     // answers-for filter
     else if (prop === 'answers-for' && op === '=') {
       if (value.startsWith('LL')) {
-        sql = `SELECT TargetKey as Key FROM Relationships
+        sql = `SELECT DISTINCT TargetKey as Key FROM Relationships
                WHERE RelationshipTypeKey = ${this.relationships.get('Answer')}
                  AND SourceKey IN (SELECT CodeKey FROM Codes WHERE Code = '${this.#sqlWrapString(value)}')
                ORDER BY SourceKey ASC`;
-        lsql = `SELECT COUNT(TargetKey) FROM Relationships
+        lsql = `SELECT COUNT(DISTINCT TargetKey) FROM Relationships
                 WHERE RelationshipTypeKey = ${this.relationships.get('Answer')}
                   AND SourceKey IN (SELECT CodeKey FROM Codes WHERE Code = '${this.#sqlWrapString(value)}')
                   AND TargetKey = `;
       } else {
-        sql = `SELECT TargetKey as Key FROM Relationships
+        sql = `SELECT DISTINCT TargetKey as Key FROM Relationships
                WHERE RelationshipTypeKey = ${this.relationships.get('Answer')}
                  AND SourceKey IN (
                    SELECT SourceKey FROM Relationships
@@ -718,7 +747,7 @@ class LoincServices extends CodeSystemProvider {
                  AND TargetKey IN (SELECT CodeKey FROM Codes WHERE Code = '${this.#sqlWrapString(value)}')
                    )
                ORDER BY SourceKey ASC`;
-        lsql = `SELECT COUNT(TargetKey) FROM Relationships
+        lsql = `SELECT COUNT(DISTINCT TargetKey) FROM Relationships
                 WHERE RelationshipTypeKey = ${this.relationships.get('Answer')}
                   AND SourceKey IN (SELECT SourceKey FROM Relationships
                                     WHERE RelationshipTypeKey = ${this.relationships.get('answers-for')}
@@ -729,20 +758,20 @@ class LoincServices extends CodeSystemProvider {
     // Relationship equal filter
     else if (this.relationships.has(prop) && op === '=') {
       if (this.codes.has(value)) {
-        sql = `SELECT SourceKey as Key FROM Relationships
+        sql = `SELECT DISTINCT SourceKey as Key FROM Relationships
                WHERE RelationshipTypeKey = ${this.relationships.get(prop)}
                  AND TargetKey IN (SELECT CodeKey FROM Codes WHERE Code = '${this.#sqlWrapString(value)}')
                ORDER BY SourceKey ASC`;
-        lsql = `SELECT COUNT(SourceKey) FROM Relationships
+        lsql = `SELECT COUNT(DISTINCT SourceKey) FROM Relationships
                 WHERE RelationshipTypeKey = ${this.relationships.get(prop)}
                   AND TargetKey IN (SELECT CodeKey FROM Codes WHERE Code = '${this.#sqlWrapString(value)}')
                   AND SourceKey = `;
       } else {
-        sql = `SELECT SourceKey as Key FROM Relationships
+        sql = `SELECT DISTINCT SourceKey as Key FROM Relationships
                WHERE RelationshipTypeKey = ${this.relationships.get(prop)}
                  AND TargetKey IN (SELECT CodeKey FROM Codes WHERE Description = '${this.#sqlWrapString(value)}' COLLATE NOCASE)
                ORDER BY SourceKey ASC`;
-        lsql = `SELECT COUNT(SourceKey) FROM Relationships
+        lsql = `SELECT COUNT(DISTINCT SourceKey) FROM Relationships
                 WHERE RelationshipTypeKey = ${this.relationships.get(prop)}
                   AND TargetKey IN (SELECT CodeKey FROM Codes WHERE Description = '${this.#sqlWrapString(value)}' COLLATE NOCASE)
                   AND SourceKey = `;
@@ -751,11 +780,11 @@ class LoincServices extends CodeSystemProvider {
     // Relationship 'in' filter
     else if (this.relationships.has(prop) && op === 'in') {
       const codes = this.#commaListOfCodes(value);
-      sql = `SELECT SourceKey as Key FROM Relationships
+      sql = `SELECT DISTINCT SourceKey as Key FROM Relationships
              WHERE RelationshipTypeKey = ${this.relationships.get(prop)}
                AND TargetKey IN (SELECT CodeKey FROM Codes WHERE Code IN (${codes}))
              ORDER BY SourceKey ASC`;
-      lsql = `SELECT COUNT(SourceKey) FROM Relationships
+      lsql = `SELECT COUNT(DISTINCT SourceKey) FROM Relationships
               WHERE RelationshipTypeKey = ${this.relationships.get(prop)}
                 AND TargetKey IN (SELECT CodeKey FROM Codes WHERE Code IN (${codes}))
                 AND SourceKey = `;
@@ -763,20 +792,20 @@ class LoincServices extends CodeSystemProvider {
     // Relationship 'exists' filter
     else if (this.relationships.has(prop) && op === 'exists') {
       if (this.codes.has(value)) {
-        sql = `SELECT SourceKey as Key FROM Relationships
+        sql = `SELECT DISTINCT SourceKey as Key FROM Relationships
                WHERE RelationshipTypeKey = ${this.relationships.get(prop)}
                  AND EXISTS (SELECT CodeKey FROM Codes WHERE Code = '${this.#sqlWrapString(value)}')
                ORDER BY SourceKey ASC`;
-        lsql = `SELECT COUNT(SourceKey) FROM Relationships
+        lsql = `SELECT COUNT(DISTINCT SourceKey) FROM Relationships
                 WHERE RelationshipTypeKey = ${this.relationships.get(prop)}
                   AND EXISTS (SELECT CodeKey FROM Codes WHERE Code = '${this.#sqlWrapString(value)}')
                   AND SourceKey = `;
       } else {
-        sql = `SELECT SourceKey as Key FROM Relationships
+        sql = `SELECT DISTINCT SourceKey as Key FROM Relationships
                WHERE RelationshipTypeKey = ${this.relationships.get(prop)}
                  AND EXISTS (SELECT CodeKey FROM Codes WHERE Description = '${this.#sqlWrapString(value)}' COLLATE NOCASE)
                ORDER BY SourceKey ASC`;
-        lsql = `SELECT COUNT(SourceKey) FROM Relationships
+        lsql = `SELECT COUNT(DISTINCT SourceKey) FROM Relationships
                 WHERE RelationshipTypeKey = ${this.relationships.get(prop)}
                   AND EXISTS (SELECT CodeKey FROM Codes WHERE Description = '${this.#sqlWrapString(value)}' COLLATE NOCASE)
                   AND SourceKey = `;
@@ -791,11 +820,11 @@ class LoincServices extends CodeSystemProvider {
         'Description'
       );
       if (matchingKeys.length > 0) {
-        sql = `SELECT SourceKey as Key FROM Relationships
+        sql = `SELECT DISTINCT SourceKey as Key FROM Relationships
                WHERE RelationshipTypeKey = ${this.relationships.get(prop)}
                  AND TargetKey IN (${matchingKeys.join(',')})
                ORDER BY SourceKey ASC`;
-        lsql = `SELECT COUNT(SourceKey) FROM Relationships
+        lsql = `SELECT COUNT(DISTINCT SourceKey) FROM Relationships
                 WHERE RelationshipTypeKey = ${this.relationships.get(prop)}
                   AND TargetKey IN (${matchingKeys.join(',')})
                   AND SourceKey = `;
@@ -805,20 +834,14 @@ class LoincServices extends CodeSystemProvider {
     else if (this.propertyList.has(prop) && op === '=') {
       let actualValue = value;
       if (prop === 'CLASSTYPE' && ['1', '2', '3', '4'].includes(value)) {
-        const classTypes = {
-          '1': 'Laboratory class',
-          '2': 'Clinical class',
-          '3': 'Claims attachments',
-          '4': 'Surveys'
-        };
         actualValue = classTypes[value];
       }
-      sql = `SELECT CodeKey as Key FROM Properties, PropertyValues
+      sql = `SELECT DISTINCT CodeKey as Key FROM Properties, PropertyValues
              WHERE Properties.PropertyTypeKey = ${this.propertyList.get(prop)}
                AND Properties.PropertyValueKey = PropertyValues.PropertyValueKey
                AND PropertyValues.Value = '${this.#sqlWrapString(actualValue)}' COLLATE NOCASE
              ORDER BY CodeKey ASC`;
-      lsql = `SELECT COUNT(CodeKey) FROM Properties, PropertyValues
+      lsql = `SELECT COUNT(DISTINCT CodeKey) FROM Properties, PropertyValues
               WHERE Properties.PropertyTypeKey = ${this.propertyList.get(prop)}
                 AND Properties.PropertyValueKey = PropertyValues.PropertyValueKey
                 AND PropertyValues.Value = '${this.#sqlWrapString(actualValue)}' COLLATE NOCASE
@@ -827,12 +850,12 @@ class LoincServices extends CodeSystemProvider {
     // Property 'in' filter
     else if (this.propertyList.has(prop) && op === 'in') {
       const codes = this.#commaListOfCodes(value);
-      sql = `SELECT CodeKey as Key FROM Properties, PropertyValues
+      sql = `SELECT DISTINCT CodeKey as Key FROM Properties, PropertyValues
              WHERE Properties.PropertyTypeKey = ${this.propertyList.get(prop)}
                AND Properties.PropertyValueKey = PropertyValues.PropertyValueKey
                AND PropertyValues.Value IN (${codes}) COLLATE NOCASE
              ORDER BY CodeKey ASC`;
-      lsql = `SELECT COUNT(CodeKey) FROM Properties, PropertyValues
+      lsql = `SELECT COUNT(DISTINCT CodeKey) FROM Properties, PropertyValues
               WHERE Properties.PropertyTypeKey = ${this.propertyList.get(prop)}
                 AND Properties.PropertyValueKey = PropertyValues.PropertyValueKey
                 AND PropertyValues.Value IN (${codes}) COLLATE NOCASE
@@ -857,11 +880,11 @@ class LoincServices extends CodeSystemProvider {
         'PropertyValueKey'
       );
       if (matchingKeys.length > 0) {
-        sql = `SELECT CodeKey as Key FROM Properties
+        sql = `SELECT DISTINCT CodeKey as Key FROM Properties
                WHERE PropertyTypeKey = ${this.propertyList.get(prop)}
                  AND PropertyValueKey IN (${matchingKeys.join(',')})
                ORDER BY CodeKey ASC`;
-        lsql = `SELECT COUNT(CodeKey) FROM Properties
+        lsql = `SELECT COUNT(DISTINCT CodeKey) FROM Properties
                 WHERE PropertyTypeKey = ${this.propertyList.get(prop)}
                   AND PropertyValueKey IN (${matchingKeys.join(',')})
                   AND CodeKey = `;
@@ -1000,7 +1023,6 @@ class LoincServices extends CodeSystemProvider {
   }
 
   async filterSize(filterContext, set) {
-
     return set.keys.length;
   }
 

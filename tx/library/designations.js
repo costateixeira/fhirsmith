@@ -563,6 +563,16 @@ class Designations {
     if (!langList || langList.length == 0) {
       // No language list, prefer base designations
       for (const cd of this.designations) {
+        if (this._isPreferred(cd) && cd.isActive()) {
+          return cd;
+        }
+      }
+      for (const cd of this.designations) {
+        if (this.isDisplay(cd) && cd.isActive()) {
+          return cd;
+        }
+      }
+      for (const cd of this.designations) {
         if (this.isDisplay(cd)) {
           return cd;
         }
@@ -717,7 +727,10 @@ class Designations {
       (cd.use.system === DesignationUse.DISPLAY.system &&
         cd.use.code === DesignationUse.DISPLAY.code) ||
       (cd.use.system === DesignationUse.PREFERRED.system &&
-        cd.use.code === DesignationUse.PREFERRED.code);
+        cd.use.code === DesignationUse.PREFERRED.code) ||
+      // snomed
+      (cd.use.system === 'http://snomed.info/sct' &&
+        cd.use.code === '900000000000013009');
   }
 
   /**

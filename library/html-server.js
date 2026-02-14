@@ -7,6 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const escape = require('escape-html');
 
 class HtmlServer {
   log;
@@ -44,23 +45,6 @@ class HtmlServer {
     return this.templates.has(templateName);
   }
 
-  // HTML Utilities
-  escapeHtml(text) {
-    if (typeof text !== 'string') {
-      return String(text);
-    }
-    
-    const map = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;'
-    };
-    
-    return text.replace(/[&<>"']/g, function(m) { return map[m]; });
-  }
-
   // Page Rendering - simple template substitution
   renderPage(templateName, title, content, options = {}) {
     const template = this.getTemplate(templateName);
@@ -80,21 +64,21 @@ class HtmlServer {
     
     // Perform template replacements
     let html = template
-      .replace(/\[%title%\]/g, this.escapeHtml(title))
+      .replace(/\[%title%\]/g, escape(title))
       .replace(/\[%content%\]/g, content) // Content is assumed to be already-safe HTML
-      .replace(/\[%ver%\]/g, this.escapeHtml(renderOptions.version))
-      .replace(/\[%download-date%\]/g, this.escapeHtml(renderOptions.downloadDate))
-      .replace(/\[%total-resources%\]/g, this.escapeHtml(renderOptions.totalResources.toLocaleString()))
-      .replace(/\[%total-packages%\]/g, this.escapeHtml(renderOptions.totalPackages.toLocaleString()))
-      .replace(/\[%endpoint-path%\]/g, this.escapeHtml(renderOptions.endpointpath))
-      .replace(/\[%fhir-version%\]/g, this.escapeHtml(renderOptions.fhirversion))
-      .replace(/\[%ms%\]/g, this.escapeHtml(renderOptions.processingTime.toString()));
+      .replace(/\[%ver%\]/g, escape(renderOptions.version))
+      .replace(/\[%download-date%\]/g, escape(renderOptions.downloadDate))
+      .replace(/\[%total-resources%\]/g, escape(renderOptions.totalResources.toLocaleString()))
+      .replace(/\[%total-packages%\]/g, escape(renderOptions.totalPackages.toLocaleString()))
+      .replace(/\[%endpoint-path%\]/g, escape(renderOptions.endpointpath))
+      .replace(/\[%fhir-version%\]/g, escape(renderOptions.fhirversion))
+      .replace(/\[%ms%\]/g, escape(renderOptions.processingTime.toString()));
     
     // Handle any custom template variables
     if (options.templateVars) {
       for (const [key, value] of Object.entries(options.templateVars)) {
         const placeholder = `[%${key}%]`;
-        const escapedValue = typeof value === 'string' ? this.escapeHtml(value) : String(value);
+        const escapedValue = typeof value === 'string' ? escape(value) : String(value);
         html = html.replace(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), escapedValue);
       }
     }
@@ -110,7 +94,7 @@ class HtmlServer {
       res.send(html);
     } catch (error) {
       this.log.error('[HtmlServer] Error rendering page:', error);
-      res.status(500).send(`<h1>Error</h1><p>Failed to render page: ${this.escapeHtml(error.message)}</p>`);
+      res.status(500).send(`<h1>Error</h1><p>Failed to render page: ${escape(error.message)}</p>`);
     }
   }
 
@@ -118,7 +102,7 @@ class HtmlServer {
     const errorContent = `
       <div class="alert alert-danger">
         <h4>Error</h4>
-        <p>${this.escapeHtml(error.message || error)}</p>
+        <p>${escape(error.message || error)}</p>
       </div>
     `;
     
@@ -128,7 +112,7 @@ class HtmlServer {
       res.send(html);
     } catch (renderError) {
       this.log.error('[HtmlServer] Error rendering error page:', renderError);
-      res.status(statusCode).send(`<h1>Error</h1><p>Failed to render error page: ${this.escapeHtml(renderError.message)}</p>`);
+      res.status(statusCode).send(`<h1>Error</h1><p>Failed to render error page: ${escape(renderError.message)}</p>`);
     }
   }
 

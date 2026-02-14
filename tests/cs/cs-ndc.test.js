@@ -6,10 +6,11 @@ const { NdcServices, NdcServicesFactory, NdcConcept } = require('../../tx/cs/cs-
 const { OperationContext } = require('../../tx/operation-context');
 const {Designations} = require("../../tx/library/designations");
 const {TestUtilities} = require("../test-utilities");
+const folders = require('../../library/folder-setup');
 
 describe('NDC Module Import', () => {
   const testSourceDir = path.resolve(__dirname, '../../tx/data/ndc');
-  const testDbPath = path.resolve(__dirname, '../../data/ndc-testing.db');
+  const testDbPath = folders.ensureFilePath('ndc-testing.db');
 
   beforeAll(() => {
     // Ensure data directory exists

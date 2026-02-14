@@ -1,18 +1,20 @@
-const fs = require('fs').promises;
+const fs = require('fs');
 const path = require('path');
 const ini = require('ini');
 const { describe, beforeAll, afterAll, test, expect } = require('@jest/globals');
 const { VSACValueSetProvider } = require('../../tx/vs/vs-vsac');
+const folders = require('../../library/folder-setup');
 
 // Rate limiting: don't run more than once every 2 hours
 const RATE_LIMIT_HOURS = 2;
 const LAST_RUN_FILE = path.join(__dirname, '.vsac-last-run');
+let allTestsPassed = true;
 
 describe('VSACValueSetProvider', () => {
   let provider;
   let apiKey;
   let shouldSkipTests = false;
-  const cacheFolder = path.join(__dirname, '../../test-cache/vsac');
+  const cacheFolder = folders.ensureFolder('vsac');
 
   beforeAll(async () => {
     // Skip tests in CI/cloud environments
@@ -23,7 +25,7 @@ describe('VSACValueSetProvider', () => {
     }
 
     try {
-      // Check rate limiting
+      // Check rate limiting - minimise load on vsac
       if (await shouldSkipDueToRateLimit()) {
         console.log(`Skipping VSAC tests due to rate limiting (max once every ${RATE_LIMIT_HOURS} hours)`);
         shouldSkipTests = true;
@@ -31,17 +33,16 @@ describe('VSACValueSetProvider', () => {
       }
 
       // Read API key from passwords.ini
-      const passwordsPath = path.join(__dirname, '../../passwords.ini');
-      const passwordsContent = await fs.readFile(passwordsPath, 'utf8');
-      const passwords = ini.parse(passwordsContent);
+      const configPath = folders.ensureFilePath('config.json');
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
-      if (!passwords.passwords?.vsac) {
-        console.log('VSAC API key not found in passwords.ini - skipping tests');
+      if (!config.modules?.tx?.vsackey) {
+        console.log('VSAC API key not found in config.json - skipping tests');
         shouldSkipTests = true;
         return;
       }
 
-      apiKey = passwords.passwords.vsac;
+      apiKey = config.modules?.tx?.vsackey;
       console.log('VSAC API key loaded successfully');
 
       // Create provider with limited refresh for testing
@@ -61,10 +62,19 @@ describe('VSACValueSetProvider', () => {
     }
   }, 10000); // 10 second timeout
 
+  afterEach(() => {
+    if (expect.getState().numFailingTests > 0) {
+      allTestsPassed = false;
+    }
+  });
+
   afterAll(async () => {
     if (provider) {
       // Clean up - stop refresh timer
       provider.stopRefreshTimer();
+    }
+    if (!shouldSkipTests && allTestsPassed) {
+      await recordTestRun();
     }
   });
 
@@ -175,8 +185,6 @@ describe('VSACValueSetProvider', () => {
       // Restore original method
       provider._fetchBundle = originalFetchBundle;
 
-      // Only record successful test run now that we've succeeded
-      await recordTestRun();
 
     }, 120000); // 2 minute timeout for network operations
 
@@ -274,7 +282,7 @@ describe('VSACValueSetProvider', () => {
       if (results.length > 0) {
         // All results should have publisher containing 'Optum'
         for (const vs of results) {
-          expect(vs.publisher).toContain('Optum');
+          expect(vs.jsonObj.publisher).toContain('Optum');
         }
 
         console.log(`Found ${results.length} ValueSets from Optum`);

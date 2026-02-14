@@ -1,6 +1,6 @@
 {
   "name": "fhirsmith",
-  "version": "0.3.0-SNAPSHOT",
+  "version": "0.4.2",
   "description": "A Node.js server that provides a collection of tools to serve the FHIR ecosystem",
   "main": "server.js",
   "engines": {
@@ -44,7 +44,7 @@
     "express-rate-limit": "^7.4.1",
     "express-session": "^1.19.0",
     "fast-xml-parser": "^5.3.4",
-    "fhir-validator-wrapper": "1.2.1",
+    "fhir-validator-wrapper": "1.2.2",
     "fhirpath": "^4.8.3",
     "fs-extra": "^11.3.3",
     "inquirer": "^8.2.5",
@@ -98,13 +98,22 @@
     "smart-health-link",
     "smart-health-card"
   ],
-  "author": "",
-  "license": "MIT",
+  "author": "Health Intersections Pty Ltd",
+  "license": "BSD-3",
   "overrides": {
     "tar": "^7.5.7",
     "fast-xml-parser": "^5.3.4"
   },
   "bin": {
-    "tx-import": "./tx-import.js"
-  }
+    "tx-import": "./tx/importers/tx-import.js",
+    "fhirsmith": "./server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HealthIntersections/fhirsmith.git"
+  },
+  "bugs": {
+    "url": "https://github.com/HealthIntersections/fhirsmith/issues"
+  },
+  "homepage": "https://github.com/HealthIntersections/fhirsmith#readme"
 }

@@ -1,10 +1,11 @@
 const {getValuePrimitive, getValueDT} = require("../../library/utilities");
+const {parametersToR5} = require("../xversion/xv-parameters");
 
 class Parameters {
   jsonObj;
 
-  constructor (jsonObj = null) {
-    this.jsonObj = jsonObj ? jsonObj : { "resourceType": "Parameters" };
+  constructor (jsonObj = null, fhirVersion = 'R5') {
+    this.jsonObj = parametersToR5(jsonObj ? jsonObj : { "resourceType": "Parameters" }, fhirVersion);
   }
 
   addParamStr(name, value) {

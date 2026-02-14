@@ -167,7 +167,7 @@ class SubsumesWorker extends TerminologyWorker {
     txp.readParams(params.jsonObj);
 
     // Load any supplements
-    const supplements = this.loadSupplements(codeSystem.url, codeSystem.version);
+    const supplements = this.loadSupplements(codeSystem.url, codeSystem.version, txp.supplements);
 
     // Create a FhirCodeSystemProvider for this CodeSystem
     const csProvider = new FhirCodeSystemProvider(this.opContext, codeSystem, supplements);
@@ -298,8 +298,16 @@ class SubsumesWorker extends TerminologyWorker {
       throw error;
     }
 
+    let equal = false;
+    if (csProvider.isCaseSensitive()) {
+      equal = codingA.code == codingB.code;
+    } else {
+      equal = codingA.code === codingB.code;
+    }
+    equal = equal || locateA == locateB;
+
     // Determine the subsumption relationship
-    let outcome = await csProvider.subsumesTest(codingA.code, codingB.code);
+    let outcome = equal ? 'equivalent' : await csProvider.subsumesTest(codingA.code, codingB.code);
 
     return {
       resourceType: 'Parameters',

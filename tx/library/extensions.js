@@ -111,6 +111,13 @@ const Extensions = {
       exp.extension = [];
     }
     exp.extension.push({ url : url, valueBoolean : b });
+  },
+
+  addString(exp, url, s) {
+    if (!exp.extension) {
+      exp.extension = [];
+    }
+    exp.extension.push({ url : url, valueString : s });
   }
 }
 

@@ -98,7 +98,7 @@ describe('Lookup Worker', () => {
       expect(response.body.issue[0].code).toBe('not-found');
     });
 
-    test('should return 404 when system not found', async () => {
+    test('should return 422 when system not found', async () => {
       const response = await request(app)
         .get('/tx/r5/CodeSystem/$lookup')
         .query({ 
@@ -107,7 +107,7 @@ describe('Lookup Worker', () => {
         })
         .set('Accept', 'application/json');
 
-      expect(response.status).toBe(404);
+      expect(response.status).toBe(422);
       expect(response.body.resourceType).toBe('OperationOutcome');
     });
 

@@ -42,6 +42,12 @@ class FolderSetup {
     return filePath;
   }
 
+  ensureFolder(...relativePath) {
+    const dirPath = path.join(this.dataDir(), ...relativePath);
+    fs.mkdirSync(dirPath, { recursive: true });
+    return dirPath;
+  }
+
   logsDir() {
     return this.subDir('logs');
   }

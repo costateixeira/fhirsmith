@@ -1,5 +1,6 @@
 // registry-model.js
 // Data model for terminology server registry
+const escape = require('escape-html');
 
 class ServerVersionInformation {
   constructor() {
@@ -36,26 +37,15 @@ class ServerVersionInformation {
   getCsListHtml() {
     if (this.codeSystems.length === 0) return '<ul></ul>';
     return '<ul>' + this.codeSystems.map(cs => 
-      `<li>${this._escapeHtml(cs)}</li>`
+      `<li>${escape(cs)}</li>`
     ).join('') + '</ul>';
   }
 
   getVsListHtml() {
     if (this.valueSets.length === 0) return '<ul></ul>';
     return '<ul>' + this.valueSets.map(vs => 
-      `<li>${this._escapeHtml(vs)}</li>`
+      `<li>${escape(vs)}</li>`
     ).join('') + '</ul>';
-  }
-
-  _escapeHtml(text) {
-    const map = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;'
-    };
-    return text.replace(/[&<>"']/g, m => map[m]);
   }
 
   toJSON() {
@@ -151,7 +141,7 @@ class ServerInformation {
       if (result) result += '. ';
       result += 'Authoritative for the following CodeSystems: <ul>';
       this.authCSList.forEach(cs => {
-        const escaped = this._escapeHtml(cs).replace('*', '<b>*</b>');
+        const escaped = escape(cs).replace(/\*/g, '<b>*</b>');
         result += `<li>${escaped}</li>`;
       });
       result += '</ul>';
@@ -161,24 +151,13 @@ class ServerInformation {
       if (result) result += '. ';
       result += 'Authoritative for the following ValueSets: <ul>';
       this.authVSList.forEach(vs => {
-        const escaped = this._escapeHtml(vs).replace('*', '<b>*</b>');
+        const escaped = escape(vs).replace(/\*/g, '<b>*</b>');
         result += `<li>${escaped}</li>`;
       });
       result += '</ul>';
     }
     
     return result;
-  }
-
-  _escapeHtml(text) {
-    const map = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;'
-    };
-    return text.replace(/[&<>"']/g, m => map[m]);
   }
 
   toJSON() {

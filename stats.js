@@ -1,5 +1,6 @@
 const { monitorEventLoopDelay } = require('perf_hooks');
-const {cache} = require("express/lib/application");
+const {Utilities} = require("./library/utilities");
+const escape = require('escape-html');
 
 class ServerStats {
   started = false;
@@ -13,6 +14,7 @@ class ServerStats {
   startTime = Date.now();
   timer;
   cachingModules = [];
+  taskMap = new Map();
 
   constructor() {
     this.timer = setInterval(() => {
@@ -71,6 +73,42 @@ class ServerStats {
     // at some stage
     this.requestCount++;
     this.requestTime = this.requestTime + tat;
+  }
+
+  addTask(name, frequency) {
+    let info = {};
+    this.taskMap.set(name, info);
+    info.frequency = frequency;
+    info.state = "Started";
+  }
+
+  task(name, state) {
+    let info = this.taskMap.get(name);
+    if (info) {
+      info.date = Date.now();
+      info.state = state;
+    }
+  }
+
+  taskDetails() {
+    if (this.taskMap.size == 0) {
+      return "";
+    }
+    let html = '<table class="grid"><tr style="background-color: #EEEEEE"><th colspan="4">Background Tasks</th></tr>';
+    html += "<tr><th>Task</th><th>Status</th><th>Frequency</th><th>Last Seen</th></tr>";
+    for (let m of this.taskMap.keys()) {
+      html += "<tr><td>";
+      html += escape(m);
+      html += "</td><td>";
+      html += escape(this.taskMap.get(m).state);
+      html += "</td><td>";
+      html += this.taskMap.get(m).frequency;
+      html += "</td><td>";
+      html += Utilities.formatDuration(this.taskMap.get(m).date, Date.now());
+      html += "</td></tr>";
+    }
+    html += "</table>";
+    return html;
   }
 
   finishStats() {

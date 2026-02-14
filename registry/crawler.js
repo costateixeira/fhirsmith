@@ -14,7 +14,7 @@ const MASTER_URL = 'https://fhir.github.io/ig-registry/tx-servers.json';
 class RegistryCrawler {
   log;
 
-  constructor(config = {}) {
+  constructor(config = {}, stats) {
     this.config = {
       timeout: config.timeout || 30000, // 30 seconds default
       masterUrl: config.masterUrl || MASTER_URL,
@@ -22,7 +22,8 @@ class RegistryCrawler {
       crawlInterval: config.crawlInterval || 5 * 60 * 1000, // 5 minutes default
       apiKeys: config.apiKeys || {} // Map of server URL or code to API key
     };
-    
+    this.stats = stats;
+
     this.currentData = new ServerRegistries();
     this.crawlTimer = null;
     this.isCrawling = false;
@@ -35,32 +36,32 @@ class RegistryCrawler {
     this.log = logv;
   }
 
-  /**
-   * Start the crawler with periodic updates
-   */
-  start() {
-    if (this.crawlTimer) {
-      return; // Already running
-    }
-    
-    // Initial crawl
-    this.crawl();
-    
-    // Set up periodic crawling
-    this.crawlTimer = setInterval(() => {
-      this.crawl();
-    }, this.config.crawlInterval);
-  }
-
-  /**
-   * Stop the crawler
-   */
-  stop() {
-    if (this.crawlTimer) {
-      clearInterval(this.crawlTimer);
-      this.crawlTimer = null;
-    }
-  }
+  // /**
+  //  * Start the crawler with periodic updates
+  //  */
+  // start() {
+  //   if (this.crawlTimer) {
+  //     return; // Already running
+  //   }
+  //
+  //   // Initial crawl
+  //   this.crawl();
+  //
+  //   // Set up periodic crawling
+  //   this.crawlTimer = setInterval(() => {
+  //     this.crawl();
+  //   }, this.config.crawlInterval);
+  // }
+  //
+  // /**
+  //  * Stop the crawler
+  //  */
+  // stop() {
+  //   if (this.crawlTimer) {
+  //     clearInterval(this.crawlTimer);
+  //     this.crawlTimer = null;
+  //   }
+  // }
 
   /**
    * Main entry point - crawl the registry starting from the master URL
@@ -133,7 +134,8 @@ class RegistryCrawler {
     registry.name = registryConfig.name;
     registry.authority = registryConfig.authority || '';
     registry.address = registryConfig.url;
-    
+    this.stats.task('TxRegistry', 'Checking: '+registry.address);
+
     if (!registry.name) {
       this.addLogEntry('error', 'No name provided for registry', registryConfig.url);
       return registry;

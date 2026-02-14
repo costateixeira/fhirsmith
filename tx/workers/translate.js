@@ -247,7 +247,7 @@ class TranslateWorker extends TerminologyWorker {
 
   checkCode(op, langList, path, code, system, version, display) {
     let result = false;
-    const cp = this.findCodeSystem(system, version, null, ['complete', 'fragment'], true, true, false, null);
+    const cp = this.findCodeSystem(system, version, null, ['complete', 'fragment'], true, true, false, null, this.requiredSupplements);
     if (cp != null) {
       const lct = cp.locate(this.opContext, code);
       if (op.error('InstanceValidator', 'invalid', path, lct != null, 'Unknown Code (' + system + '#' + code + ')')) {

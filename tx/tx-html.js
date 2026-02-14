@@ -8,6 +8,7 @@ const path = require('path');
 const htmlServer = require('../library/html-server');
 const Logger = require('../library/logger');
 const packageJson = require("../package.json");
+const escape = require('escape-html');
 
 const txHtmlLog = Logger.getInstance().child({ module: 'tx-html' });
 
@@ -63,28 +64,6 @@ class TxHtmlRenderer {
   }
 
   /**
-   * Escape HTML special characters
-   */
-  escapeHtml(text) {
-    if (text === null || text === undefined) {
-      return '';
-    }
-    if (typeof text !== 'string') {
-      return String(text);
-    }
-
-    const map = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#x27;'
-    };
-
-    return text.replace(/[&<>"']/g, m => map[m]);
-  }
-
-  /**
    * Render a page with the TX template
    */
   renderPage(title, content, endpoint, startTime) {
@@ -102,8 +81,20 @@ class TxHtmlRenderer {
    * Check if request accepts HTML
    */
   acceptsHtml(req) {
-    const accept = req.headers.accept || '';
-    return accept.includes('text/html');
+    let _fmt = req.query._format;
+    if (_fmt && typeof _fmt !== 'string') {
+      _fmt = null
+    }
+    if (_fmt && _fmt == 'html') {
+      return true;
+    }
+    if (!_fmt) {
+      _fmt = req.headers.accept || '';
+    }
+    if (typeof _fmt !== 'string') {
+      return false;
+    }
+    return _fmt.includes('text/html');
   }
 
   /**
@@ -146,7 +137,7 @@ class TxHtmlRenderer {
 
 // eslint-disable-next-line no-unused-vars
   async buildSearchForm(req, mode, params) {
-    const html = await this.liquid.renderFile('search-form', { baseUrl: this.escapeHtml(req.baseUrl) });
+    const html = await this.liquid.renderFile('search-form', { baseUrl: escape(req.baseUrl) });
     return html;
   }
 
@@ -178,8 +169,8 @@ class TxHtmlRenderer {
 
     html += '<table class="grid">';
     html += '<tr>';
-    html += `<td><strong>FHIR Version:</strong> ${this.escapeHtml(provider.getFhirVersion())}</td>`;
-    html += `<td><strong>Uptime:</strong> ${this.escapeHtml(uptimeStr)}</td>`;
+    html += `<td><strong>FHIR Version:</strong> ${escape(provider.getFhirVersion())}</td>`;
+    html += `<td><strong>Uptime:</strong> ${escape(uptimeStr)}</td>`;
     html += `<td><strong>Request Count:</strong> ${provider.requestCount}</td>`;
     html += '</tr>';
     html += '<tr>';
@@ -227,7 +218,7 @@ class TxHtmlRenderer {
       const sorted = [...provider.contentSources].sort();
       html += '<ul>';
       for (const source of sorted) {
-        html += `<li>${this.escapeHtml(source)}</li>`;
+        html += `<li>${escape(source)}</li>`;
       }
       html += '</ul>';
     } else {
@@ -255,9 +246,9 @@ class TxHtmlRenderer {
 
     for (const factory of uniqueFactories) {
       html += '<tr>';
-      html += `<td>${this.escapeHtml(factory.name())}</td>`;
-      html += `<td>${this.escapeHtml(factory.system())}</td>`;
-      html += `<td>${this.escapeHtml(factory.version() || '-')}</td>`;
+      html += `<td>${escape(factory.name())}</td>`;
+      html += `<td>${escape(factory.system())}</td>`;
+      html += `<td>${escape(factory.version() || '-')}</td>`;
       html += `<td>${factory.useCount ? factory.useCount() : '-'}</td>`;
       html += '</tr>';
     }
@@ -329,7 +320,7 @@ class TxHtmlRenderer {
     html += `<button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleJsonSource('${resourceId}')">`;
     html += 'Show JSON Source</button>';
     html += `<div id="${resourceId}" class="json-content" style="display: none; margin-top: 10px;">`;
-    html += `<pre>${this.escapeHtml(JSON.stringify(json, null, 2))}</pre>`;
+    html += `<pre>${escape(JSON.stringify(json, null, 2))}</pre>`;
     html += '</div>';
     html += '</div>';
 
@@ -341,7 +332,7 @@ class TxHtmlRenderer {
    */
   async renderParameter(param) {
     let html = '<tr>';
-    html += `<td>${this.escapeHtml(param.name || '')}</td>`;
+    html += `<td>${escape(param.name || '')}</td>`;
     html += '<td>';
     html += await this.renderParameterValue(param);
     html += '</td>';
@@ -358,7 +349,7 @@ class TxHtmlRenderer {
       let html = '<ul>';
       for (const part of param.part) {
         html += '<li>';
-        html += `<strong>${this.escapeHtml(part.name || '')}:</strong> `;
+        html += `<strong>${escape(part.name || '')}:</strong> `;
         html += await this.renderParameterValue(part);
         html += '</li>';
       }
@@ -393,40 +384,40 @@ class TxHtmlRenderer {
 
     // Primitive types
     if (param.valueString !== undefined) {
-      return this.escapeHtml(param.valueString);
+      return escape(param.valueString);
     }
     if (param.valueBoolean !== undefined) {
       return param.valueBoolean ? 'true' : 'false';
     }
     if (param.valueInteger !== undefined) {
-      return this.escapeHtml(String(param.valueInteger));
+      return escape(String(param.valueInteger));
     }
     if (param.valueDecimal !== undefined) {
-      return this.escapeHtml(String(param.valueDecimal));
+      return escape(String(param.valueDecimal));
     }
     if (param.valueUri !== undefined) {
-      return this.escapeHtml(param.valueUri);
+      return escape(param.valueUri);
     }
     if (param.valueUrl !== undefined) {
-      return this.escapeHtml(param.valueUrl);
+      return escape(param.valueUrl);
     }
     if (param.valueCanonical !== undefined) {
-      return this.escapeHtml(param.valueCanonical);
+      return escape(param.valueCanonical);
     }
     if (param.valueCode !== undefined) {
-      return `<code>${this.escapeHtml(param.valueCode)}</code>`;
+      return `<code>${escape(param.valueCode)}</code>`;
     }
     if (param.valueDate !== undefined) {
-      return this.escapeHtml(param.valueDate);
+      return escape(param.valueDate);
     }
     if (param.valueDateTime !== undefined) {
-      return this.escapeHtml(param.valueDateTime);
+      return escape(param.valueDateTime);
     }
     if (param.valueTime !== undefined) {
-      return this.escapeHtml(param.valueTime);
+      return escape(param.valueTime);
     }
     if (param.valueInstant !== undefined) {
-      return this.escapeHtml(param.valueInstant);
+      return escape(param.valueInstant);
     }
 
     return '<em>(empty)</em>';
@@ -440,16 +431,16 @@ class TxHtmlRenderer {
 
     let parts = [];
     if (coding.system) {
-      parts.push(this.escapeHtml(coding.system));
+      parts.push(escape(coding.system));
     }
     if (coding.code) {
-      parts.push(`<code>${this.escapeHtml(coding.code)}</code>`);
+      parts.push(`<code>${escape(coding.code)}</code>`);
     }
     if (coding.display) {
-      parts.push(`"${this.escapeHtml(coding.display)}"`);
+      parts.push(`"${escape(coding.display)}"`);
     }
     if (coding.version) {
-      parts.push(`(version: ${this.escapeHtml(coding.version)})`);
+      parts.push(`(version: ${escape(coding.version)})`);
     }
 
     return parts.join(' | ') || '<em>(empty coding)</em>';
@@ -464,7 +455,7 @@ class TxHtmlRenderer {
     let html = '';
 
     if (cc.text) {
-      html += `<strong>${this.escapeHtml(cc.text)}</strong>`;
+      html += `<strong>${escape(cc.text)}</strong>`;
     }
 
     if (cc.coding && Array.isArray(cc.coding) && cc.coding.length > 0) {
@@ -488,18 +479,18 @@ class TxHtmlRenderer {
     let html = '';
 
     if (qty.comparator) {
-      html += this.escapeHtml(qty.comparator) + ' ';
+      html += escape(qty.comparator) + ' ';
     }
     if (qty.value !== undefined) {
-      html += this.escapeHtml(String(qty.value));
+      html += escape(String(qty.value));
     }
     if (qty.unit) {
-      html += ' ' + this.escapeHtml(qty.unit);
+      html += ' ' + escape(qty.unit);
     } else if (qty.code) {
-      html += ' ' + this.escapeHtml(qty.code);
+      html += ' ' + escape(qty.code);
     }
     if (qty.system) {
-      html += ` <small>(${this.escapeHtml(qty.system)})</small>`;
+      html += ` <small>(${escape(qty.system)})</small>`;
     }
 
     return html || '<em>(empty Quantity)</em>';
@@ -514,19 +505,19 @@ class TxHtmlRenderer {
     let html = '';
 
     if (att.title) {
-      html += `<strong>${this.escapeHtml(att.title)}</strong><br/>`;
+      html += `<strong>${escape(att.title)}</strong><br/>`;
     }
     if (att.contentType) {
-      html += `Content-Type: ${this.escapeHtml(att.contentType)}<br/>`;
+      html += `Content-Type: ${escape(att.contentType)}<br/>`;
     }
     if (att.url) {
-      html += `URL: <a href="${this.escapeHtml(att.url)}">${this.escapeHtml(att.url)}</a><br/>`;
+      html += `URL: <a href="${escape(att.url)}">${escape(att.url)}</a><br/>`;
     }
     if (att.size !== undefined) {
-      html += `Size: ${this.escapeHtml(String(att.size))} bytes<br/>`;
+      html += `Size: ${escape(String(att.size))} bytes<br/>`;
     }
     if (att.language) {
-      html += `Language: ${this.escapeHtml(att.language)}<br/>`;
+      html += `Language: ${escape(att.language)}<br/>`;
     }
     if (att.data) {
       html += `<small>(base64 data present, ${att.data.length} chars)</small>`;
@@ -544,16 +535,16 @@ class TxHtmlRenderer {
     let parts = [];
 
     if (id.use) {
-      parts.push(`[${this.escapeHtml(id.use)}]`);
+      parts.push(`[${escape(id.use)}]`);
     }
     if (id.type && id.type.text) {
-      parts.push(this.escapeHtml(id.type.text));
+      parts.push(escape(id.type.text));
     }
     if (id.system) {
-      parts.push(this.escapeHtml(id.system));
+      parts.push(escape(id.system));
     }
     if (id.value) {
-      parts.push(`<strong>${this.escapeHtml(id.value)}</strong>`);
+      parts.push(`<strong>${escape(id.value)}</strong>`);
     }
     if (id.period) {
       parts.push(this.renderPeriod(id.period));
@@ -571,11 +562,11 @@ class TxHtmlRenderer {
     let html = '';
 
     if (period.start && period.end) {
-      html = `${this.escapeHtml(period.start)} to ${this.escapeHtml(period.end)}`;
+      html = `${escape(period.start)} to ${escape(period.end)}`;
     } else if (period.start) {
-      html = `from ${this.escapeHtml(period.start)}`;
+      html = `from ${escape(period.start)}`;
     } else if (period.end) {
-      html = `until ${this.escapeHtml(period.end)}`;
+      html = `until ${escape(period.end)}`;
     }
 
     return html || '<em>(empty Period)</em>';
@@ -590,7 +581,7 @@ class TxHtmlRenderer {
     if (!inBundle) {
       html += await this.liquid.renderFile('codesystem-operations', {
         opsId: this.generateResourceId(),
-        url: this.escapeHtml(json.url || '')
+        url: escape(json.url || '')
       });
     }
 
@@ -608,7 +599,7 @@ class TxHtmlRenderer {
         opsId: this.generateResourceId(),
         vcSystemId: this.generateResourceId(),
         inferSystemId: this.generateResourceId(),
-        url: this.escapeHtml(json.url || '')
+        url: escape(json.url || '')
       });
     }
 
@@ -665,9 +656,9 @@ class TxHtmlRenderer {
         }
 
         html += '">';
-        html += `<strong>${this.escapeHtml(issue.severity || 'unknown')}:</strong> `;
-        html += `[${this.escapeHtml(issue.code || 'unknown')}] `;
-        html += this.escapeHtml(issue.diagnostics || issue.details?.text || 'No details');
+        html += `<strong>${escape(issue.severity || 'unknown')}:</strong> `;
+        html += `[${escape(issue.code || 'unknown')}] `;
+        html += escape(issue.diagnostics || issue.details?.text || 'No details');
         html += '</div>';
       }
     }
@@ -741,18 +732,18 @@ class TxHtmlRenderer {
     const params = resourceType === 'CodeSystem' ? CODESYSTEM_PARAMS : SEARCH_PARAMS;
 
     let html = '<div class="alert alert-info">Enter search criteria:</div>';
-    html += `<form method="get" action="${this.escapeHtml(req.baseUrl)}/${this.escapeHtml(resourceType)}">`;
+    html += `<form method="get" action="${escape(req.baseUrl)}/${escape(resourceType)}">`;
     html += '<div class="row">';
 
     // Build form fields
     for (const param of params) {
       html += '<div class="col-md-4 mb-3">';
-      html += `<label for="${param.name}" class="form-label">${this.escapeHtml(param.label)}</label>`;
+      html += `<label for="${param.name}" class="form-label">${escape(param.label)}</label>`;
 
       if (param.type === 'select') {
         html += `<select name="${param.name}" id="${param.name}" class="form-select">`;
         for (const opt of param.options) {
-          html += `<option value="${this.escapeHtml(opt)}">${this.escapeHtml(opt || '(any)')}</option>`;
+          html += `<option value="${escape(opt)}">${escape(opt || '(any)')}</option>`;
         }
         html += '</select>';
       } else {
@@ -770,7 +761,7 @@ class TxHtmlRenderer {
     html += '<label for="_sort" class="form-label">Sort By</label>';
     html += '<select name="_sort" id="_sort" class="form-select">';
     for (const opt of SORT_OPTIONS) {
-      html += `<option value="${this.escapeHtml(opt)}">${this.escapeHtml(opt || '(default)')}</option>`;
+      html += `<option value="${escape(opt)}">${escape(opt || '(default)')}</option>`;
     }
     html += '</select>';
     html += '</div>';
@@ -781,8 +772,8 @@ class TxHtmlRenderer {
     html += '<label class="form-label">Elements to include:</label><br/>';
     for (const elem of ELEMENT_OPTIONS) {
       html += `<div class="form-check form-check-inline">`;
-      html += `<input type="checkbox" name="_elements" value="${this.escapeHtml(elem)}" id="elem_${elem}" class="form-check-input"/>`;
-      html += `<label for="elem_${elem}" class="form-check-label">${this.escapeHtml(elem)}</label>`;
+      html += `<input type="checkbox" name="_elements" value="${escape(elem)}" id="elem_${elem}" class="form-check-input"/>`;
+      html += `<label for="elem_${elem}" class="form-check-label">${escape(elem)}</label>`;
       html += '</div>';
     }
     html += '</div>';
@@ -827,7 +818,7 @@ class TxHtmlRenderer {
     html += '<th>ID</th>';
     for (const elem of elements) {
       if (elem !== 'id') {
-        html += `<th>${this.escapeHtml(elem)}</th>`;
+        html += `<th>${escape(elem)}</th>`;
       }
     }
     html += '</tr></thead>';
@@ -842,13 +833,13 @@ class TxHtmlRenderer {
       // ID column with link
       const id = resource.id || '';
       const resourceType = resource.resourceType || '';
-      html += `<td><a href="${this.escapeHtml(req.baseUrl)}/${this.escapeHtml(resourceType)}/${this.escapeHtml(id)}">${this.escapeHtml(id)}</a></td>`;
+      html += `<td><a href="${escape(req.baseUrl)}/${escape(resourceType)}/${escape(id)}">${escape(id)}</a></td>`;
 
       // Other element columns
       for (const elem of elements) {
         if (elem !== 'id') {
           const value = resource[elem];
-          html += `<td>${this.escapeHtml(this.formatValue(value))}</td>`;
+          html += `<td>${escape(this.formatValue(value))}</td>`;
         }
       }
 
@@ -879,7 +870,7 @@ class TxHtmlRenderer {
     html += '<div class="card mb-3">';
     html += '<div class="card-header">Bundle Summary</div>';
     html += '<div class="card-body">';
-    html += `<p><strong>Type:</strong> ${this.escapeHtml(json.type)}</p>`;
+    html += `<p><strong>Type:</strong> ${escape(json.type)}</p>`;
     html += `<p><strong>Total:</strong> ${total}</p>`;
     html += '</div>';
     html += '</div>';
@@ -890,10 +881,10 @@ class TxHtmlRenderer {
 
       if (entry.resource) {
         const resource = entry.resource;
-        html += `<h4>${this.escapeHtml(resource.resourceType)}/${this.escapeHtml(resource.id || 'unknown')}</h4>`;
+        html += `<h4>${escape(resource.resourceType)}/${escape(resource.id || 'unknown')}</h4>`;
 
         if (entry.fullUrl) {
-          html += `<p><small><a href="${this.escapeHtml(entry.fullUrl)}">${this.escapeHtml(entry.fullUrl)}</a></small></p>`;
+          html += `<p><small><a href="${escape(entry.fullUrl)}">${escape(entry.fullUrl)}</a></small></p>`;
         }
 
         // Render the resource
@@ -925,9 +916,9 @@ class TxHtmlRenderer {
         const label = rel.charAt(0).toUpperCase() + rel.slice(1);
 
         if (isDisabled) {
-          html += `<li class="page-item active"><span class="page-link">${this.escapeHtml(label)}</span></li>`;
+          html += `<li class="page-item active"><span class="page-link">${escape(label)}</span></li>`;
         } else {
-          html += `<li class="page-item"><a class="page-link" href="${this.escapeHtml(link.url)}">${this.escapeHtml(label)}</a></li>`;
+          html += `<li class="page-item"><a class="page-link" href="${escape(link.url)}">${escape(label)}</a></li>`;
         }
       }
     }
@@ -943,7 +934,7 @@ class TxHtmlRenderer {
     let html = '<div class="card mb-3">';
     html += '<div class="card-header">Bundle</div>';
     html += '<div class="card-body">';
-    html += `<p><strong>Type:</strong> ${this.escapeHtml(json.type)}</p>`;
+    html += `<p><strong>Type:</strong> ${escape(json.type)}</p>`;
     html += `<p><strong>Total:</strong> ${json.total || 'N/A'}</p>`;
     html += '</div>';
     html += '</div>';
@@ -953,7 +944,7 @@ class TxHtmlRenderer {
       html += '<h4>Links</h4>';
       html += '<ul>';
       for (const link of json.link) {
-        html += `<li><strong>${this.escapeHtml(link.relation)}:</strong> <a href="${this.escapeHtml(link.url)}">${this.escapeHtml(link.url)}</a></li>`;
+        html += `<li><strong>${escape(link.relation)}:</strong> <a href="${escape(link.url)}">${escape(link.url)}</a></li>`;
       }
       html += '</ul>';
     }
@@ -1038,7 +1029,7 @@ class TxHtmlRenderer {
     html += `<button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleJsonSource('${resourceId}')">`;
     html += 'Show JSON Source</button>';
     html += `<div id="${resourceId}" class="json-content" style="display: none; margin-top: 10px;">`;
-    html += `<pre>${this.escapeHtml(JSON.stringify(json, null, 2))}</pre>`;
+    html += `<pre>${escape(JSON.stringify(json, null, 2))}</pre>`;
     html += '</div>';
     html += '</div>';
 

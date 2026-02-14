@@ -104,7 +104,7 @@ class ReadWorker extends TerminologyWorker {
           json.version = cs.version();
         }
         if (cs.iteratable()) {
-          json.content =  "conplete",
+          json.content =  "complete",
           json.concept = [];
           let csp = cs.build(this.opContext, []);
           let iter = await csp.iteratorAll();

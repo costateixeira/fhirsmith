@@ -200,6 +200,8 @@ class ValueSetExpander {
   params;
   excluded = new Set();
   hasExclusions = false;
+  requiredSupplements = new Set();
+  usedSupplements = new Set();
 
   constructor(worker, params) {
     this.worker = worker;
@@ -333,12 +335,13 @@ class ValueSetExpander {
 
     if (this.limitCount > 0 && this.fullList.length >= this.limitCount && !this.hasExclusions) {
       if (this.count > -1 && this.offset > -1 && this.count + this.offset > 0 && this.fullList.length >= this.count + this.offset) {
+        this.noTotal();
         throw new Issue('information', 'informational', null, null, null, null).setFinished();
       } else {
         if (!srcURL) {
           srcURL = '??';
         }
-        throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [srcURL, '>' + this.limitCount]), null, 400).withDiagnostics(this.worker.opContext.diagnostics());
+        throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [srcURL, '>' + this.limitCount]), null, 422).withDiagnostics(this.worker.opContext.diagnostics());
       }
     }
 
@@ -448,7 +451,7 @@ class ValueSetExpander {
             if (cp.code === pn) {
               let vn = getValueName(cp);
               let v = cp[vn];
-              this.defineProperty(expansion, n, this.getPropUrl(cs, pn), pn, vn, v);
+              this.defineProperty(expansion, n, this.getPropUrl(cs, pn, cp), pn, vn, v);
             }
           }
         }
@@ -486,7 +489,7 @@ class ValueSetExpander {
         if (!srcURL) {
           srcURL = '??';
         }
-        throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [srcURL, '>' + this.limitCount]), null, 400).withDiagnostics(this.worker.opContext.diagnostics());
+        throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [srcURL, '>' + this.limitCount]), null, 422).withDiagnostics(this.worker.opContext.diagnostics());
       }
     }
 
@@ -504,7 +507,7 @@ class ValueSetExpander {
     this.excluded.add(system + '|' + version + '#' + code);
   }
 
-  async checkCanExpandValueset(uri, version) {
+  async checkCanExpandValueSet(uri, version) {
     const vs = await this.worker.findValueSet(uri, version);
     if (vs == null) {
       if (!version && uri.includes('|')) {
@@ -512,9 +515,9 @@ class ValueSetExpander {
         uri = uri.substring(0, uri.indexOf('|'));
       }
       if (!version) {
-        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK', this.worker.i18n.translate('VS_EXP_IMPORT_UNK', this.params.httpLanguages, [uri]), 'unknown', 400);
+        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK', this.worker.i18n.translate('VS_EXP_IMPORT_UNK', this.params.httpLanguages, [uri]), 'unknown', 422);
       } else {
-        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK_PINNED', this.worker.i18n.translate('VS_EXP_IMPORT_UNK_PINNED', this.params.httpLanguages, [uri, version]), 'not-found', 400);
+        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK_PINNED', this.worker.i18n.translate('VS_EXP_IMPORT_UNK_PINNED', this.params.httpLanguages, [uri, version]), 'not-found', 422);
       }
     } else {
       this.worker.seeSourceVS(vs, uri);
@@ -526,16 +529,19 @@ class ValueSetExpander {
     let vs = await this.worker.findValueSet(uri, version);
     if (!vs) {
       if (version) {
-        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK_PINNED', this.worker.i18n.translate('VS_EXP_IMPORT_UNK_PINNED', this.params.httpLanguages, [uri, version]), "not-found", 400);
+        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK_PINNED', this.worker.i18n.translate('VS_EXP_IMPORT_UNK_PINNED', this.params.httpLanguages, [uri, version]), "not-found", 422);
       } else if (uri.includes('|')) {
-        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK_PINNED', this.worker.i18n.translate('VS_EXP_IMPORT_UNK_PINNED', this.params.httpLanguages, [uri.substring(0, uri.indexOf("|")), uri.substring(uri.indexOf("|")+1)]), "not-found", 400);
+        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK_PINNED', this.worker.i18n.translate('VS_EXP_IMPORT_UNK_PINNED', this.params.httpLanguages, [uri.substring(0, uri.indexOf("|")), uri.substring(uri.indexOf("|")+1)]), "not-found", 422);
       } else {
-        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK', this.worker.i18n.translate('VS_EXP_IMPORT_UNK', this.params.httpLanguages, [uri]), "not-found", 400);
+        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK', this.worker.i18n.translate('VS_EXP_IMPORT_UNK', this.params.httpLanguages, [uri]), "not-found", 422);
       }
     }
     let worker = new ExpandWorker(this.worker.opContext, this.worker.log, this.worker.provider, this.worker.languages, this.worker.i18n);
     worker.additionalResources = this.worker.additionalResources;
-    let expander = new ValueSetExpander(worker, this.params);
+    // we're going to let this one do more expansion for technical reasons
+    let paramsInner = this.params.clone();
+    paramsInner.limit = INTERNAL_LIMIT;
+    let expander = new ValueSetExpander(worker, paramsInner);
     let result = await expander.expand(vs, filter, false);
     if (result == null) {
       throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK', this.worker.i18n.translate('VS_EXP_IMPORT_UNK', this.params.httpLanguages, [uri]), 'unknown');
@@ -548,7 +554,7 @@ class ValueSetExpander {
 
   async importValueSet(vs, expansion, imports, offset) {
     this.canBeHierarchy = false;
-    for (let p of vs.expansion.parameter) {
+    for (let p of vs.expansion.parameter || []) {
       let vn = getValueName(p);
       let v = getValuePrimitive(p);
       this.addParam(expansion, p.name, vn, v);
@@ -590,6 +596,7 @@ class ValueSetExpander {
           this.fullList.splice(idx, 1);
         }
         this.map.delete(s);
+        this.decTotal();
       }
     }
   }
@@ -601,7 +608,7 @@ class ValueSetExpander {
     for (const u of cset.valueSet || []) {
       this.worker.deadCheck('checkSource');
       const s = this.worker.pinValueSet(u);
-      await this.checkCanExpandValueset(s, '');
+      await this.checkCanExpandValueSet(s, '');
       imp = true;
     }
 
@@ -615,7 +622,8 @@ class ValueSetExpander {
     }
 
     if (cset.system) {
-      const cs = await this.worker.findCodeSystem(cset.system, cset.version, this.params, ['complete', 'fragment'], false, true, true, null);
+      const cs = await this.worker.findCodeSystem(cset.system, cset.version, this.params, ['complete', 'fragment'],
+        false, true, true, null, this.requiredSupplements);
       this.worker.seeSourceProvider(cs, cset.system);
       if (cs == null) {
         // nothing
@@ -625,27 +633,26 @@ class ValueSetExpander {
             throw new Issue('error', 'business-rule', null, null, 'The code system definition for ' + cset.system + ' has no content, so this expansion cannot be performed', 'invalid');
           } else if (cs.contentMode() === 'supplement') {
             throw new Issue('error', 'business-rule', null, null, 'The code system definition for ' + cset.system + ' defines a supplement, so this expansion cannot be performed', 'invalid');
-          } else if (this.params.incompleteOK) {
-            exp.addParamUri(cs.contentMode, cs.system + '|' + cs.version);
           } else {
-            throw new Issue('error', 'business-rule', null, null, 'The code system definition for ' + cset.system + ' is a ' + cs.contentMode + ', so this expansion is not permitted unless the expansion parameter "incomplete-ok" has a value of "true"', 'invalid');
+            this.addParamUri(cs.contentMode(), cs.system + '|' + cs.version);
+            Extensions.addString(exp, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed",
+              "This extension is based on a fragment of the code system " + cset.system);
           }
         }
 
         if (!cset.concept && !cset.filter) {
-          if (cs.specialEnumeration() && this.params.limitedExpansion) {
-            this.checkCanExpandValueSet(cs.specialEnumeration(), '');
+          if (cs.specialEnumeration()) {
+            await this.checkCanExpandValueSet(cs.specialEnumeration(), '');
           } else if (filter.isNull) {
             if (cs.isNotClosed()) {
               if (cs.specialEnumeration()) {
-                throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly. If an incomplete expansion is requested, a limited enumeration will be returned', null, 400).withDiagnostics(this.worker.opContext.diagnostics());
+                Extensions.addString(exp, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
               } else {
-                throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly', null, 400).withDiagnostics(this.worker.opContext.diagnostics());
+                throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly', null, 422).withDiagnostics(this.worker.opContext.diagnostics());
               }
             }
-
-            if (!imp && this.limitCount > 0 && cs.totalCount > this.limitCount && !this.params.limitedExpansion) {
-              throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [srcURL, '>' + this.limitCount]), null, 400).withDiagnostics(this.worker.opContext.diagnostics());
+            if (!imp && this.limitCount > 0 && cs.totalCount > this.limitCount) {
+              throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [srcURL, '>' + this.limitCount]), null, 422).withDiagnostics(this.worker.opContext.diagnostics());
             }
           }
         }
@@ -677,13 +684,13 @@ class ValueSetExpander {
     } else {
       const filters = [];
       const prep = null;
-      const cs = await this.worker.findCodeSystem(cset.system, cset.version, this.params, ['complete', 'fragment'], false, false, true, null);
+      const cs = await this.worker.findCodeSystem(cset.system, cset.version, this.params, ['complete', 'fragment'],
+        false, false, true, null, this.requiredSupplements);
 
       if (cs == null) {
         // nothing
       } else {
-
-        this.worker.checkSupplements(cs, cset, this.requiredSupplements);
+        this.worker.checkSupplements(cs, cset, this.requiredSupplements, this.usedSupplements);
         this.checkProviderCanonicalStatus(expansion, cs, this.valueSet);
         const sv = this.canonical(await cs.system(), await cs.version());
         this.addParamUri(expansion, 'used-codesystem', sv);
@@ -705,26 +712,26 @@ class ValueSetExpander {
         }
 
         if (!cset.concept && !cset.filter) {
-          if (cs.specialEnumeration() && this.params.limitedExpansion && filters.length === 0) {
+          if (cs.specialEnumeration() && filters.length === 0) {
             this.worker.opContext.log('import special value set ' + cs.specialEnumeration());
             const base = await this.expandValueSet(cs.specialEnumeration(), '', filter, notClosed);
-            Extensions.addBoolean(expansion, 'http://hl7.org/fhir/StructureDefinition/valueset-toocostly', true);
+            Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
             await this.importValueSet(base, expansion, valueSets, 0);
             notClosed.value = true;
           } else if (filter.isNull) {
             this.worker.opContext.log('add whole code system');
             if (cs.isNotClosed()) {
               if (cs.specialEnumeration()) {
-                throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly. If an incomplete expansion is requested, a limited enumeration will be returned', null, 400).withDiagnostics(this.worker.opContext.diagnostics());
-
+                Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
               } else {
-                throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly', null, 400).withDiagnostics(this.worker.opContext.diagnostics());
+                throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly', null, 422).withDiagnostics(this.worker.opContext.diagnostics());
               }
+              notClosed.value = true;
             }
 
             const iter = await cs.iterator(null);
-            if (valueSets.length === 0 && this.limitCount > 0 && (iter && iter.total > this.limitCount) && !this.params.limitedExpansion && this.offset < 0)  {
-              throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [vsSrc.vurl, '>' + this.limitCount]), null, 400).withDiagnostics(this.worker.opContext.diagnostics());
+            if (valueSets.length === 0 && this.limitCount > 0 && (iter && iter.total > this.limitCount) && this.offset < 0)  {
+              throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [vsSrc.vurl, '>' + this.limitCount]), null, 422).withDiagnostics(this.worker.opContext.diagnostics());
 
             }
             let tcount = 0;
@@ -744,12 +751,12 @@ class ValueSetExpander {
               notClosed.value = true;
             }
             const prep = await cs.getPrepContext(true);
-            const ctxt = await cs.searchFilter(filter, prep, false);
-            await cs.prepare(prep);
+            const ctxt = await cs.searchFilter(prep, filter, false);
+            let set = await cs.executeFilters(prep);
             this.worker.opContext.log('iterate filters');
-            while (await cs.filterMore(ctxt)) {
+            while (await cs.filterMore(ctxt, set)) {
               this.worker.deadCheck('processCodes#4');
-              const c = await cs.filterConcept(ctxt);
+              const c = await cs.filterConcept(ctxt, set);
               if (await this.passesFilters(cs, c, prep, filters, 0)) {
                 const cds = new Designations(this.worker.i18n.languageDefinitions);
                 await this.listDisplaysFromProvider(cds, cs, c);
@@ -764,7 +771,7 @@ class ValueSetExpander {
         if (cset.concept) {
           this.worker.opContext.log('iterate concepts');
           const cds = new Designations(this.worker.i18n.languageDefinitions);
-          let tcount = 0;
+
           for (const cc of cset.concept) {
             this.worker.deadCheck('processCodes#3');
             cds.clear();
@@ -774,17 +781,18 @@ class ValueSetExpander {
               await this.listDisplaysFromProvider(cds, cs, cctxt.context);
               this.listDisplaysFromIncludeConcept(cds, cc, vsSrc);
               if (filter.passesDesignations(cds) || filter.passes(cc.code)) {
-                tcount++;
                 let ov = Extensions.readString(cc, 'http://hl7.org/fhir/StructureDefinition/itemWeight');
                 if (!ov) {
                   ov = await cs.itemWeight(cctxt.context);
                 }
-                await this.includeCode(cs, null, cs.system(), cs.version(), cc.code, await cs.isAbstract(cctxt.context), await cs.isInactive(cctxt.context), await cs.isDeprecated(cctxt.context), await cs.getStatus(cctxt.context), cds,
+                let added = await this.includeCode(cs, null, cs.system(), cs.version(), cc.code, await cs.isAbstract(cctxt.context), await cs.isInactive(cctxt.context), await cs.isDeprecated(cctxt.context), await cs.getStatus(cctxt.context), cds,
                   await cs.definition(cctxt.context), ov, expansion, valueSets, await cs.extensions(cctxt.context), cc.extension, await cs.properties(cctxt.context), null, excludeInactive, vsSrc.url);
+                if (added) {
+                  this.addToTotal();
+                }
               }
             }
           }
-          this.addToTotal(tcount);
           this.worker.opContext.log('iterate concepts done');
         }
 
@@ -797,8 +805,7 @@ class ValueSetExpander {
           }
 
           if (cs.specialEnumeration()) {
-            await cs.specialFilter(prep, true);
-            Extensions.addBoolean(expansion, 'http://hl7.org/fhir/StructureDefinition/valueset-toocostly', true);
+            Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
             notClosed.value = true;
           }
 
@@ -815,12 +822,10 @@ class ValueSetExpander {
           const fset = await cs.executeFilters(prep);
           if (await cs.filtersNotClosed(prep)) {
             notClosed.value = true;
-          }
-          if (fset.length === 1 && !excludeInactive && !this.params.activeOnly) {
-            this.addToTotal(await cs.filterSize(prep, fset[0]));
+          } else if (fset.length === 1 && !excludeInactive && !this.params.activeOnly) {
+            // this.addToTotal(await cs.filterSize(prep, fset[0]));
           }
 
-          // let count = 0;
           this.worker.opContext.log('iterate filters');
           while (await cs.filterMore(prep, fset[0])) {
             this.worker.deadCheck('processCodes#5');
@@ -837,16 +842,17 @@ class ValueSetExpander {
                 } else {
                   this.canBeHierarchy = false;
                 }
-                await this.includeCode(cs, parent, await cs.system(), await cs.version(), await cs.code(c), await cs.isAbstract(c), await cs.isInactive(c),
+                let added = await this.includeCode(cs, parent, await cs.system(), await cs.version(), await cs.code(c), await cs.isAbstract(c), await cs.isInactive(c),
                   await cs.isDeprecated(c), await cs.getStatus(c), cds, await cs.definition(c), await cs.itemWeight(c),
                   expansion, null, await cs.extensions(c), null, await cs.properties(c), null, excludeInactive, vsSrc.url);
-
+                if (added) {
+                  this.addToTotal();
+                }
               }
             }
           }
           this.worker.opContext.log('iterate filters done');
         }
-
       }
     }
   }
@@ -900,9 +906,10 @@ class ValueSetExpander {
     } else {
       const filters = [];
       const prep = null;
-      const cs = await this.worker.findCodeSystem(cset.system, cset.version, this.params, ['complete', 'fragment'], false, true, true, null);
+      const cs = await this.worker.findCodeSystem(cset.system, cset.version, this.params, ['complete', 'fragment'], false,
+        true, true, null, this.requiredSupplements);
 
-      this.worker.checkSupplements(cs, cset, this.requiredSupplements);
+      this.worker.checkSupplements(cs, cset, this.requiredSupplements, this.usedSupplements);
       this.checkResourceCanonicalStatus(expansion, cs, this.valueSet);
       const sv = this.canonical(await cs.system(), await cs.version());
       this.addParamUri(expansion, 'used-codesystem', sv);
@@ -924,7 +931,7 @@ class ValueSetExpander {
 
       if (!cset.concept && !cset.filter) {
         this.opContext.log('handle system');
-        if (cs.specialEnumeration() && this.params.limitedExpansion && filters.length === 0) {
+        if (cs.specialEnumeration() && filters.length === 0) {
           const base = await this.expandValueSet(cs.specialEnumeration(), '', filter, notClosed);
           Extensions.addBoolean(expansion, 'http://hl7.org/fhir/StructureDefinition/valueset-toocostly', true);
           this.excludeValueSet(base, expansion, valueSets, 0);
@@ -932,15 +939,15 @@ class ValueSetExpander {
         } else if (filter.isNull) {
           if (cs.isNotClosed(filter)) {
             if (cs.specialEnumeration()) {
-              throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly. If an incomplete expansion is requested, a limited enumeration will be returned', null, 400).withDiagnostics(this.worker.opContext.diagnostics());
+              Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
             } else {
-              throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system + '" has a grammar, and cannot be enumerated directly', null, 400).withDiagnostics(this.worker.opContext.diagnostics());
+              throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly', null, 422).withDiagnostics(this.worker.opContext.diagnostics());
             }
           }
 
           const iter = await cs.getIterator(null);
-          if (valueSets.length === 0 && this.limitCount > 0 && iter.count > this.limitCount && !this.params.limitedExpansion) {
-            throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [vsSrc.url, '>' + this.limitCount]), null, 400).withDiagnostics(this.worker.opContext.diagnostics());
+          if (valueSets.length === 0 && this.limitCount > 0 && iter.count > this.limitCount) {
+            throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [vsSrc.url, '>' + this.limitCount]), null, 422).withDiagnostics(this.worker.opContext.diagnostics());
           }
           while (iter.more()) {
             this.worker.deadCheck('processCodes#3a');
@@ -996,8 +1003,7 @@ class ValueSetExpander {
 
         if (cs.specialEnumeration()) {
           await cs.specialFilter(prep, true);
-          Extensions.addBoolean(expansion, 'http://hl7.org/fhir/StructureDefinition/valueset-toocostly', true);
-          notClosed.value = true;
+          Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
         }
 
         for (let fc of cset.filter) {
@@ -1145,7 +1151,7 @@ class ValueSetExpander {
     this.valueSet = source;
 
     const result = structuredClone(source.jsonObj);
-    result.id = '';
+    result.id = undefined;
     let table = null;
     let div_ = null;
 
@@ -1160,9 +1166,9 @@ class ValueSetExpander {
       result.text = undefined;
     }
 
-    this.requiredSupplements = [];
+    for (let s of this.params.supplements) this.requiredSupplements.add(s);
     for (const ext of Extensions.list(source.jsonObj, 'http://hl7.org/fhir/StructureDefinition/valueset-supplement')) {
-      this.requiredSupplements.push(getValuePrimitive(ext));
+      this.requiredSupplements.add(getValuePrimitive(ext));
     }
 
     if (result.expansion) {
@@ -1181,13 +1187,14 @@ class ValueSetExpander {
     this.fullList = [];
     this.canBeHierarchy = !this.params.excludeNested;
 
-    this.limitCount = INTERNAL_LIMIT;
     if (this.params.limit <= 0) {
       if (!filter.isNull) {
         this.limitCount = UPPER_LIMIT_TEXT;
       } else {
         this.limitCount = UPPER_LIMIT_NO_TEXT;
       }
+    } else {
+      this.limitCount = Math.min(this.params.limit, INTERNAL_LIMIT);
     }
     this.offset = this.params.offset;
     this.count = this.params.count;
@@ -1205,9 +1212,6 @@ class ValueSetExpander {
       this.addParamStr(exp, 'filter', filter.filter);
     }
 
-    if (this.params.hasLimitedExpansion) {
-      this.addParamBool(exp, 'limitedExpansion', this.params.limitedExpansion);
-    }
     if (this.params.DisplayLanguages) {
       this.addParamCode(exp, 'displayLanguage', this.params.DisplayLanguages.asString(true));
     } else if (this.params.HTTPLanguages) {
@@ -1256,12 +1260,14 @@ class ValueSetExpander {
     let notClosed = { value :  false};
 
     try {
-      if (source.jsonObj.compose && Extensions.checkNoModifiers(source.jsonObj.compose, 'ValueSetExpander.Expand', 'compose')) {
+      if (source.jsonObj.compose && Extensions.checkNoModifiers(source.jsonObj.compose, 'ValueSetExpander.Expand', 'compose')
+          && this.worker.checkNoLockedDate(source.url, source.jsonObj.compose)) {
         await this.handleCompose(source, filter, exp, notClosed);
       }
 
-      if (this.requiredSupplements.length > 0) {
-        throw new Issue('error', 'not-found', null, 'VALUESET_SUPPLEMENT_MISSING',  this.worker.opContext.i18n.translatePlural(this.requiredSupplements.length, 'VALUESET_SUPPLEMENT_MISSING', this.params.httpLanguages, [this.requiredSupplements.join(', ')]), 'not-found', 400);
+      const unused = new Set([...this.requiredSupplements].filter(s => !this.usedSupplements.has(s)));
+      if (unused.size > 0) {
+        throw new Issue('error', 'not-found', null, 'VALUESET_SUPPLEMENT_MISSING', this.worker.i18n.translatePlural(unused.size, 'VALUESET_SUPPLEMENT_MISSING', this.params.HTTPLanguages, [[...unused].join(',')]), 'not-found').handleAsOO(422);
       }
     } catch (e) {
       if (e instanceof Issue) {
@@ -1270,13 +1276,9 @@ class ValueSetExpander {
           if (this.totalStatus === 'uninitialised') {
             this.totalStatus = 'off';
           } else if (e.toocostly) {
-            if (this.params.limitedExpansion) {
-              Extensions.addBoolean(exp, 'http://hl7.org/fhir/StructureDefinition/valueset-toocostly', 'value', true);
-              if (table != null) {
-                div_.p().style('color: Maroon').tx(e.message);
-              }
-            } else {
-              throw e;
+            Extensions.addBoolean(exp, 'http://hl7.org/fhir/StructureDefinition/valueset-toocostly', 'value', true);
+            if (table != null) {
+              div_.p().style('color: Maroon').tx(e.message);
             }
           } else {
             // nothing- swallow it
@@ -1293,7 +1295,12 @@ class ValueSetExpander {
 
     let list;
     if (notClosed.value) {
-      Extensions.addBoolean(exp, 'http://hl7.org/fhir/StructureDefinition/valueset-unclosed', true);
+      if (!Extensions.has(exp, 'http://hl7.org/fhir/StructureDefinition/valueset-unclosed')) {
+        Extensions.addBoolean(exp, 'http://hl7.org/fhir/StructureDefinition/valueset-unclosed', true);
+      }
+      if (this.totalStatus === 'set' && this.total > -1) {
+        exp.total = this.total;
+      }
       list = this.fullList;
       for (const c of this.fullList) {
         c.contains = undefined;
@@ -1310,7 +1317,7 @@ class ValueSetExpander {
         exp.total = this.fullList.length;
       }
 
-      if (this.canBeHierarchy && (this.count <= 0 || this.count > this.fullList.length)) {
+      if (this.canBeHierarchy && (this.count < 0 || this.count > this.fullList.length)) {
         list = this.rootList;
       } else {
         list = this.fullList;
@@ -1322,7 +1329,7 @@ class ValueSetExpander {
 
     if (this.offset + this.count < 0 && this.fullList.length > this.limit) {
       this.log.log('Operation took too long @ expand (' + this.constructor.name + ')');
-      throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [source.vurl, '>' + this.limit]), null, 400).withDiagnostics(this.worker.opContext.diagnostics());
+      throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [source.vurl, '>' + this.limit]), null, 422).withDiagnostics(this.worker.opContext.diagnostics());
     } else {
       let t = 0;
       let o = 0;
@@ -1331,7 +1338,7 @@ class ValueSetExpander {
         const c = list[i];
         if (this.map.has(this.keyC(c))) {
           o++;
-          if (o > this.offset && (this.count <= 0 || t < this.count)) {
+          if (o > this.offset && (this.count < 0 || t < this.count)) {
             t++;
             if (!exp.contains) {
               exp.contains = [];
@@ -1462,22 +1469,25 @@ class ValueSetExpander {
     if (value === undefined || value == null) {
       return;
     }
-    if (!expansion.property) {
-      expansion.property = [];
-    }
-    let pd = expansion.property.find(t1 => t1.uri == url || t1.code == code);
-    if (!pd) {
-      pd = {};
-      expansion.property.push(pd);
-      pd.uri = url;
-      pd.code = code;
-    } else if (!pd.uri) {
-      pd.uri = url
-    }
-    if (pd.uri != url) {
-      throw new Error('URL mismatch on expansion: ' + pd.uri + ' vs ' + url + ' for code ' + code);
-    } else {
-      code = pd.code;
+    // we only define it if the code system has a definition
+    if (url) {
+      if (!expansion.property) {
+        expansion.property = [];
+      }
+      let pd = expansion.property.find(t1 => t1.uri == url || t1.code == code);
+      if (!pd) {
+        pd = {};
+        expansion.property.push(pd);
+        pd.uri = url;
+        pd.code = code;
+      } else if (!pd.uri) {
+        pd.uri = url
+      }
+      if (pd.uri != url) {
+        throw new Error('URL mismatch on expansion: ' + pd.uri + ' vs ' + url + ' for code ' + code);
+      } else {
+        code = pd.code;
+      }
     }
 
     if (!contains.property) {
@@ -1492,9 +1502,16 @@ class ValueSetExpander {
     pdv[valueName] = value;
   }
 
-  addToTotal(t) {
+  addToTotal(t = 1) {
     if (this.total > -1 && this.totalStatus != "off") {
       this.total = this.total + t;
+      this.totalStatus = 'set';
+    }
+  }
+
+  decTotal(t= 1) {
+    if (this.total > -1 && this.totalStatus != "off") {
+      this.total = this.total - t;
       this.totalStatus = 'set';
     }
   }
@@ -1504,7 +1521,10 @@ class ValueSetExpander {
     this.totalStatus = 'off';
   }
 
-  getPropUrl(cs, pn) {
+  getPropUrl(cs, pn, cp) {
+    if (cp.definition?.uri) {
+      return cp.definition.uri;
+    }
     for (let p of cs.propertyDefinitions()) {
       if (pn == p.code) {
         return p.uri;
@@ -1513,10 +1533,10 @@ class ValueSetExpander {
     return undefined;
   }
 
-
 }
 
 class ExpandWorker extends TerminologyWorker {
+
   /**
    * @param {OperationContext} opContext - Operation context
    * @param {Logger} log - Logger instance
@@ -1552,10 +1572,10 @@ class ExpandWorker extends TerminologyWorker {
       if (error instanceof Issue) {
         let oo = new OperationOutcome();
         oo.addIssue(error);
-        return res.status(error.statusCode || 500).json(this.fixForVersion(oo.jsonObj));
+        return res.status(error.statusCode || 500).json(oo.jsonObj);
       } else {
         const issueCode = error.issueCode || 'exception';
-        return res.status(statusCode).json(this.fixForVersion({
+        return res.status(statusCode).json({
           resourceType: 'OperationOutcome',
           issue: [{
             severity: 'error',
@@ -1565,7 +1585,7 @@ class ExpandWorker extends TerminologyWorker {
             },
             diagnostics: error.message
           }]
-        }));
+        });
       }
     }
   }
@@ -1584,7 +1604,7 @@ class ExpandWorker extends TerminologyWorker {
       this.log.error(error);
       const statusCode = error.statusCode || 500;
       const issueCode = error.issueCode || 'exception';
-      return res.status(statusCode).json(this.fixForVersion({
+      return res.status(statusCode).json({
         resourceType: 'OperationOutcome',
         issue: [{
           severity: 'error',
@@ -1594,7 +1614,7 @@ class ExpandWorker extends TerminologyWorker {
           },
           diagnostics: error.message
         }]
-      }));
+      });
     }
   }
 
@@ -1667,7 +1687,7 @@ class ExpandWorker extends TerminologyWorker {
       valueSet = await this.findValueSet(url, version);
       this.seeSourceVS(valueSet, url);
       if (!valueSet) {
-        return res.status(404).json(this.operationOutcome('error', 'not-found',
+        return res.status(422).json(this.operationOutcome('error', 'not-found',
           version ? `ValueSet not found: ${url} version ${version}` : `ValueSet not found: ${url}`));
       }
     }
@@ -1675,7 +1695,7 @@ class ExpandWorker extends TerminologyWorker {
     // Perform the expansion
     const result = await this.doExpand(valueSet, txp, logExtraOutput);
     req.logInfo = this.usedSources.join("|")+txp.logInfo();
-    return res.json(this.fixForVersion(result));
+    return res.json(result);
   }
   
   /**
@@ -1691,7 +1711,7 @@ class ExpandWorker extends TerminologyWorker {
     const valueSet = await this.provider.getValueSetById(this.opContext, id);
 
     if (!valueSet) {
-      return res.status(404).json(this.operationOutcome('error', 'not-found',
+      return res.status(422).json(this.operationOutcome('error', 'not-found',
         `ValueSet/${id} not found`));
     }
 
@@ -1725,7 +1745,7 @@ class ExpandWorker extends TerminologyWorker {
     // Perform the expansion
     const result = await this.doExpand(valueSet, txp, logExtraOutput);
     req.logInfo = this.usedSources.join("|")+txp.logInfo();
-    return res.json(this.fixForVersion(result));
+    return res.json(result);
   }
 
   // Note: setupAdditionalResources, queryToParameters, formToParameters,
@@ -1791,8 +1811,6 @@ class ExpandWorker extends TerminologyWorker {
     }
 
     const filter = new SearchFilterText(params.filter);
-    //txResources = processAdditionalResources(context, manager, nil, params);
-    // Create expander and run expansion
     const expander = new ValueSetExpander(this, params);
     expander.logExtraOutput = logExtraOutput;
     return await expander.expand(valueSet, filter);

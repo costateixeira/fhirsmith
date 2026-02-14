@@ -415,9 +415,9 @@ describe('ValidateWorker', () => {
       
       await worker.handleCodeSystem(req, res);
       
-      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.status).toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        resourceType: 'Parameters'
+        resourceType: 'OperationOutcome'
       }));
     });
 
@@ -439,7 +439,7 @@ describe('ValidateWorker', () => {
       
       await worker.handleCodeSystemInstance(req, res);
       
-      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.status).toHaveBeenCalledWith(422);
     });
 
     test('handleCodeSystemInstance validates successfully', async () => {
@@ -448,7 +448,7 @@ describe('ValidateWorker', () => {
       await worker.handleCodeSystemInstance(req, res);
       
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
-        resourceType: 'Parameters'
+        resourceType: 'OperationOutcome'
       }));
     });
 

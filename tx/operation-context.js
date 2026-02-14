@@ -49,7 +49,8 @@ class TimeTracker {
  * Stores resources by cache-id for reuse across requests
  */
 class ResourceCache {
-  constructor() {
+  constructor(stats) {
+    this.stats = stats;
     this.cache = new Map();
     this.locks = new Map(); // For thread-safety with async operations
   }
@@ -135,11 +136,19 @@ class ResourceCache {
    * @param {number} maxAge - Maximum age in milliseconds
    */
   prune(maxAge = 3600000) { // Default 1 hour
+    if (this.stats) {
+      this.stats.task("Client Cache", `Pruning (${this.cache.size} entries)`);
+    }
+    let i = 0;
     const now = Date.now();
     for (const [cacheId, entry] of this.cache.entries()) {
       if (now - entry.lastUsed > maxAge) {
+        i++;
         this.cache.delete(cacheId);
       }
+    }
+    if (this.stats) {
+      this.stats.task("Client Cache", `Pruned ${i} of ${this.cache.size} entries`);
     }
   }
 
@@ -184,7 +193,8 @@ class ExpansionCache {
    * @param {number} maxSize - Maximum number of entries to keep (default 1000)
    * @param {number} memoryThresholdMB - Heap usage in MB that triggers dropping oldest half (0 = disabled)
    */
-  constructor(maxSize = ExpansionCache.DEFAULT_MAX_SIZE, memoryThresholdMB = 0) {
+  constructor(stats, maxSize = ExpansionCache.DEFAULT_MAX_SIZE, memoryThresholdMB = 0) {
+    this.stats = stats;
     this.cache = new Map();
     this.maxSize = maxSize;
     this.memoryThresholdBytes = memoryThresholdMB * 1024 * 1024;
@@ -322,12 +332,21 @@ class ExpansionCache {
    * @returns {boolean} True if eviction was triggered
    */
   checkMemoryPressure() {
+    if (this.stats) {
+      this.stats.task('Expansion Cache', 'Checking Memory Pressure');
+    }
     if (this.memoryThresholdBytes <= 0) return false;
 
     const heapUsed = process.memoryUsage().heapUsed;
     if (heapUsed > this.memoryThresholdBytes) {
-      this.evictOldestHalf();
+      const i = this.evictOldestHalf();
+      if (this.stats) {
+        this.stats.task('Expansion Cache', `Checked Memory Pressure: evicted half (${i} entries)`);
+      }
       return true;
+    }
+    if (this.stats) {
+      this.stats.task('Expansion Cache', `Checked Memory Pressure - OK (${this.cache.size} entries)`);
     }
     return false;
   }
@@ -464,7 +483,7 @@ class OperationContext {
   seeContext(vurl) {
     if (this.contexts.includes(vurl)) {
       const contextList = '[' + this.contexts.join(', ') + ']';
-      throw new Issue("error", "processing", null, 'VALUESET_CIRCULAR_REFERENCE', this.i18n.formatMessage(this.langs, 'VALUESET_CIRCULAR_REFERENCE', [vurl, contextList]), null).handleAsOO(400);
+      throw new Issue("error", "processing", null, 'VALUESET_CIRCULAR_REFERENCE', this.i18n.formatMessage(this.langs, 'VALUESET_CIRCULAR_REFERENCE', [vurl, contextList]), "vs-invalid").handleAsOO(400);
     }
     this.contexts.push(vurl);
   }

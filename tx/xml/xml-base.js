@@ -15,105 +15,203 @@ class FhirXmlBase {
    * @type {Set<string>}
    */
   static _arrayElements = new Set([
-    // Common resource elements
-    'identifier',
+    // Common resource / DomainResource elements
+    'contained',
+    // Note: 'identifier' is context-dependent - see _isArrayElement
+    // (0..1 on ConceptMap in R4, 0..* on most other resources and ConceptMap in R5)
     'contact',
     'useContext',
     'jurisdiction',
     'extension',
     'modifierExtension',
 
-    // CodeSystem elements (at resource level)
-    'concept',       // CodeSystem.concept is array
-    'filter',        // CodeSystem.filter is array (but ValueSet.compose.include.filter is also array)
-    'operator',      // CodeSystem.filter.operator is array
-    'designation',   // concept.designation is array
+    // Meta elements
+    // Note: Meta.profile, Meta.security, Meta.tag are all context-dependent
+    // (array in meta, but singular elsewhere) - handled in _isArrayElement
+
+    // CodeSystem elements
+    'concept',          // CodeSystem.concept 0..* (recursive)
+    'filter',           // CodeSystem.filter 0..* (also ValueSet.compose.include.filter)
+    'operator',         // CodeSystem.filter.operator 0..*
+    'designation',      // concept.designation 0..*
 
     // ValueSet elements
-    'include',
-    'exclude',
-    'contains',
-    'parameter',
-    'valueSet',
+    'include',          // ValueSet.compose.include 0..*
+    'exclude',          // ValueSet.compose.exclude 0..*
+    'contains',         // ValueSet.expansion.contains 0..* (recursive)
+    'parameter',        // ValueSet.expansion.parameter 0..*, Parameters.parameter 0..*
+    'valueSet',         // ValueSet.compose.include.valueSet 0..*
 
     // ConceptMap elements
-    'group',
-    'element',
-    'target',
-    'dependsOn',
-    'product',
-    'additionalAttribute',
+    'group',            // ConceptMap.group 0..*
+    'element',          // ConceptMap.group.element 0..*
+    // Note: 'target' is context-dependent - see _isArrayElement
+    // (array in ConceptMap.group.element.target, but single uri in ConceptMap.group.target R4)
+    'dependsOn',        // ConceptMap.group.element.target.dependsOn 0..*
+    'product',          // ConceptMap.group.element.target.product 0..*
+    'additionalAttribute', // R5 ConceptMap.additionalAttribute 0..*
 
     // OperationOutcome elements
-    'issue',
-    'location',
-    'expression',
+    'issue',            // OperationOutcome.issue 0..*
+    'location',         // OperationOutcome.issue.location 0..*
+    'expression',       // OperationOutcome.issue.expression 0..*
 
     // Parameters elements
-    'part',
+    'part',             // Parameters.parameter.part 0..*
 
     // Common data type elements
-    'coding',
-    'telecom',
-    'address',
-    'given',
-    'prefix',
-    'suffix',
-    'line',
-    'link',
-    'entry',
+    'coding',           // CodeableConcept.coding 0..*
+    'telecom',          // ContactDetail.telecom, ContactPoint uses
+    // Note: 'address' is NOT in this set - it is 0..1 in endpoint.address
+    // and none of our terminology resources use Address arrays directly
+    'given',            // HumanName.given 0..*
+    'prefix',           // HumanName.prefix 0..*
+    'suffix',           // HumanName.suffix 0..*
+    'line',             // Address.line 0..*
+    'link',             // Bundle.link 0..*
+    'entry',            // Bundle.entry 0..*
 
     // NamingSystem elements
-    'uniqueId',
+    'uniqueId',         // NamingSystem.uniqueId 0..*
+
+    // CapabilityStatement elements
+    'instantiates',     // CS.instantiates 0..*
+    'imports',          // CS.imports 0..* (R4+)
+    'format',           // CS.format 1..*
+    'patchFormat',      // CS.patchFormat 0..*
+    'acceptLanguage',   // CS.acceptLanguage 0..* (R5)
+    'implementationGuide', // CS.implementationGuide 0..*
+    'rest',             // CS.rest 0..*
+    'resource',         // CS.rest.resource 0..*
+    'interaction',      // CS.rest.resource.interaction 0..*, CS.rest.interaction 0..*
+    'searchInclude',    // CS.rest.resource.searchInclude 0..*
+    'searchRevInclude', // CS.rest.resource.searchRevInclude 0..*
+    'searchParam',      // CS.rest.resource.searchParam 0..*
+    'operation',        // CS.rest.resource.operation 0..*, CS.rest.operation 0..*
+    'supportedProfile', // CS.rest.resource.supportedProfile 0..* (R4+)
+    'compartment',      // CS.rest.compartment 0..*
+    'messaging',        // CS.messaging 0..*
+    'endpoint',         // CS.messaging.endpoint 0..*
+    'supportedMessage', // CS.messaging.supportedMessage 0..*
+    'document',         // CS.document 0..*
+    'service',          // CS.rest.security.service 0..*
+
+    // TerminologyCapabilities elements
+    'codeSystem',       // TC.codeSystem 0..*
   ]);
 
   /**
-   * Elements that are arrays ONLY at resource/backbone level, not inside filters/other contexts
-   * 'property' is an array in CodeSystem.property and CodeSystem.concept.property
-   * but NOT in ValueSet.compose.include.filter.property (which is a single code)
+   * Elements that are arrays only in certain parent contexts.
+   * These need special handling because the same element name has different
+   * cardinality depending on where it appears.
    * @type {Set<string>}
    */
-  static _resourceLevelArrayElements = new Set([
-    'property',  // Array in CodeSystem.property and concept.property, but single in filter
+  static _contextDependentArrayElements = new Set([
+    'property',   // Array in CodeSystem.property and concept.property, but single in filter
+    'profile',    // Array in Meta.profile, but single in CS.rest.resource.profile, CS.document.profile
+    'address',    // Array in Patient.address etc, but single in CS.messaging.endpoint.address
+    'target',     // Array in ConceptMap.group.element.target, but single uri in ConceptMap.group.target (R4)
+    'identifier', // Array on most resources, but 0..1 on ConceptMap in R4 (version-dependent)
+    'version',    // Array in TC.codeSystem.version, but single everywhere else
+    'language',   // Array in TC.codeSystem.version.language, but single on Resource.language
+    'security',   // Array in Meta.security, but single in CS.rest.security
+    'tag',        // Array in Meta.tag (handled specially in renderMeta, but needed for generic parsing)
   ]);
 
   /**
-   * Element names that represent boolean types in FHIR
+   * Element names that represent boolean types in FHIR.
+   * These are converted from XML string "true"/"false" to JSON boolean.
    * @type {Set<string>}
    */
   static _booleanElements = new Set([
+    // value[x] boolean
     'valueBoolean',
+
+    // Common resource elements
     'experimental',
+
+    // CodeSystem elements
     'caseSensitive',
     'compositional',
     'versionNeeded',
-    'inactive',
-    'notSelectable',
-    'abstract',
-    'immutable',
-    'lockedDate',
-    'preferred',
+    'inactive',       // concept.property.valueBoolean (context: concept inactive)
+
+    // CodeSystem concept elements
+    'notSelectable',  // concept extension (deprecated but still in use)
+    'abstract',       // expansion.contains.abstract
+
+    // ValueSet elements
+    'immutable',      // ValueSet.immutable
+
+    // NamingSystem elements
+    'preferred',      // NamingSystem.uniqueId.preferred
+
+    // CapabilityStatement elements
+    'cors',           // CS.rest.security.cors
+    'readHistory',    // CS.rest.resource.readHistory
+    'updateCreate',   // CS.rest.resource.updateCreate
+    'conditionalCreate',   // CS.rest.resource.conditionalCreate
+    'conditionalUpdate',   // CS.rest.resource.conditionalUpdate
+    'conditionalPatch',
+    'multipleOr',     // CS.rest.resource.searchParam (R5)
+    'multipleAnd',    // CS.rest.resource.searchParam (R5)
+
+    // ValueSet expansion contains
+    // 'abstract' already listed above
+    // 'inactive' already listed above
+
+    // Generic backbone elements
+    'userSelected',   // Coding.userSelected
   ]);
 
   /**
-   * Element names that represent integer types in FHIR
+   * Element names that represent integer types in FHIR.
+   * These are converted from XML string to JSON number (parseInt).
    * @type {Set<string>}
    */
   static _integerElements = new Set([
+    // value[x] integer types
     'valueInteger',
     'valueUnsignedInt',
     'valuePositiveInt',
-    'count',
-    'offset',
-    'total',
+
+    // Common elements
+    'count',          // CodeSystem.count
+    'offset',         // ValueSet.expansion.offset
+    'total',          // ValueSet.expansion.total, Bundle.total
+
+    // CapabilityStatement elements
+    'reliableCache',  // CS.messaging.reliableCache
   ]);
 
   /**
-   * Element names that represent decimal types in FHIR
+   * Element names that represent decimal types in FHIR.
+   * These are converted from XML string to JSON number (parseFloat).
    * @type {Set<string>}
    */
   static _decimalElements = new Set([
     'valueDecimal',
+    'score',          // Bundle.entry.search.score
+  ]);
+
+  /**
+   * Parent element contexts where 'value' is a decimal (Quantity-like types).
+   * In FHIR, Quantity.value, Money.value etc. are decimal, but most other
+   * uses of 'value' (Identifier.value, ContactPoint.value, etc.) are strings.
+   * @type {Set<string>}
+   */
+  static _quantityContexts = new Set([
+    'valueQuantity',
+    'valueMoney',
+    'quantity',       // generic Quantity backbone
+    'amount',         // Money amount contexts
+    'Quantity',
+    'Money',
+    'Duration',
+    'Age',
+    'Distance',
+    'Count',
+    'SimpleQuantity',
   ]);
 
   // ==================== XML PARSING (XML -> JSON) ====================
@@ -122,18 +220,19 @@ class FhirXmlBase {
    * Convert a manually parsed XML element to FHIR JSON format
    * @param {Object} element - Element with {name, attributes, children}
    * @param {string} resourceType - The FHIR resource type
+   * @param {number} [fhirVersion] - FHIR version (3, 4, or 5) for version-dependent handling
    * @returns {Object} FHIR JSON object
    */
-  static convertElementToFhirJson(element, resourceType) {
+  static convertElementToFhirJson(element, resourceType, fhirVersion) {
     const result = { resourceType };
 
     for (const child of element.children) {
       const key = child.name;
-      const { value, primitiveExt } = this._convertChildElementWithExt(child, resourceType);
+      const { value, primitiveExt } = this._convertChildElementWithExt(child, resourceType, fhirVersion);
 
       // Handle the value
       if (value !== null) {
-        if (this._isArrayElement(key, resourceType)) {
+        if (this._isArrayElement(key, resourceType, fhirVersion)) {
           if (!result[key]) {
             result[key] = [];
           }
@@ -157,19 +256,64 @@ class FhirXmlBase {
    * Check if an element should be an array based on its name and parent context
    * @param {string} elementName - The element name
    * @param {string} parentContext - The parent element name or context
+   * @param {number} [fhirVersion] - FHIR version (3, 4, or 5) for version-dependent handling
    * @returns {boolean}
    */
-  static _isArrayElement(elementName, parentContext) {
+  static _isArrayElement(elementName, parentContext, fhirVersion) {
     // These are always arrays regardless of context
     if (this._arrayElements.has(elementName)) {
       return true;
     }
 
-    // 'property' is an array in CodeSystem.property, CodeSystem.concept.property
-    // but NOT in filter.property (which is a single code)
+    // Context-dependent array elements:
+
+    // 'property' is an array in CodeSystem.property, CodeSystem.concept.property,
+    // ConceptMap.property (R5), but NOT in filter.property (which is a single code)
     if (elementName === 'property') {
-      // property is array at resource level or inside concept, but not inside filter
       return parentContext !== 'filter';
+    }
+
+    // 'target' is 0..* in ConceptMap.group.element.target (backbone array)
+    // but 0..1 in ConceptMap.group.target (R4 uri) and ConceptMap.group.target (R5 uri)
+    if (elementName === 'target') {
+      return parentContext === 'element';
+    }
+
+    // 'identifier' is 0..* on most resources but 0..1 on ConceptMap in R4 and R3
+    if (elementName === 'identifier') {
+      if (parentContext === 'ConceptMap') {
+        return fhirVersion >= 5;
+      }
+      return true; // 0..* on all other resource types
+    }
+
+    // 'version' is 0..* in TerminologyCapabilities.codeSystem.version
+    // but 0..1 everywhere else (CodeSystem.version, ValueSet.version, etc.)
+    if (elementName === 'version') {
+      return parentContext === 'codeSystem';
+    }
+
+    // 'language' is 0..* in TerminologyCapabilities.codeSystem.version.language
+    // but 0..1 on Resource.language
+    if (elementName === 'language') {
+      return parentContext === 'version';
+    }
+
+    // 'profile' is 0..* in Meta.profile
+    // but 0..1 in CapabilityStatement.rest.resource.profile, CS.document.profile
+    if (elementName === 'profile') {
+      return parentContext === 'meta';
+    }
+
+    // 'security' is 0..* in Meta.security (Coding)
+    // but 0..1 in CapabilityStatement.rest.security (BackboneElement)
+    if (elementName === 'security') {
+      return parentContext === 'meta';
+    }
+
+    // 'tag' is 0..* in Meta.tag (Coding)
+    if (elementName === 'tag') {
+      return parentContext === 'meta';
     }
 
     return false;
@@ -179,11 +323,12 @@ class FhirXmlBase {
    * Converts a child element to appropriate JSON value, also handling primitive extensions
    * @param {Object} child - Child element with {name, attributes, children}
    * @param {string} parentContext - Parent element name for context-dependent array handling
+   * @param {number} [fhirVersion] - FHIR version for version-dependent handling
    * @returns {{value: *, primitiveExt: Object|null}} Converted value and primitive extension if any
    * @private
    */
   // eslint-disable-next-line no-unused-vars
-  static _convertChildElementWithExt(child, parentContext = '') {
+  static _convertChildElementWithExt(child, parentContext = '', fhirVersion) {
     const hasValue = child.attributes.value !== undefined;
     const hasChildren = child.children.length > 0;
     const isExtensionElement = child.name === 'extension' || child.name === 'modifierExtension';
@@ -202,7 +347,7 @@ class FhirXmlBase {
 
       // Case 1: Simple primitive with value, no children
       if (hasValue && !hasChildren) {
-        return { value: this._convertPrimitiveValue(child.name, child.attributes.value), primitiveExt: null };
+        return { value: this._convertPrimitiveValue(child.name, child.attributes.value, parentContext), primitiveExt: null };
       }
 
       // Case 2: Primitive with extension but no value - this is a primitive extension only
@@ -216,7 +361,7 @@ class FhirXmlBase {
       // This ONLY applies when there are NO non-extension children
       if (hasValue && hasOnlyExtensions) {
         const ext = this._buildExtensionObject(extensionChildren);
-        return { value: this._convertPrimitiveValue(child.name, child.attributes.value), primitiveExt: ext };
+        return { value: this._convertPrimitiveValue(child.name, child.attributes.value, parentContext), primitiveExt: ext };
       }
     }
 
@@ -234,11 +379,11 @@ class FhirXmlBase {
     // Process ALL children (including extensions as normal array elements)
     for (const grandchild of child.children) {
       const key = grandchild.name;
-      const { value, primitiveExt } = this._convertChildElementWithExt(grandchild, currentContext);
+      const { value, primitiveExt } = this._convertChildElementWithExt(grandchild, currentContext, fhirVersion);
 
       // Handle the value
       if (value !== null) {
-        if (this._isArrayElement(key, currentContext)) {
+        if (this._isArrayElement(key, currentContext, fhirVersion)) {
           if (!obj[key]) {
             obj[key] = [];
           }
@@ -287,10 +432,11 @@ class FhirXmlBase {
    * Convert a primitive value to the appropriate JavaScript type
    * @param {string} elementName - The element name
    * @param {string} value - The string value from XML
+   * @param {string} [parentContext] - Parent element name for context-dependent typing
    * @returns {*} Converted value
    * @private
    */
-  static _convertPrimitiveValue(elementName, value) {
+  static _convertPrimitiveValue(elementName, value, parentContext) {
     if (this._booleanElements.has(elementName)) {
       return value === 'true';
     }
@@ -298,6 +444,10 @@ class FhirXmlBase {
       return parseInt(value, 10);
     }
     if (this._decimalElements.has(elementName)) {
+      return parseFloat(value);
+    }
+    // 'value' is a decimal inside Quantity-like types (valueQuantity, valueMoney, Quantity, etc.)
+    if (elementName === 'value' && this._quantityContexts.has(parentContext)) {
       return parseFloat(value);
     }
     // Everything else stays as string
@@ -308,10 +458,11 @@ class FhirXmlBase {
    * Simple child element conversion (without tracking primitive extensions)
    * @param {Object} child - Child element with {name, attributes, children}
    * @param {string} parentContext - Parent context for array handling
+   * @param {number} [fhirVersion] - FHIR version for version-dependent handling
    * @returns {*} Converted value
    */
-  static convertChildElement(child, parentContext = '') {
-    return this._convertChildElementWithExt(child, parentContext).value;
+  static convertChildElement(child, parentContext = '', fhirVersion) {
+    return this._convertChildElementWithExt(child, parentContext, fhirVersion).value;
   }
 
   // ==================== XML GENERATION (JSON -> XML) ====================

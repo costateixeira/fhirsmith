@@ -222,24 +222,6 @@ class SHLModule {
     }
   }
 
-  // Enhanced HTML escaping
-  escapeHtml(str) {
-    if (!str || typeof str !== 'string') return '';
-
-    const escapeMap = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#x27;',
-      '/': '&#x2F;',
-      '`': '&#x60;',
-      '=': '&#x3D;'
-    };
-
-    return str.replace(/[&<>"'`=/]/g, (match) => escapeMap[match]);
-  }
-
   // URL validation
   validateExternalUrl(url) {
     try {

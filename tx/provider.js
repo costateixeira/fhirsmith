@@ -135,6 +135,7 @@ class Provider {
     const resources = await contentLoader.getResourcesByType("CodeSystem");
     for (const resource of resources) {
       const cs = new CodeSystem(await contentLoader.loadFile(resource, contentLoader.fhirVersion()));
+      cs.sourcePackage = contentLoader.pid();
       this.codeSystems.set(cs.url, cs);
       this.codeSystems.set(cs.vurl, cs);
     }
@@ -224,7 +225,7 @@ class Provider {
   async listCodeSystemVersions(url) {
     let result = new Set();
     for (let cs of this.codeSystems.values()) {
-      if (cs.url == url) {
+      if (cs.url == url && cs.version) {
         result.add(cs.version);
       }
     }
@@ -363,16 +364,16 @@ class Provider {
       factory = this.codeSystemFactories.get(vurlMM);
     }
     if (factory != null) {
-      const csp = factory.build(opContext, []);
-      const c = csp.locate(code);
+      const csp = await factory.build(opContext, []);
+      const c = csp ? csp.locate(code) : null;
       if (c) {
-        if (factory.iterable()) {
+        if (factory.iteratable()) {
           return {
             link: this.path + "/CodeSystem/x-" + factory.id(),
             description: csp.display(c)
           }
         } else {
-           const link = csp.codeLink(c);
+           const link = factory.codeLink(c);
            if (link) {
              return {
                link: link,

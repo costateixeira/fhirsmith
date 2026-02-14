@@ -413,6 +413,7 @@ class PackageManager {
                 }
             } catch (error) {
                 // Try next server
+                console.info("Error looking for "+packageId+" on "+server+": "+error);
                 continue;
             }
         }

@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { PackageManager} = require("../../library/package-manager");
 const {txTestModeSet} = require("./test-runner");
+const folders = require('../../library/folder-setup');
 
 const OUTPUT_FILE1 = path.join(__dirname, '../..', 'tests/tx/test-cases.test.js');
 const OUTPUT_FILE2 = path.join(__dirname, 'test-cases-version.js');
@@ -16,7 +17,7 @@ let testCases;
 
 async function load() {
     const packageServers = ['https://packages2.fhir.org/packages'];
-    const cacheFolder = path.join(__dirname, '../..data/', 'terminology-cache');
+    const cacheFolder = folders.ensureFolder('terminology-cache');
     const packageManager = new PackageManager(packageServers, cacheFolder);
     const packagePath = await packageManager.fetch("hl7.fhir.uv.tx-ecosystem", "current");
     const fullPackagePath = path.join(cacheFolder, packagePath);
@@ -62,16 +63,23 @@ describe('Tx Tests', () => {
             }
 
             for (const test of suite.tests) {
-                if (!test.mode || modes.has(test.mode)) {
+                if ((!test.mode || modes.has(test.mode)) && (!test["full-set"])) {
                     let testDetails = {
                         suite: suite.name,
                         test: test.name
                     }
 
                     const escapedName = test.name.replace(/'/g, "\\'");
-                    output += `  it('${escapedName}', async () => {\n`;
-                    output += `    await runTest(${JSON.stringify(testDetails)});\n`;
-                    output += `  });\n\n`;
+                    if (!test.version || test.version.startsWith("5.0")) {
+                        output += `  it('${escapedName}R5', async () => {\n`;
+                        output += `    await runTest(${JSON.stringify(testDetails)}, "5.0");\n`;
+                        output += `  });\n\n`;
+                    }
+                    if (!test.version || test.version.startsWith("4.0")) {
+                        output += `  it('${escapedName}R4', async () => {\n`;
+                        output += `    await runTest(${JSON.stringify(testDetails)}, "4.0");\n`;
+                        output += `  });\n\n`;
+                    }
                 }
             }
             output += `});\n\n`;
