@@ -69,7 +69,7 @@ class SearchWorker extends TerminologyWorker {
       let elements;
       switch (summary) {
         case 'true':
-          elements = SearchWorker.SUMMARY_ELEMENTS;
+          elements = SearchWorker.SUMMARY_ELEMENTS[resourceType] || [];
           break;
         case 'text':
           elements = ['resourceType', 'id', 'meta', 'text'];
@@ -372,18 +372,12 @@ class SearchWorker extends TerminologyWorker {
       url: `${baseUrl}?${lastParams.toString()}`
     });
 
-    // Determine which elements to include based on _summary
-    let effectiveElements = elements;
-    if (summary === 'true' && !elements) {
-      effectiveElements = SearchWorker.SUMMARY_ELEMENTS[resourceType] || [];
-    }
-
     // Build entries
     const entries = pageResults.map(resource => {
       // Apply _elements or _summary filter if specified
       let filteredResource = resource;
-      if (effectiveElements) {
-        filteredResource = this.filterElements(resource, effectiveElements);
+      if (elements) {
+        filteredResource = this.filterElements(resource, elements);
       }
 
       return {
