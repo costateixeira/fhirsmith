@@ -42,8 +42,9 @@ class SubsumesWorker extends TerminologyWorker {
     try {
       await this.handleTypeLevelSubsumes(req, res);
     } catch (error) {
-      req.logInfo = "error "+(error.msgId || error.className);
       this.log.error(error);
+      this.debugLog(error);
+      req.logInfo = "error "+(error.msgId || error.className);
       if (error instanceof Issue) {
         let oo = new OperationOutcome();
         oo.addIssue(error);
@@ -66,6 +67,7 @@ class SubsumesWorker extends TerminologyWorker {
       await this.handleInstanceLevelSubsumes(req, res);
     } catch (error) {
       this.log.error(error);
+      this.debugLog(error);
       if (error instanceof Issue) {
         let oo = new OperationOutcome();
         oo.addIssue(error);

@@ -66,8 +66,9 @@ class ReadWorker extends TerminologyWorker {
           });
       }
     } catch (error) {
-      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       this.log.error(error);
+      this.debugLog(error);
+      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       return res.status(500).json({
         resourceType: 'OperationOutcome',
         issue: [{
