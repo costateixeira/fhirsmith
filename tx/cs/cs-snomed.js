@@ -767,9 +767,11 @@ class SnomedProvider extends BaseCSServices {
       if (ctxt instanceof SnomedExpressionContext) {
         // ignore concepts for now, but list refinements and refinement groups
         for (const refinement of ctxt.expression.refinements) {
-          const codeA = refinement.code;
-          const codeB = refinement.value;
-          let p = this._addCodeProperty(params, 'property', codeA, codeB);
+          const codeA = refinement.name.code;
+          const codeB = refinement.value.describe();
+          const description = await this.display(codeB);
+          let p = this._addCodeProperty(params, 'property', codeA, codeB, null, description);
+          p.part.push({name: 'code-display', valueString: await this.display(codeA)});
         }
         for (const refinementGroup of ctxt.expression.refinementGroups) {
           for (const refinement of refinementGroup.refinements) {
