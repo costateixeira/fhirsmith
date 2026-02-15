@@ -19,6 +19,12 @@ coverage/
 data/
 logs/
 *.log
+be/
+bel/
+defaults/data/
+.package-cache/
+package-cache/
+sct-*/
 
 # Local config that shouldn't be in container
 .env

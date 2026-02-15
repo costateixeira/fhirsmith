@@ -84,8 +84,6 @@ class SearchWorker extends TerminologyWorker {
 
       const count = summary === 'count' ? 0 : Math.min(elements ? 2000 : 200, params._count && Utilities.isInteger(params._count) ? parseInt(params._count) : 20);
       const sort = params._sort || "id";
-      const summary = params._summary; // true, text, data, count, false
-      const total = params._total; // none, estimate, accurate
 
       // Get matching resources
       let matches = [];
@@ -112,7 +110,7 @@ class SearchWorker extends TerminologyWorker {
 
       // Build and return the bundle
       const bundle = this.buildSearchBundle(
-        req, resourceType, matches, offset, count, elements, summary, total
+        req, resourceType, matches, offset, count, elements, summary, totalMode
       );
       req.logInfo = `${bundle.entry ? bundle.entry.length : 0} matches`;
       return res.json(bundle);
@@ -308,15 +306,6 @@ class SearchWorker extends TerminologyWorker {
       };
     }
 
-    // For _summary=count, return just the count
-    if (summary === 'count') {
-      return {
-        resourceType: 'Bundle',
-        type: 'searchset',
-        total: total
-      };
-    }
-
     // Get the slice for this page
     const pageResults = allMatches.slice(offset, offset + count);
 
@@ -410,7 +399,6 @@ class SearchWorker extends TerminologyWorker {
     const bundle = {
       resourceType: 'Bundle',
       type: 'searchset',
-      total: totalCount,
       link: links,
       entry: entries
     };
