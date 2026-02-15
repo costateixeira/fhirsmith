@@ -3,12 +3,13 @@
  * Implementation of CodeSystemProvider for UCUM (Unified Code for Units of Measure)
  */
 
-const { CodeSystemProvider, FilterExecutionContext, CodeSystemFactoryProvider} = require('./cs-api');
+const { FilterExecutionContext, CodeSystemFactoryProvider} = require('./cs-api');
 const ValueSet = require("../library/valueset");
 const assert = require('assert');
 const {UcumService} = require("../library/ucum-service");
 const {validateArrayParameter, validateParameter, validateOptionalParameter} = require("../../library/utilities");
 const {DesignationUse} = require("../library/designations");
+const {BaseCSServices} = require("./cs-base");
 
 /**
  * UCUM provider context for concepts
@@ -35,7 +36,7 @@ class UcumFilter {
  * UCUM CodeSystem Provider
  * Provides validation and lookup for UCUM unit expressions
  */
-class UcumCodeSystemProvider extends CodeSystemProvider {
+class UcumCodeSystemProvider extends BaseCSServices {
   ucumService;
   commonUnits;
 

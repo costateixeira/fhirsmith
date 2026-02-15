@@ -69,7 +69,9 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
       // Load existing data
       await this._reloadMap();
     }
-    await this.refreshValueSets();
+    if (this.valueSetMap.size == 0) {
+      await this.refreshValueSets();
+    }
 
     // Start periodic refresh
     this._startRefreshTimer();
@@ -433,9 +435,10 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
     if (!vs) {
       return null;
     }
-    if (vs.compose) {
-      return new ValueSet(vs);
+    if (vs.jsonObj.compose) {
+      return vs;
     }
+    console.log('get a full copy for the ValueSet '+vs.url+'|'+vs.version);
     let vsNew = await this._fetchValueSet(vs.id);
     await this.database.upsertValueSet(vsNew);
     this.database.addToMap(this.valueSetMap, vsNew.id, vsNew.url, vsNew.version, vsNew);

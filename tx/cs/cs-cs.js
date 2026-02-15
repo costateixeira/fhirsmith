@@ -1,10 +1,11 @@
 const { CodeSystem}  = require("../library/codesystem");
-const { CodeSystemFactoryProvider, CodeSystemProvider, FilterExecutionContext }  = require( "./cs-api");
+const { CodeSystemFactoryProvider, FilterExecutionContext }  = require( "./cs-api");
 const { VersionUtilities }  = require("../../library/version-utilities");
 const { Language }  = require ("../../library/languages");
 const { validateOptionalParameter, getValuePrimitive, validateArrayParameter} = require("../../library/utilities");
 const {Issue} = require("../library/operation-outcome");
 const {Extensions} = require("../library/extensions");
+const {BaseCSServices} = require("./cs-base");
 
 /**
  * Context class for FHIR CodeSystem provider concepts
@@ -101,7 +102,7 @@ class FhirCodeSystemProviderFilterContext {
   }
 }
 
-class FhirCodeSystemProvider extends CodeSystemProvider {
+class FhirCodeSystemProvider extends BaseCSServices {
   /**
    * @param {CodeSystem} codeSystem - The primary CodeSystem
    * @param {CodeSystem[]} supplements - Array of supplement CodeSystems

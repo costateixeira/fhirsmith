@@ -2,8 +2,9 @@ const sqlite3 = require('sqlite3').verbose();
 const assert = require('assert');
 const { CodeSystem } = require('../library/codesystem');
 const { Language, Languages} = require('../../library/languages');
-const { CodeSystemProvider, CodeSystemFactoryProvider} = require('./cs-api');
+const { CodeSystemFactoryProvider} = require('./cs-api');
 const { validateOptionalParameter, validateArrayParameter} = require("../../library/utilities");
+const {BaseCSServices} = require("./cs-base");
 
 // Context kinds matching Pascal enum
 const LoincProviderContextKind = {
@@ -107,7 +108,7 @@ class LoincPrep {
   }
 }
 
-class LoincServices extends CodeSystemProvider {
+class LoincServices extends BaseCSServices {
   constructor(opContext, supplements, db, sharedData) {
     super(opContext, supplements);
     this.db = db;
@@ -338,7 +339,7 @@ class LoincServices extends CodeSystemProvider {
         } else {
           for (const row of rows) {
             if (this._hasProp(props, row.Relationship, true)) {
-              this.#addCodeProperty(params, 'property', row.Relationship, row.Code);
+              this._addCodeProperty(params, 'property', row.Relationship, row.Code);
             }
           }
           resolve();
@@ -364,10 +365,10 @@ class LoincServices extends CodeSystemProvider {
           for (const row of rows) {
             if (this._hasProp(props, row.Description, true)) {
               if (row.Description == 'CLASSTYPE') {
-                this.#addStringProperty(params, 'property', row.Description, classTypes[row.Value])
+                this._addStringProperty(params, 'property', row.Description, classTypes[row.Value])
                   .part.push({name: 'description', valueString: row.Value});
               } else {
-                this.#addStringProperty(params, 'property', row.Description, row.Value);
+                this._addStringProperty(params, 'property', row.Description, row.Value);
               }
             }
           }
@@ -388,7 +389,7 @@ class LoincServices extends CodeSystemProvider {
           const statusDesc = this.statusCodes.get(row.StatusKey.toString());
           if (row.StatusKey && statusDesc) {
             if (this._hasProp(props, 'STATUS', true)) {
-              this.#addStringProperty(params, 'property', 'STATUS', statusDesc);
+              this._addStringProperty(params, 'property', 'STATUS', statusDesc);
             }
           }
           resolve();
@@ -403,7 +404,7 @@ class LoincServices extends CodeSystemProvider {
     const loaded = await this.#loadRelatedNames(ctxt);
     for (let d of loaded) {
       if (this._hasProp(props, 'RELATEDNAMES2', true)) {
-        this.#addProperty(params, 'property', 'RELATEDNAMES2', d.value, d.lang);
+        this._addProperty(params, 'property', 'RELATEDNAMES2', d.value, d.lang);
       }
     }
   }
@@ -428,64 +429,12 @@ class LoincServices extends CodeSystemProvider {
           reject(err);
         } else {
           for (const row of rows) {
-            this.#addProperty(params, 'designation', row.dtype, row.value, row.lang);
+            this._addProperty(params, 'designation', row.dtype, row.value, row.lang);
           }
           resolve();
         }
       });
     });
-  }
-
-  #addProperty(params, type, name, value, language = null) {
-
-    const property = {
-      name: type,
-      part: [
-        { name: 'code', valueCode: name },
-        { name: 'value', valueString: value }
-      ]
-    };
-
-    if (language) {
-      property.part.push({ name: 'language', valueCode: language });
-    }
-
-    params.push(property);
-  }
-
-  #addCodeProperty(params, type, name, value, language = null) {
-
-    const property = {
-      name: type,
-      part: [
-        { name: 'code', valueCode: name },
-        { name: 'value', valueCode: value }
-      ]
-    };
-
-    if (language) {
-      property.part.push({ name: 'language', valueCode: language });
-    }
-
-    params.push(property);
-  }
-
-  #addStringProperty(params, type, name, value, language = null) {
-
-    const property = {
-      name: type,
-      part: [
-        { name: 'code', valueCode: name },
-        { name: 'value', valueString: value }
-      ]
-    };
-
-    if (language) {
-      property.part.push({ name: 'language', valueCode: language });
-    }
-
-    params.push(property);
-    return property;
   }
 
   async #getDisplaysForContext(ctxt, langs) {

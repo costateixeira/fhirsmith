@@ -1,8 +1,9 @@
 const sqlite3 = require('sqlite3').verbose();
 const assert = require('assert');
 const { CodeSystem } = require('../library/codesystem');
-const { CodeSystemProvider, FilterExecutionContext, CodeSystemFactoryProvider } = require('./cs-api');
+const { FilterExecutionContext, CodeSystemFactoryProvider } = require('./cs-api');
 const {validateArrayParameter} = require("../../library/utilities");
+const {BaseCSServices} = require("./cs-base");
 
 class CPTConceptDesignation {
   constructor(kind, value) {
@@ -108,7 +109,7 @@ class CPTPrep extends FilterExecutionContext {
   }
 }
 
-class CPTServices extends CodeSystemProvider {
+class CPTServices extends BaseCSServices {
   constructor(opContext, supplements, db, sharedData) {
     super(opContext, supplements);
     this.db = db;
@@ -258,7 +259,7 @@ class CPTServices extends CodeSystemProvider {
       }
     } else if (ctxt instanceof CPTConcept) {
       // Add designations
-      if (this.#hasProp(props, 'designation', true)) {
+      if (this._hasProp(props, 'designation', true)) {
         for (const d of ctxt.designations) {
           this.#addProperty(params, 'designation', d.kind, d.value, 'en');
         }
@@ -266,7 +267,7 @@ class CPTServices extends CodeSystemProvider {
 
       // Add properties
       for (const p of ctxt.properties) {
-        if (this.#hasProp(props, p.name, true)) {
+        if (this._hasProp(props, p.name, true)) {
           this.#addProperty(params, 'property', p.name, p.value);
         }
       }
