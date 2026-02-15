@@ -1,4 +1,4 @@
-const { CodeSystemProvider, CodeSystemContentMode, CodeSystemFactoryProvider} = require('./cs-api');
+const { CodeSystemContentMode, CodeSystemFactoryProvider} = require('./cs-api');
 const {
   SnomedStrings, SnomedWords, SnomedStems, SnomedReferences,
   SnomedDescriptions, SnomedDescriptionIndex, SnomedConceptList,
@@ -10,6 +10,7 @@ const {
   SnomedExpressionParser, NO_REFERENCE, SnomedServicesRenderOption
 } = require('../sct/expressions');
 const {DesignationUse} = require("../library/designations");
+const {BaseCSServices} = require("./cs-base");
 
 // Context kinds matching Pascal enum
 const SnomedProviderContextKind = {
@@ -76,6 +77,7 @@ class SnomedFilterContext {
     this.matches = [];
     this.members = [];
     this.descendants = [];
+    this.expressions = undefined; // special use
   }
 }
 
@@ -296,6 +298,19 @@ class SnomedServices {
     }
   }
 
+  getConceptRelationships(reference) {
+    try {
+      const concept = this.concepts.getConcept(reference);
+      const relRef = concept.outbounds;
+
+      if (relRef === 0) return [];
+
+      return this.refs.getReferences(relRef) || [];
+    } catch (error) {
+      return [];
+    }
+  }
+
   getConceptRefSet(conceptIndex, byName = false) {
     for (let i = 0; i < this.refSetIndex.count(); i++) {
       const refSet = this.refSetIndex.getReferenceSet(i);
@@ -430,7 +445,7 @@ class SnomedServices {
 /**
  * SNOMED CT Code System Provider
  */
-class SnomedProvider extends CodeSystemProvider {
+class SnomedProvider extends BaseCSServices {
   constructor(opContext, supplements, snomedServices) {
     super(opContext, supplements);
     this.sct = snomedServices;
@@ -704,8 +719,6 @@ class SnomedProvider extends CodeSystemProvider {
   }
 
   async nextContext(iteratorContext) {
-    
-
     if (iteratorContext.current >= iteratorContext.total) {
       return null;
     }
@@ -716,15 +729,73 @@ class SnomedProvider extends CodeSystemProvider {
     return SnomedExpressionContext.fromReference(key);
   }
 
-  // Filter support
-  async doesFilter(prop, op, value) {
-    
+  async extendLookup(context, props, params) {
+    const ctxt = await this.#ensureContext(context);
+    if (ctxt) {
+      if (!(ctxt instanceof SnomedExpressionContext) || ctxt.expression?.concepts.length == 1) {
+        const parents = this.sct.getConceptParents(ctxt.getReference());
+        for (let parentRef of parents) {
+          const code = this.sct.getConceptId(parentRef);
+          const description = this.sct.getDisplayName(parentRef);
+          this._addCodeProperty(params, 'property', 'parent', code, null, description);
+        }
 
+        const children = this.sct.getConceptChildren(ctxt.getReference());
+        for (let childRef of children) {
+          const code = this.sct.getConceptId(childRef);
+          const description = this.sct.getDisplayName(childRef);
+          this._addCodeProperty(params, 'property', 'child', code, null, description);
+        }
+
+        const relationships = this.sct.getConceptRelationships(ctxt.getReference());
+        let set = new Set();
+        for (let relationshipRef of relationships) {
+          const relationship = this.sct.relationships.getRelationship(relationshipRef);
+          const relType = this.sct.getConceptId(relationship.relType);
+          if (relType != '116680003') {
+            const relTypeD = this.sct.getDisplayName(relationship.relType);
+            const code = this.sct.getConceptId(relationship.target);
+            const description = this.sct.getDisplayName(relationship.target);
+            if (!set.has(relType + ":" + code)) {
+              set.add(relType + ":" + code);
+              let p = this._addCodeProperty(params, 'property', relType, code, null, description);
+              p.part.push({name: 'code-display', valueString: relTypeD});
+            }
+          }
+        }
+      }
+      if (ctxt instanceof SnomedExpressionContext) {
+        // ignore concepts for now, but list refinements and refinement groups
+        for (const refinement of ctxt.expression.refinements) {
+          const codeA = refinement.name.code;
+          const codeB = refinement.value.describe();
+          const description = await this.display(codeB);
+          let p = this._addCodeProperty(params, 'property', codeA, codeB, null, description);
+          p.part.push({name: 'code-display', valueString: await this.display(codeA)});
+        }
+        for (const refinementGroup of ctxt.expression.refinementGroups) {
+          for (const refinement of refinementGroup.refinements) {
+            const codeA = refinement.name.code;
+            const codeB = refinement.value.describe();
+            const description = await this.display(codeB);
+            let p = this._addCodeProperty(params, 'property', codeA, codeB, null, description);
+            p.part.push({name: 'code-display', valueString: await this.display(codeA)});
+          }
+        }
+      }
+    }
+  }
+
+    // Filter support
+  async doesFilter(prop, op, value) {
     if (prop === 'concept') {
       const id = this.sct.stringToIdOrZero(value);
       if (id !== 0n && ['=', 'is-a', 'descendent-of', 'in'].includes(op)) {
         return this.sct.conceptExists(value);
       }
+    }
+    if (prop == 'expressions' && op == '=' && ['true', 'false'].includes(value)) {
+      return true;
     }
 
     return false;
@@ -737,7 +808,6 @@ class SnomedProvider extends CodeSystemProvider {
   }
 
   async filter(filterContext, prop, op, value) {
-    
 
     if (prop === 'concept') {
       const id = this.sct.stringToIdOrZero(value);
@@ -767,23 +837,31 @@ class SnomedProvider extends CodeSystemProvider {
       }
     }
 
+    if (prop == 'expressions' && op == '=') {
+      const filter = new SnomedFilterContext();
+      filter.expressions = value == 'true';
+      filterContext.filters.push(filter);
+      return null;
+    }
+
     throw new Error(`Unsupported filter property: ${prop}`);
   }
 
   async executeFilters(filterContext) {
-    
     return filterContext.filters;
   }
 
   // eslint-disable-next-line no-unused-vars
   async filtersNotClosed(filterContext) {
-    // todo: if one of the filters is expressions=false, then they are closed, but that isn't supported right now
+    for (let filter of filterContext.filters) {
+      if (filter.expressions != undefined && !filter.expressions) {
+        return false;
+      }
+    }
     return true;
   }
 
   async filterSize(filterContext, set) {
-    
-
     if (set.matches && set.matches.length > 0) {
       return set.matches.length;
     } else if (set.members && set.members.length > 0) {
@@ -796,7 +874,6 @@ class SnomedProvider extends CodeSystemProvider {
   }
 
   async filterMore(filterContext, set) {
-    
     set.cursor = set.cursor || 0;
 
     const size = await this.filterSize(filterContext, set);
@@ -804,8 +881,6 @@ class SnomedProvider extends CodeSystemProvider {
   }
 
   async filterConcept(filterContext, set) {
-    
-
     const size = await this.filterSize(filterContext, set);
     if (set.cursor >= size) {
       return null;
@@ -827,7 +902,6 @@ class SnomedProvider extends CodeSystemProvider {
   }
 
   async filterLocate(filterContext, set, code) {
-    
 
     const conceptResult = await this.locate(code);
     if (!conceptResult.context) {
@@ -835,9 +909,7 @@ class SnomedProvider extends CodeSystemProvider {
     }
 
     const ctxt = conceptResult.context;
-    if (ctxt.isComplex()) {
-      return 'Complex expressions not supported in filters';
-    }
+
 
     const reference = ctxt.getReference();
     let found = false;
@@ -858,14 +930,13 @@ class SnomedProvider extends CodeSystemProvider {
   }
 
   async filterCheck(filterContext, set, concept) {
-    
-
     if (!(concept instanceof SnomedExpressionContext)) {
       return false;
     }
 
-    if (concept.isComplex()) {
-      return false;
+    if (set.expressions != undefined) {
+      let b = set.expressions || !concept.isComplex();
+      return b;
     }
 
     const reference = concept.getReference();

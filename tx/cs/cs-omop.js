@@ -1,9 +1,10 @@
 const sqlite3 = require('sqlite3').verbose();
 const assert = require('assert');
 const { CodeSystem } = require('../library/codesystem');
-const { CodeSystemProvider, FilterExecutionContext, CodeSystemFactoryProvider } = require('./cs-api');
+const { FilterExecutionContext, CodeSystemFactoryProvider } = require('./cs-api');
 const {validateOptionalParameter, validateArrayParameter} = require("../../library/utilities");
 const {ConceptMap} = require("../library/conceptmap");
+const {BaseCSServices} = require("./cs-base");
 
 class OMOPConcept {
   constructor(code, display, domain, conceptClass, standard, vocabulary) {
@@ -126,7 +127,7 @@ function getLang(langConcept) {
   return 'en'; // default
 }
 
-class OMOPServices extends CodeSystemProvider {
+class OMOPServices extends BaseCSServices {
   constructor(opContext, supplements, db, sharedData) {
     super(opContext, supplements);
     this.db = db;
@@ -270,16 +271,16 @@ class OMOPServices extends CodeSystemProvider {
     }
 
     // Add basic properties
-    if (this.#hasProp(props, 'domain-id', true)) {
+    if (this._hasProp(props, 'domain-id', true)) {
       this.#addCodeProperty(params, 'property', 'domain-id', ctxt.domain);
     }
-    if (this.#hasProp(props, 'concept-class-id', true)) {
+    if (this._hasProp(props, 'concept-class-id', true)) {
       this.#addCodeProperty(params, 'property', 'concept-class-id', ctxt.conceptClass);
     }
-    if (this.#hasProp(props, 'standard-concept', true)) {
+    if (this._hasProp(props, 'standard-concept', true)) {
       this.#addCodeProperty(params, 'property', 'standard-concept', ctxt.standard);
     }
-    if (this.#hasProp(props, 'vocabulary-id', true)) {
+    if (this._hasProp(props, 'vocabulary-id', true)) {
       this.#addStringProperty(params, 'property', 'vocabulary-id', ctxt.vocabulary);
     }
 
@@ -304,26 +305,26 @@ class OMOPServices extends CodeSystemProvider {
         if (err) {
           reject(err);
         } else if (row) {
-          if (this.#hasProp(props, 'concept-class-concept-id', true)) {
+          if (this._hasProp(props, 'concept-class-concept-id', true)) {
             this.#addCodeProperty(params, 'property', 'concept-class-concept-id', row.concept_class_id);
           }
-          if (this.#hasProp(props, 'domain-concept-id', true)) {
+          if (this._hasProp(props, 'domain-concept-id', true)) {
             this.#addCodeProperty(params, 'property', 'domain-concept-id', row.domain_id);
           }
-          if (this.#hasProp(props, 'valid-start-date', true) && row.valid_start_date) {
+          if (this._hasProp(props, 'valid-start-date', true) && row.valid_start_date) {
             this.#addDateProperty(params, 'property', 'valid-start-date', row.valid_start_date);
           }
-          if (this.#hasProp(props, 'valid-end-date', true) && row.valid_end_date) {
+          if (this._hasProp(props, 'valid-end-date', true) && row.valid_end_date) {
             this.#addDateProperty(params, 'property', 'valid-end-date', row.valid_end_date);
           }
-          if (this.#hasProp(props, 'source-concept-code', true) && row.concept_code && getUri(row.vocabulary_id)) {
+          if (this._hasProp(props, 'source-concept-code', true) && row.concept_code && getUri(row.vocabulary_id)) {
             this.#addCodingProperty(params, 'property', 'source-concept-code',
               getUriOrError(row.vocabulary_id), row.concept_code);
           }
-          if (this.#hasProp(props, 'vocabulary-concept-id', true)) {
+          if (this._hasProp(props, 'vocabulary-concept-id', true)) {
             this.#addCodeProperty(params, 'property', 'vocabulary-concept-id', row.vocabulary_id);
           }
-          if (this.#hasProp(props, 'invalid-reason', true) && row.invalid_reason) {
+          if (this._hasProp(props, 'invalid-reason', true) && row.invalid_reason) {
             this.#addStringProperty(params, 'property', 'invalid-reason', row.invalid_reason);
           }
           resolve();
@@ -353,7 +354,7 @@ class OMOPServices extends CodeSystemProvider {
         } else {
           for (const row of rows) {
             seenConcepts.add(row.concept_id);
-            if (this.#hasProp(props, row.relationship_id, true)) {
+            if (this._hasProp(props, row.relationship_id, true)) {
               this.#addCodingProperty(params, 'property', row.relationship_id,
                 this.system(), row.concept_id, row.concept_name);
             }
@@ -379,7 +380,7 @@ class OMOPServices extends CodeSystemProvider {
         } else {
           for (const row of rows) {
             if (!seenConcepts.has(row.concept_id)) {
-              if (this.#hasProp(props, row.reverse_relationship_id, true)) {
+              if (this._hasProp(props, row.reverse_relationship_id, true)) {
                 this.#addCodingProperty(params, 'property', row.reverse_relationship_id,
                   this.system(), row.concept_id, row.concept_name);
               }

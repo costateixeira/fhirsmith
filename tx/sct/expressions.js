@@ -1469,7 +1469,7 @@ class SnomedExpressionServices {
   /**
    * Validate concept reference
    */
-  checkConcept(concept) {
+  checkConcept(concept, limit) {
     if (concept.code) {
       const conceptId = BigInt(concept.code);
       const result = this.concepts.findConcept(conceptId);
@@ -1478,6 +1478,15 @@ class SnomedExpressionServices {
         concept.reference = result.index;
       } else if (concept.code !== '111115') { // Special case for some SNOMED extensions
         throw new Error(`Concept ${concept.code} not found`);
+      }
+    }
+    if (limit && concept.reference) {
+      // if a limit is specified, then the concept has to be a specialization of that.
+      let parentRef = this.concepts.findConcept(limit);
+      let descendentsRef = this.concepts.getAllDesc(parentRef.index);
+      const descendants = this.refs.getReferences(descendentsRef);
+      if (descendants && !descendants.includes(concept.reference)) {
+        throw new Error(`Concept ${concept.code} is not valid in this context (must be a ${limit})`);
       }
     }
 
@@ -1606,7 +1615,7 @@ class SnomedExpressionServices {
    * Validate refinement
    */
   checkRefinement(refinement) {
-    this.checkConcept(refinement.name);
+    this.checkConcept(refinement.name, '410662002');
     this.checkExpression(refinement.value);
   }
 

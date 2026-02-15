@@ -405,8 +405,8 @@ class RelatedWorker extends TerminologyWorker {
   }
 
   compareCodeLists(status, t, o) {
-    const tSet = new Set(t.map(x => x.code));
-    const oSet = new Set(o.map(x => x.code));
+    const tSet = new Set(t.concept.map(x => x.code));
+    const oSet = new Set(o.concept.map(x => x.code));
 
     status.common = [...tSet].filter(c => oSet.has(c)).length > 0;
     status.left = [...tSet].filter(c => !oSet.has(c)).length > 0;
@@ -434,8 +434,8 @@ class RelatedWorker extends TerminologyWorker {
     return false;
   }
 
-  isConcepts() {
-    return false;
+  isConcepts(inc) {
+    return inc.concept;
   }
 
   isFilter() {

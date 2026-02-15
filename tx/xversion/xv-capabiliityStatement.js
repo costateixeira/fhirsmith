@@ -116,7 +116,7 @@ function convertCanonicalToUri(obj) {
   }
 
   if (Array.isArray(obj)) {
-    obj.forEach(item => this._convertCanonicalToUri(item));
+    obj.forEach(item => convertCanonicalToUri(item));
     return;
   }
 

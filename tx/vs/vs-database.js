@@ -431,7 +431,6 @@ class ValueSetDatabase {
           for (const row of rows) {
             const valueSet = new ValueSet(JSON.parse(row.content));
             valueSet.sourcePackage = source;
-
             // Store by URL and id alone
             this.addToMap(valueSetMap, row.id, row.url, row.version, valueSet);
           }

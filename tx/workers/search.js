@@ -62,8 +62,27 @@ class SearchWorker extends TerminologyWorker {
     try {
       // Parse pagination parameters
       const offset = Math.max(0, parseInt(params._offset) || 0);
-      const elements = params._elements ? decodeURIComponent(params._elements).split(',').map(e => e.trim()) : null;
-      const count = Math.min(elements ? 2000 : 200, params._count && Utilities.isInteger(params._count) ? parseInt(params._count) : 20);
+      const summary = params._summary || 'false';
+      const totalMode = params._total || 'accurate';
+
+      // Determine elements based on _summary parameter
+      let elements;
+      switch (summary) {
+        case 'true':
+          elements = SearchWorker.SUMMARY_ELEMENTS;
+          break;
+        case 'text':
+          elements = ['resourceType', 'id', 'meta', 'text'];
+          break;
+        case 'data':
+          elements = null; // no filter for terminology
+          break;
+        default:
+          elements = params._elements ? decodeURIComponent(params._elements).split(',').map(e => e.trim()) : null;
+          break;
+      }
+
+      const count = summary === 'count' ? 0 : Math.min(elements ? 2000 : 200, params._count && Utilities.isInteger(params._count) ? parseInt(params._count) : 20);
       const sort = params._sort || "id";
       const summary = params._summary; // true, text, data, count, false
       const total = params._total; // none, estimate, accurate
@@ -286,6 +305,15 @@ class SearchWorker extends TerminologyWorker {
         resourceType: 'Bundle',
         type: 'searchset',
         total: totalCount
+      };
+    }
+
+    // For _summary=count, return just the count
+    if (summary === 'count') {
+      return {
+        resourceType: 'Bundle',
+        type: 'searchset',
+        total: total
       };
     }
 

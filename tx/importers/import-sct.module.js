@@ -154,8 +154,270 @@ class SnomedModule extends BaseTerminologyModule {
     return confirmed;
   }
 
+  /**
+   * Auto-detect edition and version from RF2 files
+   * Reads concept files to extract moduleId and effectiveTime
+   * Prefers non-International modules since national editions contain International content
+   */
+  async detectEditionAndVersion(sourceDir) {
+    const detected = {
+      edition: null,
+      version: null,
+      editionName: null
+    };
+
+    // Known editions mapping
+    const editions = {
+      "900000000000207008": "International",
+      "731000124108": "US Edition",
+      "32506021000036107": "Australian Edition",
+      "449081005": "Spanish Edition (International)",
+      "11000279109": "Czech Edition",
+      "554471000005108": "Danish Edition",
+      "11000146104": "Dutch Edition",
+      "45991000052106": "Swedish Edition",
+      "83821000000107": "UK Edition",
+      "11000172109": "Belgian Edition",
+      "11000221109": "Argentinian Edition",
+      "11000234105": "Austrian Edition",
+      "20621000087109": "Canadian Edition (English)",
+      "20611000087101": "Canadian Edition (French)",
+      "11000181102": "Estonian Edition",
+      "11000229106": "Finnish Edition",
+      "11000274103": "German Edition",
+      "1121000189102": "Indian Edition",
+      "11000220105": "Irish Edition",
+      "21000210109": "New Zealand Edition",
+      "51000202101": "Norwegian Edition",
+      "11000267109": "Korean Edition",
+      "900000001000122104": "Spanish Edition (Spain)",
+      "2011000195101": "Swiss Edition",
+      "999000021000000109": "UK Clinical Edition",
+      "5631000179106": "Uruguayan Edition",
+      "21000325107": "Chilean Edition",
+      "5991000124107": "US Edition + ICD10CM"
+    };
+
+    // Filename patterns for edition codes (2-letter country codes in filenames)
+    const filenameEditionCodes = {
+      'INT': '900000000000207008',
+      'US': '731000124108',
+      'AU': '32506021000036107',
+      'UK': '83821000000107',
+      'BE': '11000172109',
+      'NL': '11000146104',
+      'SE': '45991000052106',
+      'DK': '554471000005108',
+      'NO': '51000202101',
+      'FI': '11000229106',
+      'DE': '11000274103',
+      'AT': '11000234105',
+      'CH': '2011000195101',
+      'ES': '900000001000122104',
+      'AR': '11000221109',
+      'CL': '21000325107',
+      'UY': '5631000179106',
+      'NZ': '21000210109',
+      'IE': '11000220105',
+      'EE': '11000181102',
+      'CZ': '11000279109',
+      'KR': '11000267109',
+      'IN': '1121000189102'
+    };
+
+    const INTERNATIONAL_MODULE = "900000000000207008";
+
+    try {
+      const files = this.discoverRF2Files(sourceDir);
+
+      if (files.concepts.length > 0) {
+        const conceptFile = files.concepts[0];
+        const fileName = path.basename(conceptFile);
+
+        // Try to extract edition and version from filename
+        // Patterns: sct2_Concept_Snapshot_BE1000172_20260215.txt
+        //           sct2_Concept_Snapshot_INT_20250201.txt
+        //           sct2_Concept_Snapshot-BE_20260215.txt
+        //           sct2_Concept_Snapshot-en-BE_20260215.txt
+
+        // First, extract the version (8-digit date) - it's always at the end before .txt
+        const versionMatch = fileName.match(/_(\d{8})\.txt$/i);
+        if (versionMatch) {
+          detected.version = versionMatch[1];
+        }
+
+        // Then extract the edition code (2-3 letters after Snapshot)
+        const editionMatch = fileName.match(/Snapshot[_-](?:en-)?([A-Z]{2,3})/i);
+        if (editionMatch) {
+          const editionCode = editionMatch[1].toUpperCase();
+
+          // Look up edition from the 2-3 letter code
+          if (filenameEditionCodes[editionCode]) {
+            detected.edition = filenameEditionCodes[editionCode];
+            detected.editionName = editions[detected.edition];
+          }
+        }
+
+        // If we didn't detect edition from filename, scan the file for non-International modules
+        if (!detected.edition) {
+          const moduleIds = new Map(); // moduleId -> count
+          let latestEffectiveTime = null;
+
+          const rl = readline.createInterface({
+            input: fs.createReadStream(conceptFile),
+            crlfDelay: Infinity
+          });
+
+          let lineCount = 0;
+          const MAX_LINES_TO_SCAN = 50000; // Scan enough lines to find edition-specific content
+
+          for await (const line of rl) {
+            lineCount++;
+            if (lineCount === 1) continue; // Skip header
+
+            const parts = line.split('\t');
+            if (parts.length >= 4) {
+              const effectiveTime = parts[1];
+              const moduleId = parts[3];
+
+              // Track the latest effectiveTime for version
+              if (effectiveTime && /^\d{8}$/.test(effectiveTime)) {
+                if (!latestEffectiveTime || effectiveTime > latestEffectiveTime) {
+                  latestEffectiveTime = effectiveTime;
+                }
+              }
+
+              // Count module occurrences
+              if (moduleId) {
+                moduleIds.set(moduleId, (moduleIds.get(moduleId) || 0) + 1);
+              }
+            }
+
+            if (lineCount >= MAX_LINES_TO_SCAN) break;
+          }
+
+          rl.close();
+
+          // Use latest effectiveTime as version if not already detected
+          if (!detected.version && latestEffectiveTime) {
+            detected.version = latestEffectiveTime;
+          }
+
+          // Find the best edition - prefer non-International modules
+          let bestModule = null;
+          let bestCount = 0;
+
+          for (const [moduleId, count] of moduleIds) {
+            // Skip International module if we have other known editions
+            if (moduleId === INTERNATIONAL_MODULE) {
+              continue;
+            }
+
+            // Prefer known editions with highest count
+            if (editions[moduleId] && count > bestCount) {
+              bestModule = moduleId;
+              bestCount = count;
+            }
+          }
+
+          // If no non-International module found, fall back to International
+          if (!bestModule && moduleIds.has(INTERNATIONAL_MODULE)) {
+            bestModule = INTERNATIONAL_MODULE;
+          }
+
+          if (bestModule) {
+            detected.edition = bestModule;
+            detected.editionName = editions[bestModule] || `Unknown Edition (${bestModule})`;
+          }
+        }
+
+        // If we still don't have version, read first few lines
+        if (!detected.version) {
+          const fd = fs.openSync(conceptFile, 'r');
+          try {
+            const buffer = Buffer.alloc(2000);
+            const bytesRead = fs.readSync(fd, buffer, 0, 2000, 0);
+            const content = buffer.toString('utf8', 0, bytesRead);
+            const lines = content.split('\n');
+
+            if (lines.length >= 2) {
+              const parts = lines[1].split('\t');
+              if (parts.length >= 2 && /^\d{8}$/.test(parts[1])) {
+                detected.version = parts[1];
+              }
+            }
+          } finally {
+            fs.closeSync(fd);
+          }
+        }
+      }
+    } catch (error) {
+      // Silent fail - auto-detection is best-effort
+      if (this.config?.verbose) {
+        console.log(`Auto-detection warning: ${error.message}`);
+      }
+    }
+
+    return detected;
+  }
+
+  /**
+   * Check if the source directory contains International content
+   * (i.e., concepts with the International module ID)
+   * If true, this is a combined/complete release that doesn't need a separate base
+   */
+  async checkForInternationalContent(sourceDir) {
+    const INTERNATIONAL_MODULE = "900000000000207008";
+
+    try {
+      const files = this.discoverRF2Files(sourceDir);
+      if (files.concepts.length === 0) return false;
+
+      const conceptFile = files.concepts[0];
+      const rl = readline.createInterface({
+        input: fs.createReadStream(conceptFile),
+        crlfDelay: Infinity
+      });
+
+      let lineCount = 0;
+      let hasInternational = false;
+
+      for await (const line of rl) {
+        lineCount++;
+        if (lineCount === 1) continue; // Skip header
+
+        const parts = line.split('\t');
+        if (parts.length >= 4 && parts[3] === INTERNATIONAL_MODULE) {
+          hasInternational = true;
+          break;
+        }
+
+        // Only check first 100 lines - International concepts are always at the start
+        if (lineCount > 100) break;
+      }
+
+      rl.close();
+      return hasInternational;
+    } catch (error) {
+      return false;
+    }
+  }
+
   async gatherSnomedConfig(options) {
     const baseConfig = await this.gatherCommonConfig(options);
+
+    // Try to auto-detect edition and version from RF2 files
+    let autoDetected = { edition: null, version: null, editionName: null };
+    if (baseConfig.source && !options.edition && !options.version && !options.uri) {
+      this.logInfo('Auto-detecting edition and version from RF2 files...');
+      autoDetected = await this.detectEditionAndVersion(baseConfig.source);
+
+      if (autoDetected.edition && autoDetected.version) {
+        this.logSuccess(`Detected: ${autoDetected.editionName} version ${autoDetected.version}`);
+      } else if (autoDetected.version) {
+        this.logInfo(`Detected version: ${autoDetected.version}`);
+      }
+    }
 
     const editions = {
       "900000000000207008": { name: "International", needsBase: false, lang: "en-US" },
@@ -193,50 +455,112 @@ class SnomedModule extends BaseTerminologyModule {
 
     // Edition selection (if not provided via options and no URI override)
     if (!options.edition && !options.uri) {
-      const editionChoices = Object.entries(editions).map(([id, info]) => ({
-        name: info.name,
-        value: id
-      }));
+      // If we auto-detected the edition, use confirm instead of list
+      if (autoDetected.edition) {
+        questions.push({
+          type: 'confirm',
+          name: 'useDetectedEdition',
+          message: `Use detected edition: ${autoDetected.editionName} (${autoDetected.edition})?`,
+          default: true
+        });
 
-      questions.push({
-        type: 'list',
-        name: 'edition',
-        message: 'Select SNOMED CT Edition:',
-        choices: editionChoices,
-        default: '900000000000207008' // International edition
-      });
+        questions.push({
+          type: 'list',
+          name: 'edition',
+          message: 'Select SNOMED CT Edition:',
+          choices: Object.entries(editions).map(([id, info]) => ({
+            name: info.name,
+            value: id
+          })),
+          default: autoDetected.edition,
+          when: (answers) => !answers.useDetectedEdition
+        });
+      } else {
+        const editionChoices = Object.entries(editions).map(([id, info]) => ({
+          name: info.name,
+          value: id
+        }));
+
+        questions.push({
+          type: 'list',
+          name: 'edition',
+          message: 'Select SNOMED CT Edition:',
+          choices: editionChoices,
+          default: '900000000000207008' // International edition
+        });
+      }
     }
 
     // Version in YYYYMMDD format (if not provided and no URI override)
     if (!options.version && !options.uri) {
-      questions.push({
-        type: 'input',
-        name: 'version',
-        message: 'Version (YYYYMMDD format, e.g., 20250801):',
-        validate: (input) => {
-          if (!input) return 'Version is required';
-          if (!/^\d{8}$/.test(input)) return 'Version must be in YYYYMMDD format (8 digits)';
+      // If we auto-detected the version, use confirm instead of input
+      if (autoDetected.version) {
+        questions.push({
+          type: 'confirm',
+          name: 'useDetectedVersion',
+          message: `Use detected version: ${autoDetected.version}?`,
+          default: true
+        });
 
-          // Basic date validation
-          const year = parseInt(input.substring(0, 4));
-          const month = parseInt(input.substring(4, 6));
-          const day = parseInt(input.substring(6, 8));
+        questions.push({
+          type: 'input',
+          name: 'version',
+          message: 'Version (YYYYMMDD format, e.g., 20250801):',
+          default: autoDetected.version,
+          when: (answers) => !answers.useDetectedVersion,
+          validate: (input) => {
+            if (!input) return 'Version is required';
+            if (!/^\d{8}$/.test(input)) return 'Version must be in YYYYMMDD format (8 digits)';
 
-          if (year < 1900 || year > 2100) return 'Invalid year';
-          if (month < 1 || month > 12) return 'Invalid month';
-          if (day < 1 || day > 31) return 'Invalid day';
+            const year = parseInt(input.substring(0, 4));
+            const month = parseInt(input.substring(4, 6));
+            const day = parseInt(input.substring(6, 8));
 
-          return true;
-        }
-      });
+            if (year < 1900 || year > 2100) return 'Invalid year';
+            if (month < 1 || month > 12) return 'Invalid month';
+            if (day < 1 || day > 31) return 'Invalid day';
+
+            return true;
+          }
+        });
+      } else {
+        questions.push({
+          type: 'input',
+          name: 'version',
+          message: 'Version (YYYYMMDD format, e.g., 20250801):',
+          validate: (input) => {
+            if (!input) return 'Version is required';
+            if (!/^\d{8}$/.test(input)) return 'Version must be in YYYYMMDD format (8 digits)';
+
+            // Basic date validation
+            const year = parseInt(input.substring(0, 4));
+            const month = parseInt(input.substring(4, 6));
+            const day = parseInt(input.substring(6, 8));
+
+            if (year < 1900 || year > 2100) return 'Invalid year';
+            if (month < 1 || month > 12) return 'Invalid month';
+            if (day < 1 || day > 31) return 'Invalid day';
+
+            return true;
+          }
+        });
+      }
     }
 
     // Get answers for edition and version first
     const primaryAnswers = await inquirer.prompt(questions);
 
-    // Determine the selected edition and version
-    const selectedEdition = options.edition || primaryAnswers.edition;
-    const selectedVersion = options.version || primaryAnswers.version;
+    // Determine the selected edition and version (use auto-detected if confirmed)
+    let selectedEdition = options.edition || primaryAnswers.edition;
+    let selectedVersion = options.version || primaryAnswers.version;
+
+    // If user confirmed auto-detected values, use them
+    if (primaryAnswers.useDetectedEdition !== false && autoDetected.edition && !selectedEdition) {
+      selectedEdition = autoDetected.edition;
+    }
+    if (primaryAnswers.useDetectedVersion !== false && autoDetected.version && !selectedVersion) {
+      selectedVersion = autoDetected.version;
+    }
 
     let editionInfo = null;
     let needsBase = false;
@@ -268,8 +592,20 @@ class SnomedModule extends BaseTerminologyModule {
     // Additional questions based on edition requirements
     const additionalQuestions = [];
 
+    // Check if base is actually needed - modern releases often include International content
+    // If we detected International module in the source, it's a combined release
+    let actuallyNeedsBase = needsBase && !options.base;
+    if (actuallyNeedsBase && baseConfig.source) {
+      // Check if source already contains International content
+      const hasInternational = await this.checkForInternationalContent(baseConfig.source);
+      if (hasInternational) {
+        actuallyNeedsBase = false;
+        this.logInfo('Source contains International content - no base edition needed');
+      }
+    }
+
     // Base directory for extensions (only if edition needs base and not already provided)
-    if (needsBase && !options.base) {
+    if (actuallyNeedsBase) {
       additionalQuestions.push({
         type: 'input',
         name: 'base',
