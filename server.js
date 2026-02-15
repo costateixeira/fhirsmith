@@ -184,7 +184,6 @@ async function initializeModules() {
       modules.tx = new TXModule(stats);
       await modules.tx.initialize(config.modules.tx, app);
     } catch (error) {
-      console.log(error);
       serverLog.error('Failed to initialize TX module:', error);
       throw error;
     }

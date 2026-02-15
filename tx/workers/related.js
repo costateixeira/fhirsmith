@@ -13,6 +13,8 @@ const {TxParameters} = require("../params");
 const {Extensions} = require("../library/extensions");
 const {Issue, OperationOutcome} = require("../library/operation-outcome");
 const ValueSet = require("../library/valueset");
+const {ValueSetExpander} = require("./expand");
+const {SearchFilterText} = require("../library/designations");
 
 
 class RelatedWorker extends TerminologyWorker {
@@ -45,9 +47,9 @@ class RelatedWorker extends TerminologyWorker {
     try {
       await this.handleTypeLevelRelated(req, res);
     } catch (error) {
-      console.error(error);
-      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       this.log.error(error);
+      this.debugLog(error);
+      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       const statusCode = error.statusCode || 500;
       if (error instanceof Issue) {
         let oo = new OperationOutcome();
@@ -80,8 +82,9 @@ class RelatedWorker extends TerminologyWorker {
     try {
       await this.handleInstanceLevelRelated(req, res);
     } catch (error) {
-      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       this.log.error(error);
+      this.debugLog(error);
+      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       const statusCode = error.statusCode || 500;
       const issueCode = error.issueCode || 'exception';
       return res.status(statusCode).json({
@@ -110,6 +113,8 @@ class RelatedWorker extends TerminologyWorker {
     this.setupAdditionalResources(params);
     let txp = new TxParameters(this.opContext.i18n.languageDefinitions, this.opContext.i18n, false);
     txp.readParams(params);
+
+    this.params = txp;
 
     let thisVS = await this.readValueSet(res, "this", params, txp);
     let otherVS = await this.readValueSet(res, "other", params, txp);
@@ -206,54 +211,64 @@ class RelatedWorker extends TerminologyWorker {
     Extensions.checkNoModifiers(otherC, 'RelatedWorker.doRelated', 'compose')
     this.checkNoLockedDate(otherVS.vurl, otherC);
 
+    let systems = new Map(); // tracks whether they are version dependent or not
+
     // ok, first, if we can determine that the value sets match from the definitions, we will
     // if that fails, then we have to do the expansions, and then decide
 
     // first, we sort the includes by system, and then compare them as a group
     // Build a map of system -> { this: [...includes], other: [...includes] }
     const systemMap = new Map();
-    await this.addIncludes(systemMap, thisC.include || [], 'this', txp);
-    await this.addIncludes(systemMap, otherC.include || [], 'other', txp);
-    await this.addIncludes(systemMap, thisC.exclude || [], 'thisEx', txp);
-    await this.addIncludes(systemMap, otherC.exclude || [], 'otherEx', txp);
+    await this.addIncludes(systems, systemMap, thisC.include || [], 'this', txp);
+    await this.addIncludes(systems, systemMap, otherC.include || [], 'other', txp);
+    await this.addIncludes(systems, systemMap, thisC.exclude || [], 'thisEx', txp);
+    await this.addIncludes(systems, systemMap, otherC.exclude || [], 'otherEx', txp);
 
     let status = { left: false, right: false, fail: false, common : false};
 
     for (const [key, value] of systemMap.entries()) {
       if (key) {
-        this.compareSystems(status, value);
+        let cs = await this.findCodeSystem(key, null, txp, ['complete', 'fragment'], null, true);
+        await this.compareSystems(systems, status, cs, value);
       } else {
         this.compareNonSystems(status, value);
       }
     }
 
+    let exp = false;
     // can't tell? OK, we need to do expansions. Note that
     // expansions might not work (infinite value sets) so
     // we can't tell.
     if (status.fail) {
       status.fail = false;
-      this.compareExpansions(status, thisC, otherC);
+      exp = true;
+      await this.compareExpansions(systems, status, thisVS, otherVS);
     }
+    let outcome;
     if (status.fail) {
-      return this.makeOutcome("indeterminate", `Unable to compare ${thisVS.vurl} and ${otherVS.vurl}: `+status.reason);
+      outcome = this.makeOutcome("indeterminate", `Unable to compare ${thisVS.vurl} and ${otherVS.vurl}: `+status.reason);
     } else if (!status.common) {
-      return this.makeOutcome("disjoint", `No shared codes between the value sets ${thisVS.vurl} and ${otherVS.vurl}`);
+      outcome = this.makeOutcome("disjoint", `No shared codes between the value sets ${thisVS.vurl} and ${otherVS.vurl}`);
     } else if (!status.left && !status.right) {
-      return this.makeOutcome("same", `The value sets ${thisVS.vurl} and ${otherVS.vurl} contain the same codes`);
+      outcome = this.makeOutcome("same", `The value sets ${thisVS.vurl} and ${otherVS.vurl} contain the same codes`);
     } else if (status.left && status.right) {
-      return this.makeOutcome("overlapping", `Both value sets ${thisVS.vurl} and ${otherVS.vurl} contain the codes the other doesn't, but there is some overlap`);
+      outcome = this.makeOutcome("overlapping", `Both value sets ${thisVS.vurl} and ${otherVS.vurl} contain the codes the other doesn't, but there is some overlap`);
     } else if (status.left) {
-      return this.makeOutcome("superset", `The valueSet ${thisVS.vurl} is a super-set of the valueSet ${otherVS.vurl}`);
+      outcome = this.makeOutcome("superset", `The valueSet ${thisVS.vurl} is a super-set of the valueSet ${otherVS.vurl}`);
     } else {
-      return this.makeOutcome("subset", `The valueSet ${thisVS.vurl} is a seb-set of the valueSet ${otherVS.vurl}`);
+      outcome = this.makeOutcome("subset", `The valueSet ${thisVS.vurl} is a seb-set of the valueSet ${otherVS.vurl}`);
     }
+    if (exp) {
+      outcome.parameter.push({name: 'expansion', valueBoolean: exp})
+    }
+    return outcome;
   }
 
-  async addIncludes(systemMap, includes, side, txp) {
+  async addIncludes(systems, systemMap, includes, side, txp) {
     for (const inc of includes) {
       let key = inc.system || '';
       let v = {};
-      if (await this.versionMatters(key, inc.version, v, txp)) {
+      if (await this.versionMatters(systems, key, inc.version, v, txp)) {
         key = key + "|" + v.version;
       }
       if (!systemMap.has(key)) {
@@ -263,12 +278,16 @@ class RelatedWorker extends TerminologyWorker {
     }
   }
 
-  async versionMatters(key, version, v, txp) {
+  async versionMatters(systems, key, version, v, txp) {
+    if (systems.has(key)) {
+      return systems.get(key);
+    }
     let cs = await this.findCodeSystem(key, version, txp, ['complete', 'fragment'], null, true);
     let res = cs == null || cs.versionNeeded();
     if (res) {
-      v.version = version || cs.version();
+      v.version = version || cs ? cs.version() : undefined;
     }
+    systems.set(key, res);
     return res;
   }
 
@@ -277,7 +296,7 @@ class RelatedWorker extends TerminologyWorker {
     status.fail = true;
   }
 
-  compareSystems(status, value) {
+  async compareSystems(systems, status, cs, value) {
     if (value.thisEx || value.otherEx) {
       // we don't try in this case
       status.fail = true;
@@ -302,8 +321,14 @@ class RelatedWorker extends TerminologyWorker {
       // we have includes on both sides. We might have full system, a list, or a filter. we don't care about order. so clean up and sort
       this.tidyIncludes(value.this);
       this.tidyIncludes(value.other);
-      // if both sides have full include, they match, period.
-      if (this.isFullSystem(value.this[0]) && this.isFullSystem(value.other[0])) {
+      if (!value.this || value.this.length === 0) {
+        status.right = true;
+        return;
+      } else if (!value.other || value.other.length === 0) {
+        status.left = true;
+        return;
+      } else if (this.isFullSystem(value.this[0]) && this.isFullSystem(value.other[0])) {
+          // if both sides have full include, they match, period.
         status.common = true;
         return;
       } else if (this.isFullSystem(value.this[0])) {
@@ -323,9 +348,9 @@ class RelatedWorker extends TerminologyWorker {
           return;
         } else {
           for (let i = 0; i < value.this.length; i++) {
-            let t = value.this.get(i);
-            let o = value.other.get(i);
-            if (!this.filtersMatch(t, o)) {
+            let t = value.this[i];
+            let o = value.other[i];
+            if (!await this.filterSetsMatch(status, cs, t, o)) {
               status.fail = true;
               return;
             }
@@ -430,21 +455,144 @@ class RelatedWorker extends TerminologyWorker {
     return !inc.concept && !inc.filter;
   }
 
-  compareExpansions() { // status, thisC, otherC) {
-    return false;
+  async compareExpansions(systems, status, thisC, otherC) {
+    const expThis = await this.doExpand(thisC);
+    const expOther = await this.doExpand(otherC);
+
+    if (this.isUnclosed(expThis) || this.isUnclosed(expOther)) {
+      status.fail = true;
+      return;
+    }
+    if (!expThis.expansion.contains) {
+      expThis.expansion.contains = [];
+    }
+    if (!expOther.expansion.contains) {
+      expOther.expansion.contains = [];
+    }
+
+    const matched = [];
+    const unmatchedRight = [...expOther.expansion.contains];
+
+    for (const l of expThis.expansion.contains) {
+      const idx = unmatchedRight.findIndex(r => this.matchContains(systems, l, r));
+      if (idx !== -1) {
+        matched.push({ left: l, right: unmatchedRight[idx] });
+        unmatchedRight.splice(idx, 1);
+      }
+    }
+
+    const unmatchedLeft = expThis.expansion.contains.filter(l => !matched.some(m => m.left === l));
+
+    if (matched.length > 0) {
+      status.common = true;
+    }
+    if (unmatchedLeft.length > 0) {
+      status.left = true;
+    }
+    if (unmatchedRight.length > 0) {
+      status.right = true;
+    }
+  }
+
+  isUnclosed(vs) {
+    return Extensions.has(vs.expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed");
+  }
+
+  matchContains(systems, thisC, otherC) {
+    if (thisC.system != otherC.system) {
+      return false;
+    }
+    if (thisC.code != otherC.code) {
+      return false;
+    }
+    let versionMatters = systems.get(thisC.system);
+    if (versionMatters && thisC.version != otherC.version) {
+      return false;
+    } else {
+      return true;
+    }
+  }
+
+  async doExpand(vs) {
+    let txpe = this.params.clone();
+    txpe.limit = 10000;
+    txpe.excludeNested = true;
+    let exp = new ValueSetExpander(this, txpe);
+    let vse = await exp.expand(vs, new SearchFilterText(''), true);
+    return vse
   }
 
   isConcepts(inc) {
-    return inc.concept;
+    return inc.concept && inc.concept.length > 0;
   }
 
-  isFilter() {
+  isFilter(inc) {
+    return inc.filter && inc.filter.length > 0;
+  }
+
+  async filterSetsMatch(status, cs, t, o) {
+    // two includes have matching filters if the set of filters match.
+
+    let localstatus = { left: false, right: false};
+
+    const matched = [];
+    const unmatchedRight = [...o.filter];
+
+    for (const l of t.filter) {
+      let idx = -1;
+      for (let i = 0; i < unmatchedRight.length; i++) {
+        if (await this.filtersMatch(localstatus, cs, l, unmatchedRight[i])) {
+          idx = i;
+          break;
+        }
+      }
+      if (idx !== -1) {
+        matched.push({ left: l, right: unmatchedRight[idx] });
+        unmatchedRight.splice(idx, 1);
+      }
+    }
+
+    const unmatchedLeft = t.filter.filter(l => !matched.some(m => m.left === l));
+
+    if (unmatchedLeft.length > 0 || unmatchedRight.length > 0) {
+      return false;
+    } else {
+      if (localstatus.left) {
+        status.left = true;
+      }
+      if (localstatus.right) {
+        status.right = true;
+      }
+      return true;
+    }
+  }
+
+
+  async filtersMatch(status, cs, t, o) {
+    if (t.property != o.property || t.op != o.op) {
+      return false;
+    }
+    if (t.value == o.value) {
+      return true;
+    }
+    if (t.op == 'is-a') {
+      let rel = await cs.subsumesTest(t.value, o.value)
+      switch (rel) {
+        case 'equivalent':
+          return true;
+        case 'subsumes':
+          status.left = true;
+          return true;
+        case 'subsumed-by':
+          status.right = true;
+          return true;
+        default:
+          return false;
+      }
+    }
     return false;
   }
 
-  filtersMatch() {
-    return false;
-  }
 }
 
 module.exports = {

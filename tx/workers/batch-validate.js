@@ -82,6 +82,7 @@ class BatchValidateWorker extends TerminologyWorker {
             output.push({name: "validation", resource : p});
           } catch (error) {
             this.log.error(error);
+            this.debugLog(error);
             if (error instanceof Issue) {
               let op = new OperationOutcome();
               op.addIssue(error);
@@ -97,6 +98,7 @@ class BatchValidateWorker extends TerminologyWorker {
       return res.json(result);
     } catch (error) {
       this.log.error(error);
+      this.debugLog(error);
       return res.status(error.statusCode || 500).json(this.operationOutcome(
         'error', error.issueCode || 'exception', error.message));
     }

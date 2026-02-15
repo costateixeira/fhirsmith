@@ -90,9 +90,9 @@ class SearchWorker extends TerminologyWorker {
       return res.json(bundle);
 
     } catch (error) {
-      console.log(error);
-      req.logInfo = "error "+(error.msgId || error.className);
       this.log.error(error);
+      this.debugLog(error);
+      req.logInfo = "error "+(error.msgId || error.className);
       return res.status(500).json({
         resourceType: 'OperationOutcome',
         issue: [{

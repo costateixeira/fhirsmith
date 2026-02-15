@@ -40,6 +40,7 @@ class BatchWorker extends TerminologyWorker {
       await this.handleBatch(req, res);
     } catch (error) {
       this.log.error(error);
+      this.debugLog(error);
       if (error instanceof Issue) {
         const oo = new OperationOutcome();
         oo.addIssue(error);
@@ -159,6 +160,7 @@ class BatchWorker extends TerminologyWorker {
 
     } catch (error) {
       this.log.error(error);
+      this.debugLog(error);
       const statusCode = error.statusCode || 500;
       const issueCode = error.issueCode || 'exception';
 

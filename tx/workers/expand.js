@@ -1566,8 +1566,9 @@ class ExpandWorker extends TerminologyWorker {
     try {
       await this.handleTypeLevelExpand(req, res);
     } catch (error) {
-      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       this.log.error(error);
+      this.debugLog(error);
+      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       const statusCode = error.statusCode || 500;
       if (error instanceof Issue) {
         let oo = new OperationOutcome();
@@ -1600,8 +1601,9 @@ class ExpandWorker extends TerminologyWorker {
     try {
       await this.handleInstanceLevelExpand(req, res);
     } catch (error) {
-      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       this.log.error(error);
+      this.debugLog(error);
+      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       const statusCode = error.statusCode || 500;
       const issueCode = error.issueCode || 'exception';
       return res.status(statusCode).json({

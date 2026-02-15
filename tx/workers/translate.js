@@ -44,6 +44,7 @@ class TranslateWorker extends TerminologyWorker {
       await this.handleTypeLevelTranslate(req, res);
     } catch (error) {
       this.log.error(error);
+      this.debugLog(error);
       if (error instanceof Issue) {
         const oo = new OperationOutcome();
         oo.addIssue(error);
@@ -66,6 +67,7 @@ class TranslateWorker extends TerminologyWorker {
       await this.handleInstanceLevelTranslate(req, res);
     } catch (error) {
       this.log.error(error);
+      this.debugLog(error);
       if (error instanceof Issue) {
         const oo = new OperationOutcome();
         oo.addIssue(error);
@@ -406,14 +408,16 @@ class TranslateWorker extends TerminologyWorker {
           valueString: 'No translations found'
         });
       }
-    } catch (e) {
+    } catch (error) {
+      this.log.error(error);
+      this.debugLog(error);
       result.push({
         name: 'result',
         valueBoolean: false
       });
       result.push({
         name: 'message',
-        valueString: e.message
+        valueString: error.message
       });
     }
 
