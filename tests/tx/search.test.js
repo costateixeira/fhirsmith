@@ -200,4 +200,123 @@ describe('Search Worker', () => {
       }
     });
   });
+  describe('_summary parameter', () => {
+    test('should return only summary elements with _summary=true', async () => {
+      const response = await request(app)
+        .get('/tx/r5/CodeSystem')
+        .query({ _summary: 'true', _count: 5 })
+        .set('Accept', 'application/json');
+
+      expect(response.status).toBe(200);
+      expect(response.body.resourceType).toBe('Bundle');
+
+      if (response.body.entry && response.body.entry.length > 0) {
+        const resource = response.body.entry[0].resource;
+        // Summary elements should be present
+        expect(resource.resourceType).toBe('CodeSystem');
+        expect(resource.id).toBeDefined();
+        // Non-summary elements should be absent
+        expect(resource.concept).toBeUndefined();
+        expect(resource.property).toBeUndefined();
+      }
+    });
+
+    test('should return only count with _summary=count', async () => {
+      const response = await request(app)
+        .get('/tx/r5/CodeSystem')
+        .query({ _summary: 'count' })
+        .set('Accept', 'application/json');
+
+      expect(response.status).toBe(200);
+      expect(response.body.resourceType).toBe('Bundle');
+      expect(response.body.type).toBe('searchset');
+      expect(response.body.total).toBeGreaterThan(0);
+      // No entries when _summary=count
+      expect(response.body.entry).toBeUndefined();
+      expect(response.body.link).toBeUndefined();
+    });
+
+    test('should return full resources with _summary=false', async () => {
+      const response = await request(app)
+        .get('/tx/r5/CodeSystem')
+        .query({ _summary: 'false', url: 'http://hl7.org/fhir/administrative-gender' })
+        .set('Accept', 'application/json');
+
+      expect(response.status).toBe(200);
+
+      if (response.body.entry && response.body.entry.length > 0) {
+        const resource = response.body.entry[0].resource;
+        expect(resource.resourceType).toBe('CodeSystem');
+        // Full resource should include concept
+        expect(resource.concept).toBeDefined();
+      }
+    });
+  });
+
+  describe('_total parameter', () => {
+    test('should include total with _total=accurate (default)', async () => {
+      const response = await request(app)
+        .get('/tx/r5/CodeSystem')
+        .query({ _count: 5 })
+        .set('Accept', 'application/json');
+
+      expect(response.status).toBe(200);
+      expect(response.body.total).toBeDefined();
+      expect(typeof response.body.total).toBe('number');
+    });
+
+    test('should not include total with _total=none', async () => {
+      const response = await request(app)
+        .get('/tx/r5/CodeSystem')
+        .query({ _total: 'none', _count: 5 })
+        .set('Accept', 'application/json');
+
+      expect(response.status).toBe(200);
+      expect(response.body.resourceType).toBe('Bundle');
+      expect(response.body.total).toBeUndefined();
+    });
+  });
+
+  describe('_format parameter', () => {
+    test('should return JSON with _format=json', async () => {
+      const response = await request(app)
+        .get('/tx/r5/CodeSystem')
+        .query({ _format: 'json', _count: 2 });
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('application/fhir+json');
+      expect(response.body.resourceType).toBe('Bundle');
+    });
+
+    test('should return XML with _format=xml', async () => {
+      const response = await request(app)
+        .get('/tx/r5/CodeSystem')
+        .query({ _format: 'xml', _count: 2 });
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('application/fhir+xml');
+      expect(response.text).toContain('<Bundle');
+      expect(response.text).toContain('xmlns="http://hl7.org/fhir"');
+    });
+
+    test('should return JSON with _format=application/fhir+json', async () => {
+      const response = await request(app)
+        .get('/tx/r5/CodeSystem')
+        .query({ _format: 'application/fhir+json', _count: 2 });
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('application/fhir+json');
+    });
+
+    test('_format should override Accept header', async () => {
+      const response = await request(app)
+        .get('/tx/r5/CodeSystem')
+        .query({ _format: 'xml', _count: 2 })
+        .set('Accept', 'application/fhir+json');
+
+      expect(response.status).toBe(200);
+      // _format=xml should override Accept: application/fhir+json
+      expect(response.headers['content-type']).toContain('application/fhir+xml');
+    });
+  });
 });

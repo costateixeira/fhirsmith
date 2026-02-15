@@ -82,11 +82,10 @@ class TXModule {
   }
 
   acceptsXml(req) {
-    let _fmt = req.query._format;
+    let _fmt = req.query._format || req.query.format || req.body?._format;
     if (_fmt && typeof _fmt !== 'string') {
-      _fmt = null
+      _fmt = null;
     }
-
     if (_fmt && _fmt == 'xml') {
       return 'application/fhir+xml';
     }
@@ -105,9 +104,9 @@ class TXModule {
   }
 
   acceptsJson(req) {
-    let _fmt = req.query._format;
+    let _fmt = req.query._format || req.query.format || req.body?._format;
     if (_fmt && typeof _fmt !== 'string') {
-      _fmt = null
+      _fmt = null;
     }
     if (_fmt && _fmt == 'json') {
       return 'application/fhir+json';
