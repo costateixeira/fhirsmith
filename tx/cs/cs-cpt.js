@@ -3,6 +3,7 @@ const assert = require('assert');
 const { CodeSystem } = require('../library/codesystem');
 const { CodeSystemProvider, FilterExecutionContext, CodeSystemFactoryProvider } = require('./cs-api');
 const {validateArrayParameter} = require("../../library/utilities");
+const {BaseCSServices} = require("./cs-base");
 
 class CPTConceptDesignation {
   constructor(kind, value) {
@@ -108,7 +109,7 @@ class CPTPrep extends FilterExecutionContext {
   }
 }
 
-class CPTServices extends CodeSystemProvider {
+class CPTServices extends BaseCSServices {
   constructor(opContext, supplements, db, sharedData) {
     super(opContext, supplements);
     this.db = db;
