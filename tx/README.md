@@ -298,6 +298,22 @@ You can specify a version using the `#` syntax:
 
 If no version is specified, the latest released version is fetched.
 
+#### `url` - FHIR Packages from Direct URLs
+
+Loads a FHIR package directly from a tarball URL instead of the FHIR package registry. Useful for packages hosted on CI build servers, branches, or other locations.
+
+Use `url/cs` to load only CodeSystem resources from the package (same as `npm/cs`).
+
+```yaml
+# Load a package from a CI build server
+- url:https://example.com/my-package/package.tgz
+
+# Load a code-systems-only package from a URL
+- url/cs:https://example.com/my-codesystems/package.tgz
+```
+
+The URL must point to a `.tgz` file in standard FHIR NPM package format. Downloaded packages are cached locally by URL.
+
 ### Default Marker (`!`)
 
 When multiple versions of the same code system are loaded, append `!` to mark one as the default:
