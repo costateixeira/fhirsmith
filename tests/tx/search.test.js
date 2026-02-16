@@ -236,6 +236,19 @@ describe('Search Worker', () => {
       expect(response.body.link).toBeUndefined();
     });
 
+    test('should return only count with _summary=count on R4 endpoint', async () => {
+      const response = await request(app)
+        .get('/tx/r4/ValueSet')
+        .query({ _summary: 'count' })
+        .set('Accept', 'application/json');
+
+      expect(response.status).toBe(200);
+      expect(response.body.resourceType).toBe('Bundle');
+      expect(response.body.type).toBe('searchset');
+      expect(response.body.total).toBeGreaterThan(0);
+      expect(response.body.entry).toBeUndefined();
+    });
+
     test('should return full resources with _summary=false', async () => {
       const response = await request(app)
         .get('/tx/r5/CodeSystem')

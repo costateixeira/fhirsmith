@@ -15,7 +15,7 @@ function bundleToR5(jsonObj, sourceVersion) {
     return jsonObj; // No conversion needed
   }
 
-  for (let be of jsonObj.entry) {
+  for (let be of jsonObj.entry || []) 
     convertResourceToR5(be.resource, sourceVersion);
   }
 
@@ -51,7 +51,7 @@ function bundleFromR5(r5Obj, targetVersion) {
   }
   bundle.total = r5Obj.total;
   bundle.link = r5Obj.link;
-  for (let be5 of r5Obj.entry) {
+  for (let be5 of r5Obj.entry || []) {
     let be = {};
     if (!bundle.entry) {
       bundle.entry = [];
