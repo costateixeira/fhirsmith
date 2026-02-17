@@ -1,13 +1,25 @@
-FROM node:24-alpine
+# Stage 1: Build native modules
+FROM node:24-alpine AS builder
 
-# Create app directory
 WORKDIR /app
+
+# Install build dependencies for native modules (bcrypt, sqlite3)
+RUN apk add --no-cache python3 make g++
 
 # Install app dependencies
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm install --omit=dev
+
+# Stage 2: Runtime image (no build tools)
+FROM node:24-alpine
+
+WORKDIR /app
+
+# Copy installed node_modules from builder
+COPY --from=builder /app/node_modules ./node_modules
 
 # Bundle app source
+COPY package*.json ./
 COPY . .
 
 # Define build argument for version
