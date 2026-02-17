@@ -15,6 +15,7 @@ const {Issue, OperationOutcome} = require("../library/operation-outcome");
 const ValueSet = require("../library/valueset");
 const {ValueSetExpander} = require("./expand");
 const {SearchFilterText} = require("../library/designations");
+const {ArrayMatcher} = require("../../library/utilities");
 
 
 class RelatedWorker extends TerminologyWorker {
@@ -463,33 +464,21 @@ class RelatedWorker extends TerminologyWorker {
       status.fail = true;
       return;
     }
+
+    const matcher = new ArrayMatcher((l, r) =>
+      this.matchContains(systems, l, r)
+    );
+    await matcher.match(expThis.expansion.contains, expOther.expansion.contains);
     if (!expThis.expansion.contains) {
       expThis.expansion.contains = [];
     }
-    if (!expOther.expansion.contains) {
-      expOther.expansion.contains = [];
-    }
-
-    const matched = [];
-    const unmatchedRight = [...expOther.expansion.contains];
-
-    for (const l of expThis.expansion.contains) {
-      const idx = unmatchedRight.findIndex(r => this.matchContains(systems, l, r));
-      if (idx !== -1) {
-        matched.push({ left: l, right: unmatchedRight[idx] });
-        unmatchedRight.splice(idx, 1);
-      }
-    }
-
-    const unmatchedLeft = expThis.expansion.contains.filter(l => !matched.some(m => m.left === l));
-
-    if (matched.length > 0) {
+    if (matcher.matched.length > 0) {
       status.common = true;
     }
-    if (unmatchedLeft.length > 0) {
+    if (matcher.unmatchedLeft.length > 0) {
       status.left = true;
     }
-    if (unmatchedRight.length > 0) {
+    if (matcher.unmatchedRight.length > 0) {
       status.right = true;
     }
   }
@@ -535,26 +524,12 @@ class RelatedWorker extends TerminologyWorker {
 
     let localstatus = { left: false, right: false};
 
-    const matched = [];
-    const unmatchedRight = [...o.filter];
+    const matcher = new ArrayMatcher((l, r) =>
+      this.filtersMatch(localstatus, cs, l, r)
+    );
+    await matcher.match(t.filter, o.filter);
 
-    for (const l of t.filter) {
-      let idx = -1;
-      for (let i = 0; i < unmatchedRight.length; i++) {
-        if (await this.filtersMatch(localstatus, cs, l, unmatchedRight[i])) {
-          idx = i;
-          break;
-        }
-      }
-      if (idx !== -1) {
-        matched.push({ left: l, right: unmatchedRight[idx] });
-        unmatchedRight.splice(idx, 1);
-      }
-    }
-
-    const unmatchedLeft = t.filter.filter(l => !matched.some(m => m.left === l));
-
-    if (unmatchedLeft.length > 0 || unmatchedRight.length > 0) {
+    if (matcher.unmatchedLeft.length > 0 || matcher.unmatchedRight.length > 0) {
       return false;
     } else {
       if (localstatus.left) {
@@ -566,7 +541,6 @@ class RelatedWorker extends TerminologyWorker {
       return true;
     }
   }
-
 
   async filtersMatch(status, cs, t, o) {
     if (t.property != o.property || t.op != o.op) {

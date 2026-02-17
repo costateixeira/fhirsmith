@@ -202,4 +202,76 @@ function isAbsoluteUrl(s) {
   return s && (s.startsWith('urn:') || s.startsWith('http:') || s.startsWith('https:') || s.startsWith('ftp:'));
 }
 
-module.exports = { Utilities, validateParameter, validateOptionalParameter, validateArrayParameter, validateResource, strToBool, getValuePrimitive, getValueDT, getValueName, isAbsoluteUrl };
+/**
+ * This class takes two lists, and matches between the lists, producing three new lists:
+ *   * items that are in both
+ *   * items that only in left
+ *   * items that are only in right
+ *
+ * You have to give it a match function that is called asynchronously
+ *
+ * examples of use:
+ *
+ * const matcher = new ArrayMatcher((l, r) =>
+ *   this.filtersMatch(localstatus, cs, l, r)
+ * );
+ * await matcher.match(leftArray, rightArray);
+ *
+ * // Use the results
+ * for (const { left, right } of matcher.matched) { ... }
+ * for (const item of matcher.unmatchedLeft) { ... }
+ * for (const item of matcher.unmatchedRight) { ... }
+ *
+ * // or
+ * const matcher2 = new ArrayMatcher((l, r) =>
+ *   this.compareProperties(system, version, l, r)
+ * );
+ * await matcher2.match(propsA, propsB);
+ *
+ */
+class ArrayMatcher {
+  constructor(matchFn) {
+    this.matchFn = matchFn;
+    this.matched = [];
+    this.unmatchedLeft = [];
+    this.unmatchedRight = [];
+  }
+
+  /**
+   *
+   * @param left an array of items (or null/undefined)
+   * @param right an array of items (or null/undefined)
+   * @returns {Promise<ArrayMatcher>}
+   */
+  async match(left, right) {
+    if (!left) {
+      left = [];
+    }
+    if (!right) {
+      right = [];
+    }
+
+    this.matched = [];
+    this.unmatchedRight = [...right];
+
+    for (const l of left) {
+      let idx = -1;
+      for (let i = 0; i < this.unmatchedRight.length; i++) {
+        if (await this.matchFn(l, this.unmatchedRight[i])) {
+          idx = i;
+          break;
+        }
+      }
+      if (idx !== -1) {
+        this.matched.push({ left: l, right: this.unmatchedRight[idx] });
+        this.unmatchedRight.splice(idx, 1);
+      } else {
+        this.unmatchedLeft.push(l);
+      }
+    }
+
+    return this;
+  }
+}
+
+module.exports = { Utilities, ArrayMatcher, validateParameter, validateOptionalParameter, validateArrayParameter, validateResource, strToBool, getValuePrimitive, getValueDT, getValueName, isAbsoluteUrl };
