@@ -44,9 +44,9 @@ class LookupWorker extends TerminologyWorker {
     try {
       await this.handleTypeLevelLookup(req, res);
     } catch (error) {
-      console.log(error);
-      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       this.log.error(error);
+      this.debugLog(error);
+      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       const statusCode = error.statusCode || 500;
       const issueCode = error.issueCode || 'exception';
       return res.status(statusCode).json({
@@ -71,8 +71,9 @@ class LookupWorker extends TerminologyWorker {
     try {
       await this.handleInstanceLevelLookup(req, res);
     } catch (error) {
-      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       this.log.error(error);
+      this.debugLog(error);
+      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       const issueCode = error.issueCode || 'exception';
       return res.status(400).json({
         resourceType: 'OperationOutcome',
@@ -157,8 +158,9 @@ class LookupWorker extends TerminologyWorker {
       const result = await this.doLookup(csProvider, code, txp);
       return res.status(200).json(result);
     } catch (error) {
-      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       this.log.error(error);
+      this.debugLog(error);
+      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       if (error instanceof Issue) {
         let oo = new OperationOutcome();
         oo.addIssue(error);
@@ -220,8 +222,9 @@ class LookupWorker extends TerminologyWorker {
       const result = await this.doLookup(csProvider, code, txp);
       return res.status(200).json(result);
     } catch (error) {
-      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       this.log.error(error);
+      this.debugLog(error);
+      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       if (error instanceof Issue) {
         let oo = new OperationOutcome();
         oo.addIssue(error);

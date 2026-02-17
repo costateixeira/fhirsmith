@@ -120,9 +120,10 @@ class ValueSetChecker {
           }
         }
       }
-    } catch (e) {
-      console.error(e);
-      throw new Error('Exception expanding value set in order to infer system: ' + e.message);
+    } catch (error) {
+      this.log.error(error);
+      this.debugLog(error);
+      throw new Error('Exception expanding value set in order to infer system: ' + error.message);
     }
     return result;
   }
@@ -1841,7 +1842,7 @@ class ValidateWorker extends TerminologyWorker {
 
     } catch (error) {
       this.log.error(error);
-      console.error(error);
+      this.debugLog(error);
       if (error instanceof Issue) {
         if (error.isHandleAsOO()) {
           let oo = new OperationOutcome();
@@ -1899,6 +1900,7 @@ class ValidateWorker extends TerminologyWorker {
       return result;
     } catch (error) {
       this.log.error(error);
+      this.debugLog(error);
       if (error instanceof Issue && !error.isHandleAsOO()) {
         return this.handlePrepareError(error, coded, mode.mode);
       } else {
@@ -1957,6 +1959,7 @@ class ValidateWorker extends TerminologyWorker {
 
     } catch (error) {
       this.log.error(error);
+      this.debugLog(error);
       return res.status(error.statusCode || 500).json(this.operationOutcome(
         'error', error.issueCode || 'exception', error.message));
     }
@@ -1977,6 +1980,7 @@ class ValidateWorker extends TerminologyWorker {
 
     } catch (error) {
       this.log.error(error);
+      this.debugLog(error);
       if (error instanceof Issue) {
         let op = new OperationOutcome();
         op.addIssue(error);
@@ -2056,6 +2060,7 @@ class ValidateWorker extends TerminologyWorker {
 
     } catch (error) {
       this.log.error(error);
+      this.debugLog(error);
       return res.status(error.statusCode || 500).json(this.operationOutcome(
         'error', error.issueCode || 'exception', error.message));
     }
@@ -2295,7 +2300,7 @@ class ValidateWorker extends TerminologyWorker {
       await checker.prepare();
     } catch (error) {
       this.log.error(error);
-      console.log(error);
+      this.debugLog(error);
       if (!(error instanceof Issue) || error.isHandleAsOO()) {
         throw error;
       } else {

@@ -1,4 +1,4 @@
-const { TerminologyError } = require('../operation-context');
+const { TerminologyError, isDebugging} = require('../operation-context');
 const { CodeSystem } = require('../library/codesystem');
 const ValueSet = require('../library/valueset');
 const {VersionUtilities} = require("../../library/version-utilities");
@@ -895,6 +895,11 @@ class TerminologyWorker {
     return true;
   }
 
+  debugLog(error) {
+    if (isDebugging()) {
+      console.log(error);
+    }
+  }
 }
 
 module.exports = {
