@@ -8,7 +8,7 @@ RUN apk add --no-cache python3 make g++
 
 # Install app dependencies
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm ci --omit=dev
 
 # Stage 2: Runtime image (no build tools)
 FROM node:24-alpine
