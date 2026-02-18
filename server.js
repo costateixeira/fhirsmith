@@ -448,6 +448,18 @@ app.get('/', async (req, res) => {
 // Serve static files
 app.use(express.static(path.join(__dirname, 'static')));
 
+// Serve single-page applications from data directory
+const appsDir = path.join(folders.dataDir(), 'apps');
+app.use('/apps', express.static(appsDir, { extensions: ['html'] }));
+app.use('/apps/:app', (req, res, next) => {
+  const indexPath = path.join(appsDir, req.params.app, 'index.html');
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    next();
+  }
+});
+
 // Health check endpoint
 app.get('/health', async (req, res) => {
   const healthStatus = {
