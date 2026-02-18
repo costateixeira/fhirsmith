@@ -117,60 +117,86 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
       console.log('Refresh already in progress, skipping');
       return;
     }
+    this.queue = [];
 
     this.isRefreshing = true;
-    const refreshStartTime = Math.floor(Date.now() / 1000);
 
     try {
+      // phase 1: list all value sets
       console.log('Starting VSAC ValueSet refresh...');
 
-      let totalFetched = 0;
-      let totalNew = 0;
-      let url = '/ValueSet?_offset=0&_count=100';
+      // This lists all the currently valid value sets by URL, but not the older versions
+      let url = '/ValueSet?_offset=0&_count=100&_elements=id,url,version,status';
+
+      let total = undefined;
+      let count = 0;
+      let ncount = 0;
 
       while (url) {
-        console.log(`Fetching page: ${url}`);
-        this.stats.task('VSAC Sync', `running (${totalFetched} fetched, ${totalNew} new)`)
+        console.log(`Sync: ${count} of ${total} - ${ncount} new`);
+        this.stats.task('VSAC Sync', `Sync: ${count} of ${total} - ${ncount} new`);
+
         const bundle = await this._fetchBundle(url);
 
-        if (bundle.entry && bundle.entry.length > 0) {
-          // Extract ValueSets from bundle entries
-          const valueSets = bundle.entry
-            .filter(entry => entry.resource && entry.resource.resourceType === 'ValueSet')
-            .map(entry => entry.resource);
-
-          // now, filter out all the value sets we've already seen
-
-          if (valueSets.length > 0) {
-            totalNew = totalNew + await this.batchUpsertValueSets(valueSets);
-            totalFetched += valueSets.length;
-            console.log(`Processed ${valueSets.length} ValueSets (total: ${totalFetched}, ${totalNew} new)`);
+        if (!total) {
+          total = bundle.total;
+        }
+        for (let be of bundle.entry || []) {
+          let vs = be.resource;
+          if (vs) {
+            count++;
+            // if we've seen this value set before, then we've got nothing new here.
+            if (!this.valueSetMap.has(vs.url+"|"+vs.version)) {
+              this.queue.push(vs.url);
+              ncount++;
+            }
           }
         }
-
         // Find next link
         url = this._getNextUrl(bundle);
 
         // Safety check against infinite loops
-        if (bundle.total && totalFetched >= bundle.total) {
-          console.log(`Reached total count (${bundle.total}), stopping`);
+        if (count > total) {
+          console.log(`Reached total count (${total}), stopping`);
           break;
         }
       }
 
-      // Clean up old records
-      const deletedCount = await this.database.deleteOldValueSets(refreshStartTime);
-      if (deletedCount > 0) {
-        console.log(`Deleted ${deletedCount} old ValueSets`);
+      this.lastRefresh = new Date();
+      console.log(`VSAC refresh phase 1 done. Total: ${count} with ${ncount} new items`);
+      this.stats.task('VSAC Sync', `VSAC refresh phase 1 done. Total: ${count} with ${ncount} new items`);
+
+      let tracking = { totalFetched: 0, totalNew: 0, count: 0, newCount : 0 };
+      // phase 2: query for history & content
+      this.requeue = [];
+      for (let q of this.queue) {
+        this.stats.task('VSAC History for '+q, `running (${tracking.totalFetched} fetched, ${tracking.totalNew} new)`);
+        try {
+          await this.processContentAndHistory(q, tracking, this.queue.length);
+        } catch (error) {
+          this.requeue.push(q)
+          console.log(error);
+          this.stats.task('VSAC Sync', error.message);
+        }
+        // `running (${totalFetched} fetched, ${totalNew} new)`)
+        tracking.count++;
+      }
+      console.log("Requeue");
+      for (let q of this.requeue) {
+        this.stats.task('VSAC History for '+q, `running (${tracking.totalFetched} fetched, ${tracking.totalNew} new)`);
+        try {
+          await this.processContentAndHistory(q, tracking, this.requeue.length);
+        } catch (error) {
+          console.log(error);
+          this.stats.task('VSAC Sync', error.message);
+        }
+        // `running (${totalFetched} fetched, ${totalNew} new)`)
+        tracking.count++;
       }
 
       // Reload map with fresh data
       await this._reloadMap();
-
-      this.lastRefresh = new Date();
-      console.log(`VSAC refresh completed. Total: ${totalFetched} ValueSets, Deleted: ${deletedCount}`);
-      this.stats.task('VSAC Sync', `Done (${totalFetched} fetched, ${totalNew} new, ${deletedCount} deleted)`);
-
+      console.log(`VSAC refresh completed. Total: ${tracking.totalFetched} ValueSets, Deleted: ${tracking.deletedCount}`);
     } catch (error) {
       console.log(error, 'Error during VSAC refresh:');
       this.stats.task('VSAC Sync', `Error (${error.message})`);
@@ -193,8 +219,10 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
     let count = 0;
     // Process sequentially to avoid database locking
     for (const valueSet of valueSets) {
-      if (valueSet.version && this.valueSetMap.has(valueSet.url+"|"+valueSet.version)) {
-        // we've seen this before, and maybe fetched it's compose, so just update
+      let key = valueSet.url+"|"+valueSet.version;
+      let vs = this.valueSetMap.get(key);
+      if (vs) {
+        // we've seen this before, and maybe fetched it's history, so just update
         // the timestamp
         await this.database.seeValueSet(valueSet);
       } else {
@@ -443,6 +471,28 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
     await this.database.upsertValueSet(vsNew);
     this.database.addToMap(this.valueSetMap, vsNew.id, vsNew.url, vsNew.version, vsNew);
     return new ValueSet(vsNew);
+  }
+
+  async processContentAndHistory(q, tracking, length) {
+    let url = `/ValueSet?url=${q}`;
+    const bundle = await this._fetchBundle(url);
+
+    let vcount = 0;
+    if (bundle.entry && bundle.entry.length > 0) {
+      // Extract ValueSets from bundle entries
+      const valueSets = bundle.entry
+        .filter(entry => entry.resource && entry.resource.resourceType === 'ValueSet')
+        .map(entry => entry.resource);
+      if (valueSets.length > 0) {
+        tracking.totalNew = tracking.totalNew + await this.batchUpsertValueSets(valueSets);
+        tracking.totalFetched += valueSets.length;
+        vcount = valueSets.length;
+      }
+    }
+    let logMsg = `VSAC (${tracking.count} of ${length}) ${q}: ${vcount} versions`;
+    console.log(logMsg);
+    this.stats.task('VSAC Sync', logMsg);
+
   }
 }
 
