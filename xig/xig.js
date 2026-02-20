@@ -2213,22 +2213,22 @@ router.get('/:packagePid/:resourceType/:resourceId', async (req, res) => {
   const start = Date.now();
   try {
 
-  const { packagePid, resourceType, resourceId } = req.params;
+    const { packagePid, resourceType, resourceId } = req.params;
 
-  // Check if this looks like a package/resource pattern
-  // Package PIDs typically contain dots and pipes: hl7.fhir.uv.extensions|current
-  // Resource types are FHIR resource names: StructureDefinition, ValueSet, etc.
+    // Check if this looks like a package/resource pattern
+    // Package PIDs typically contain dots and pipes: hl7.fhir.uv.extensions|current
+    // Resource types are FHIR resource names: StructureDefinition, ValueSet, etc.
 
-  const isPackagePidFormat = packagePid.includes('.') || packagePid.includes('|');
-  const isFhirResourceType = /^[A-Z][a-zA-Z]+$/.test(resourceType);
+    const isPackagePidFormat = packagePid.includes('.') || packagePid.includes('|');
+    const isFhirResourceType = /^[A-Z][a-zA-Z]+$/.test(resourceType);
 
-  if (isPackagePidFormat && isFhirResourceType) {
-    // This looks like a legacy resource URL, redirect to the proper format
-    res.redirect(301, `/xig/resource/${packagePid}/${resourceType}/${resourceId}`);
-  } else {
-    // Not a resource URL pattern, return 404
-    res.status(404).send('Not Found');
-  }
+    if (isPackagePidFormat && isFhirResourceType) {
+      // This looks like a legacy resource URL, redirect to the proper format
+      res.redirect(301, `/xig/resource/${packagePid}/${resourceType}/${resourceId}`);
+    } else {
+      // Not a resource URL pattern, return 404
+      res.status(404).send('Not Found');
+    }
   } finally {
     this.stats.countRequest(':id', Date.now() - start);
   }
@@ -2333,74 +2333,74 @@ router.get('/stats', async (req, res) => {
   const start = Date.now();
   try {
 
-  const startTime = Date.now(); // Add this at the very beginning
+    const startTime = Date.now(); // Add this at the very beginning
 
-  try {
+    try {
 
-    const [dbInfo, tableCounts] = await Promise.all([
-      getDatabaseInfo(),
-      getDatabaseTableCounts()
-    ]);
+      const [dbInfo, tableCounts] = await Promise.all([
+        getDatabaseInfo(),
+        getDatabaseTableCounts()
+      ]);
 
-    const statsData = {
-      cache: getCacheStats(),
-      database: dbInfo,
-      databaseAge: getDatabaseAgeInfo(),
-      tableCounts: tableCounts,
-      requests: getRequestStats()
-    };
+      const statsData = {
+        cache: getCacheStats(),
+        database: dbInfo,
+        databaseAge: getDatabaseAgeInfo(),
+        tableCounts: tableCounts,
+        requests: getRequestStats()
+      };
 
-    const content = buildStatsTable(statsData);
+      const content = buildStatsTable(statsData);
 
-    let introContent = '';
-    const lastAttempt = getLastUpdateAttempt();
+      let introContent = '';
+      const lastAttempt = getLastUpdateAttempt();
 
-    if (statsData.databaseAge.daysOld !== null && statsData.databaseAge.daysOld > 1) {
-      introContent += `<div class="alert alert-warning">`;
-      introContent += `<strong>⚠ Database is ${statsData.databaseAge.daysOld} days old.</strong> `;
-      introContent += `Automatic updates are scheduled daily at 2 AM. `;
-      if (lastAttempt) {
-        if (lastAttempt.status === 'failed') {
-          introContent += `<br><strong>Last update attempt failed</strong> at ${new Date(lastAttempt.timestamp).toLocaleString()}: `;
-          introContent += `${escape(lastAttempt.error || 'Unknown error')}`;
-          if (lastAttempt.downloadMeta && lastAttempt.downloadMeta.httpStatus) {
-            introContent += ` (HTTP ${lastAttempt.downloadMeta.httpStatus})`;
+      if (statsData.databaseAge.daysOld !== null && statsData.databaseAge.daysOld > 1) {
+        introContent += `<div class="alert alert-warning">`;
+        introContent += `<strong>⚠ Database is ${statsData.databaseAge.daysOld} days old.</strong> `;
+        introContent += `Automatic updates are scheduled daily at 2 AM. `;
+        if (lastAttempt) {
+          if (lastAttempt.status === 'failed') {
+            introContent += `<br><strong>Last update attempt failed</strong> at ${new Date(lastAttempt.timestamp).toLocaleString()}: `;
+            introContent += `${escape(lastAttempt.error || 'Unknown error')}`;
+            if (lastAttempt.downloadMeta && lastAttempt.downloadMeta.httpStatus) {
+              introContent += ` (HTTP ${lastAttempt.downloadMeta.httpStatus})`;
+            }
+          } else if (lastAttempt.status === 'success') {
+            introContent += `<br>Last successful update: ${new Date(lastAttempt.timestamp).toLocaleString()} `;
+            introContent += `(file age based on filesystem mtime)`;
           }
-        } else if (lastAttempt.status === 'success') {
-          introContent += `<br>Last successful update: ${new Date(lastAttempt.timestamp).toLocaleString()} `;
-          introContent += `(file age based on filesystem mtime)`;
+        } else {
+          introContent += `<br>No update attempts recorded since server started.`;
         }
-      } else {
-        introContent += `<br>No update attempts recorded since server started.`;
+        introContent += `</div>`;
+      } else if (lastAttempt && lastAttempt.status === 'failed') {
+        // DB is fresh but last attempt failed — still worth showing
+        introContent += `<div class="alert alert-warning">`;
+        introContent += `<strong>Last update attempt failed</strong> at ${new Date(lastAttempt.timestamp).toLocaleString()}: `;
+        introContent += `${escape(lastAttempt.error || 'Unknown error')}`;
+        introContent += `</div>`;
       }
-      introContent += `</div>`;
-    } else if (lastAttempt && lastAttempt.status === 'failed') {
-      // DB is fresh but last attempt failed — still worth showing
-      introContent += `<div class="alert alert-warning">`;
-      introContent += `<strong>Last update attempt failed</strong> at ${new Date(lastAttempt.timestamp).toLocaleString()}: `;
-      introContent += `${escape(lastAttempt.error || 'Unknown error')}`;
-      introContent += `</div>`;
+
+      if (!statsData.cache.loaded) {
+        introContent += `<div class="alert alert-info">`;
+        introContent += `<strong>Info:</strong> Cache is still loading. Some statistics may be incomplete.`;
+        introContent += `</div>`;
+      }
+
+      const fullContent = introContent + content;
+
+      const stats = await gatherPageStatistics();
+      stats.processingTime = Date.now() - startTime;
+
+      const html = renderPage('FHIR IG Statistics Status', fullContent, stats);
+      res.setHeader('Content-Type', 'text/html');
+      res.send(html);
+
+    } catch (error) {
+      xigLog.error(`Error generating stats page: ${error.message}`);
+      htmlServer.sendErrorResponse(res, 'xig', error);
     }
-
-    if (!statsData.cache.loaded) {
-      introContent += `<div class="alert alert-info">`;
-      introContent += `<strong>Info:</strong> Cache is still loading. Some statistics may be incomplete.`;
-      introContent += `</div>`;
-    }
-
-    const fullContent = introContent + content;
-
-    const stats = await gatherPageStatistics();
-    stats.processingTime = Date.now() - startTime;
-
-    const html = renderPage('FHIR IG Statistics Status', fullContent, stats);
-    res.setHeader('Content-Type', 'text/html');
-    res.send(html);
-
-  } catch (error) {
-    xigLog.error(`Error generating stats page: ${error.message}`);
-    htmlServer.sendErrorResponse(res, 'xig', error);
-  }
   } finally {
     globalStats.countRequest('stats', Date.now() - start);
   }
@@ -2410,56 +2410,56 @@ router.get('/stats', async (req, res) => {
 router.get('/resource/:packagePid/:resourceType/:resourceId', async (req, res) => {
   const start = Date.now();
   try {
-  const startTime = Date.now(); // Add this at the very beginning
-  try {
-    const { packagePid, resourceType, resourceId } = req.params;
+    const startTime = Date.now(); // Add this at the very beginning
+    try {
+      const { packagePid, resourceType, resourceId } = req.params;
 
-    // Convert URL-safe package PID back to database format (| to #)
-    const dbPackagePid = packagePid.replace(/\|/g, '#');
+      // Convert URL-safe package PID back to database format (| to #)
+      const dbPackagePid = packagePid.replace(/\|/g, '#');
 
-    if (!xigDb) {
-      throw new Error('Database not available');
-    }
+      if (!xigDb) {
+        throw new Error('Database not available');
+      }
 
-    // Get package information first
-    const packageObj = getPackageByPid(dbPackagePid);
-    if (!packageObj) {
-      return res.status(404).send(renderPage('Resource Not Found',
-        `<div class="alert alert-danger">Unknown Package: ${escape(packagePid)}</div>`));
-    }
+      // Get package information first
+      const packageObj = getPackageByPid(dbPackagePid);
+      if (!packageObj) {
+        return res.status(404).send(renderPage('Resource Not Found',
+          `<div class="alert alert-danger">Unknown Package: ${escape(packagePid)}</div>`));
+      }
 
-    // Get resource details
-    const resourceQuery = `
-        SELECT * FROM Resources
-        WHERE PackageKey = ? AND ResourceType = ? AND Id = ?
-    `;
+      // Get resource details
+      const resourceQuery = `
+          SELECT * FROM Resources
+          WHERE PackageKey = ? AND ResourceType = ? AND Id = ?
+      `;
 
-    const resourceData = await new Promise((resolve, reject) => {
-      xigDb.get(resourceQuery, [packageObj.PackageKey, resourceType, resourceId], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
+      const resourceData = await new Promise((resolve, reject) => {
+        xigDb.get(resourceQuery, [packageObj.PackageKey, resourceType, resourceId], (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        });
       });
-    });
 
-    if (!resourceData) {
-      return res.status(404).send(renderPage('Resource Not Found',
-        `<div class="alert alert-danger">Unknown Resource: ${escape(resourceType)}/${escape(resourceId)} in package ${escape(packagePid)}</div>`));
+      if (!resourceData) {
+        return res.status(404).send(renderPage('Resource Not Found',
+          `<div class="alert alert-danger">Unknown Resource: ${escape(resourceType)}/${escape(resourceId)} in package ${escape(packagePid)}</div>`));
+      }
+
+      // Build the resource detail page
+      const content = await buildResourceDetailPage(packageObj, resourceData, req.secure);
+      const title = `${resourceType}/${resourceId}`;
+      const stats = await gatherPageStatistics();
+      stats.processingTime = Date.now() - startTime;
+
+      const html = renderPage(title, content, stats);
+      res.setHeader('Content-Type', 'text/html');
+      res.send(html);
+
+    } catch (error) {
+      xigLog.error(`Error rendering resource detail page: ${error.message}`);
+      htmlServer.sendErrorResponse(res, 'xig', error);
     }
-
-    // Build the resource detail page
-    const content = await buildResourceDetailPage(packageObj, resourceData, req.secure);
-    const title = `${resourceType}/${resourceId}`;
-    const stats = await gatherPageStatistics();
-    stats.processingTime = Date.now() - startTime;
-
-    const html = renderPage(title, content, stats);
-    res.setHeader('Content-Type', 'text/html');
-    res.send(html);
-
-  } catch (error) {
-    xigLog.error(`Error rendering resource detail page: ${error.message}`);
-    htmlServer.sendErrorResponse(res, 'xig', error);
-  }
   } finally {
     globalStats.countRequest(':pid', Date.now() - start);
   }
@@ -2874,27 +2874,27 @@ router.get('/status', async (req, res) => {
   const start = Date.now();
   try {
 
-  try {
-    const dbInfo = await getDatabaseInfo();
-    await res.json({
-      status: 'OK',
-      database: dbInfo,
-      databaseAge: getDatabaseAgeInfo(),
-      downloadUrl: XIG_DB_URL,
-      localPath: XIG_DB_PATH,
-      cache: getCacheStats(),
-      updateInProgress: updateInProgress,
-      lastUpdateAttempt: getLastUpdateAttempt(),
-      updateHistory: getUpdateHistory()
-    });
-  } catch (error) {
-    res.status(500).json({
-      status: 'ERROR',
-      error: error.message,
-      cache: getCacheStats(),
-      updateHistory: getUpdateHistory()
-    });
-  }
+    try {
+      const dbInfo = await getDatabaseInfo();
+      await res.json({
+        status: 'OK',
+        database: dbInfo,
+        databaseAge: getDatabaseAgeInfo(),
+        downloadUrl: XIG_DB_URL,
+        localPath: XIG_DB_PATH,
+        cache: getCacheStats(),
+        updateInProgress: updateInProgress,
+        lastUpdateAttempt: getLastUpdateAttempt(),
+        updateHistory: getUpdateHistory()
+      });
+    } catch (error) {
+      res.status(500).json({
+        status: 'ERROR',
+        error: error.message,
+        cache: getCacheStats(),
+        updateHistory: getUpdateHistory()
+      });
+    }
   } finally {
     globalStats.countRequest('stats', Date.now() - start);
   }
@@ -2929,7 +2929,7 @@ router.post('/update', async (req, res) => {
 
 let globalStats;
 // Initialize the XIG module
-async function initializeXigModule(stats) {
+async function initializeXigModule(stats, xigConfig) {
   try {
     globalStats = stats;
     loadTemplate();
@@ -2944,13 +2944,15 @@ async function initializeXigModule(stats) {
     }
 
     if (globalStats) {
-      globalStats.addTask('XIG Download', describeCron(this.config.crawler.schedule));
+      globalStats.addTask('XIG Download', describeCron('0 2 * * *'));
     }
     // Check if auto-update is enabled
     // Note: This assumes we're called only when XIG is enabled
-    cron.schedule('0 2 * * *', () => {
-      updateXigDatabase();
-    });
+    if (xigConfig?.autoUpdate !== false) {
+      cron.schedule('0 2 * * *', () => {
+        updateXigDatabase();
+      });
+    }
 
   } catch (error) {
     xigLog.error(`XIG module initialization failed: ${error.message}`);
