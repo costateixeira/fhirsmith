@@ -499,13 +499,26 @@ class CodeSystemProvider {
   async doesFilter(prop, op, value) { return false; }
 
   /**
+   * @return true if the cs provider handles excludes when building filters. If true, and the value set is a clean include+exclude,
+   * the handleExclude will be called between getPrepContext and executeFilters
+   */
+  handlesExcludes() {
+    return false;
+  }
+
+  handlesOffset() {
+
+  }
+  /**
    * gets a single context in which filters will be evaluated. The application doesn't make use of this context;
    * it's only use is to be passed back to the CodeSystem provider so it can make use of it - if it wants
    *
    * @param {boolean} iterate true if the conceptSets that result from this will be iterated, and false if they'll be used to locate a single code
+   * @param {int} offset if handlesOffset() and !iterate, and if the value set is a simple one that only uses this provider, then this is the applicable offset
+   * @param {int} count if handlesOffset() and !iterate, and if the value set is a simple one that only uses this provider, then this is the applicable count
    * @returns {FilterExecutionContext} filter (or null, it no use for this)
    * */
-  async getPrepContext(iterate) { return new FilterExecutionContext(iterate); }
+  async getPrepContext(iterate, offset = -1, count = -1) { return new FilterExecutionContext(iterate); }
 
   /**
    * executes a text search filter (whatever that means) and returns a FilterConceptSet
@@ -532,7 +545,7 @@ class CodeSystemProvider {
   } // ? must override?
 
   /**
-   * Get a FilterConceptSet for a value set filter
+   * inform the CS provider about a filter
    *
    * throws an exception if the search filter can't be handled
    *
@@ -542,6 +555,20 @@ class CodeSystemProvider {
    * @param {String} prop
    **/
   async filter(filterContext, prop, op, value) { throw new Error("Must override"); } // well, only if any filters are actually supported
+
+  /**
+   * if handlesExcludes(), then inform the CS provider about an applicable set of exclude filters
+   *
+   * this might be called more than once. For each iteration, all of the filters apply
+   *
+   * the objects each have prop, op, and value.
+   *
+   * throws an exception if the search filter can't be handled
+   *
+   * @param {FilterExecutionContext} filterContext filtering context
+   * @param {Object[]} prop
+   **/
+  async filterExclude(filterContext, prop, op, value) { throw new Error("Must override"); } // well, only if any filters are actually supported
 
   /**
    * called once all the filters have been handled, and iteration is about to happen.
