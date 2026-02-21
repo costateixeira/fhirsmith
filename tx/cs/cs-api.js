@@ -587,7 +587,15 @@ class CodeSystemProvider {
    * @param {FilterExecutionContext} filterContext filtering context
    * @param {Object[]} filters
    **/
-  async filterExclude(filterContext, filters) { throw new Error("Must override"); } // well, only if any filters are actually supported
+  async filterExcludeFilters(filterContext, filters) { throw new Error("Must override"); } // well, only if any filters are actually supported
+
+  /**
+   * if handlesExcludes(), then inform the CS provider about an applicable set of excluded codes
+   *
+   * @param {FilterExecutionContext} }filterContext - filter context
+   * @param {String[]} code list of codes to exclude
+   */
+  async filterExcludeConcepts(filterContext, code) { throw new Error("Must override"); } // well, only if any filters are actually supported
 
   /**
    * called once all the filters have been handled, and iteration is about to happen.

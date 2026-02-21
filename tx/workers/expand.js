@@ -812,7 +812,12 @@ class ValueSetExpander {
           }
           if (vsInfo.csDoExcludes) {
             for (let exc of compose.exclude || []) {
-              await cs.filterExclude(prep, this.excludeFilterList(exc));
+              if (exc.filter) {
+                await cs.filterExcludeFilters(prep, this.excludeFilterList(exc));
+              }
+              if (exc.concept) {
+                await cs.filterExcludeConcepts(prep, exc.concept.map(c => c.code));
+              }
             }
           }
 
@@ -1584,17 +1589,8 @@ class ValueSetExpander {
   excludeFilterList(exc) {
     const results = [];
 
-      for (const f of exc.filter || []) {
-        results.push({ prop: f.property, op: f.op, value: f.value });
-      }
-
-
-    if (exc.concept && exc.concept.length > 0) {
-      results.push({
-        prop: 'code',
-        op: 'in',
-        value: exc.concept.map(c => c.code).join(',')
-      });
+    for (const f of exc.filter || []) {
+      results.push({ prop: f.property, op: f.op, value: f.value });
     }
 
     return results;
