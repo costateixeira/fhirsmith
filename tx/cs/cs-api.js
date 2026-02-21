@@ -566,9 +566,9 @@ class CodeSystemProvider {
    * throws an exception if the search filter can't be handled
    *
    * @param {FilterExecutionContext} filterContext filtering context
-   * @param {Object[]} prop
+   * @param {Object[]} filters
    **/
-  async filterExclude(filterContext, prop, op, value) { throw new Error("Must override"); } // well, only if any filters are actually supported
+  async filterExclude(filterContext, filters) { throw new Error("Must override"); } // well, only if any filters are actually supported
 
   /**
    * called once all the filters have been handled, and iteration is about to happen.

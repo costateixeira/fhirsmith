@@ -601,7 +601,7 @@ class ValueSetExpander {
     }
   }
 
-  async checkSource(cset, exp, filter, srcURL, ts) {
+  async checkSource(cset, exp, filter, srcURL, ts, vsInfo) {
     this.worker.deadCheck('checkSource');
     Extensions.checkNoModifiers(cset, 'ValueSetExpander.checkSource', 'set');
     let imp = false;
@@ -628,6 +628,10 @@ class ValueSetExpander {
       if (cs == null) {
         // nothing
       } else {
+        if (vsInfo && vsInfo.isSimple) {
+          vsInfo.csDoExcludes = cs.handlesExcludes();
+          vsInfo.csDoOffset = cs.handlesOffset();
+        }
         if (cs.contentMode() !== 'complete') {
           if (cs.contentMode() === 'not-present') {
             throw new Issue('error', 'business-rule', null, null, 'The code system definition for ' + cset.system + ' has no content, so this expansion cannot be performed', 'invalid');
@@ -660,7 +664,7 @@ class ValueSetExpander {
     }
   }
 
-  async includeCodes(cset, path, vsSrc, filter, expansion, excludeInactive, notClosed) {
+  async includeCodes(cset, path, vsSrc, compose, filter, expansion, excludeInactive, notClosed, vsInfo) {
     this.worker.deadCheck('processCodes#1');
     const valueSets = [];
 
@@ -752,6 +756,7 @@ class ValueSetExpander {
             }
             const prep = await cs.getPrepContext(true);
             const ctxt = await cs.searchFilter(prep, filter, false);
+            await cs.filterExclude(prep, )
             let set = await cs.executeFilters(prep);
             this.worker.opContext.log('iterate filters');
             while (await cs.filterMore(ctxt, set)) {
@@ -799,9 +804,14 @@ class ValueSetExpander {
         if (cset.filter) {
           this.worker.opContext.log('prepare filters');
           const fcl = cset.filter;
-          const prep = await cs.getPrepContext(true);
+          const prep = vsInfo.csDoOffset ? await cs.getPrepContext(true, this.offset, this.count) : await cs.getPrepContext(true);
           if (!filter.isNull) {
             await cs.searchFilter(filter, prep, true);
+          }
+          if (vsInfo.csDoExcludes) {
+            for (let exc of compose.exclude || []) {
+              await cs.filterExclude(prep, this.excludeFilterList(exc));
+            }
           }
 
           if (cs.specialEnumeration()) {
@@ -1106,32 +1116,34 @@ class ValueSetExpander {
     }
   }
 
-  async handleCompose(source, filter, expansion, notClosed) {
+  async handleCompose(source, filter, expansion, notClosed, vsInfo) {
     this.worker.opContext.log('compose #1');
 
     const ts = new Map();
     for (const c of source.jsonObj.compose.include || []) {
       this.worker.deadCheck('handleCompose#2');
-      await this.checkSource(c, expansion, filter, source.url, ts);
+      await this.checkSource(c, expansion, filter, source.url, ts, vsInfo);
     }
     for (const c of source.jsonObj.compose.exclude || []) {
       this.worker.deadCheck('handleCompose#3');
       this.hasExclusions = true;
-      await this.checkSource(c, expansion, filter, source.url, ts);
+      await this.checkSource(c, expansion, filter, source.url, ts, null);
     }
 
     this.worker.opContext.log('compose #2');
 
-    let i = 0;
-    for (const c of source.jsonObj.compose.exclude || []) {
-      this.worker.deadCheck('handleCompose#4');
-      await this.excludeCodes(c, "ValueSet.compose.exclude["+i+"]", source, filter, expansion, this.excludeInactives(source), notClosed);
+    if (!vsInfo.csDoExcludes) {
+      let i = 0;
+      for (const c of source.jsonObj.compose.exclude || []) {
+        this.worker.deadCheck('handleCompose#4');
+        await this.excludeCodes(c, "ValueSet.compose.exclude["+i+"]", source, source.jsonObj.compose, filter, expansion, this.excludeInactives(source), notClosed);
+      }
     }
 
-    i = 0;
+    let i = 0;
     for (const c of source.jsonObj.compose.include || []) {
       this.worker.deadCheck('handleCompose#5');
-      await this.includeCodes(c, "ValueSet.compose.include["+i+"]", source, filter, expansion, this.excludeInactives(source), notClosed);
+      await this.includeCodes(c, "ValueSet.compose.include["+i+"]", source, filter, expansion, this.excludeInactives(source), notClosed, vsInfo);
       i++;
     }
   }
@@ -1259,10 +1271,11 @@ class ValueSetExpander {
 
     let notClosed = { value :  false};
 
+    let vsInfo = this.scanValueSet(source.jsonObj.compose);
     try {
       if (source.jsonObj.compose && Extensions.checkNoModifiers(source.jsonObj.compose, 'ValueSetExpander.Expand', 'compose')
           && this.worker.checkNoLockedDate(source.url, source.jsonObj.compose)) {
-        await this.handleCompose(source, filter, exp, notClosed);
+        await this.handleCompose(source, filter, exp, notClosed, vsInfo);
       }
 
       const unused = new Set([...this.requiredSupplements].filter(s => !this.usedSupplements.has(s)));
@@ -1338,7 +1351,7 @@ class ValueSetExpander {
         const c = list[i];
         if (this.map.has(this.keyC(c))) {
           o++;
-          if (o > this.offset && (this.count < 0 || t < this.count)) {
+          if ((vsInfo.csDoOffset) || (o > this.offset && (this.count < 0 || t < this.count))) {
             t++;
             if (!exp.contains) {
               exp.contains = [];
@@ -1533,6 +1546,57 @@ class ValueSetExpander {
     return undefined;
   }
 
+  /**
+   * we have a look at the value set compose to see what we have.
+   * If it's all one code system(|version), and has no value set dependencies,
+   * then we call it simple - this will affect how it can be handled later
+   *
+   * @param compose
+   * @returns {undefined}
+   */
+  scanValueSet(compose) {
+    let result = { isSimple : false, hasExcludes : true, csset : new Set(), csDoExcludes : false, csDoOffset : false};
+    let simple = true;
+    for (let inc of compose.include) {
+      if (!this.isSimpleInclude(inc, result.csset, false)) {
+        simple = false;
+      }
+    }
+    for (let exc of compose.exclude) {
+      if (!this.isSimpleInclude(exc, result.csset, true)) {
+        simple = false;
+      }
+      result.hasExcludes = true;
+    }
+    if (simple && result.csset.size == 1) {
+      result.isSimple = true;
+    }
+    return result;
+  }
+
+  isSimpleInclude(inc, set, isExclude) {
+    set.add(inc.system+"|"+inc.version);
+    return (!inc.valueset || inc.valueset.length == 0) && ((inc.filter && inc.filter.length > 0) || (isExclude && inc.concept && inc.filter.concept > 0));
+  }
+
+  excludeFilterList(exc) {
+    const results = [];
+
+      for (const f of exc.filter || []) {
+        results.push({ prop: f.property, op: f.op, value: f.value });
+      }
+
+
+    if (exc.concept && exc.concept.length > 0) {
+      results.push({
+        prop: 'code',
+        op: 'in',
+        value: exc.concept.map(c => c.code).join(',')
+      });
+    }
+
+    return results;
+  }
 }
 
 class ExpandWorker extends TerminologyWorker {
