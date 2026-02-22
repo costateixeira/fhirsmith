@@ -659,6 +659,19 @@ class SnomedProvider extends BaseCSServices {
     }
   }
 
+  async incompleteValidationMessage(context) {
+
+    const ctxt = await this.#ensureContext(context);
+
+    if (!ctxt) return null;
+
+    if (ctxt.isComplex()) {
+      return "The expression is grammatically correct and the concepts are valid, but the expression has not been checked against the SNOMED CT concept model (MRCM)";
+    } else {
+      return null;
+    }
+  }
+
   async locateIsA(code, parent, disallowParent = false) {
     
 

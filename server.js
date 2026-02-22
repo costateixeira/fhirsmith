@@ -10,6 +10,7 @@ const express = require('express');
 // const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const folders = require('./library/folder-setup');  // <-- ADD: load early
 const { statSync, readdirSync } = require('fs');
 const escape = require('escape-html');
@@ -27,6 +28,17 @@ try {
 
 const Logger = require('./library/logger');
 const serverLog = Logger.getInstance().child({ module: 'server' });
+const packageJson = require('./package.json');
+
+// Startup banner
+const totalMemGB = (os.totalmem() / 1024 / 1024 / 1024).toFixed(1);
+const freeMemGB = (os.freemem() / 1024 / 1024 / 1024).toFixed(1);
+serverLog.info(`========================================`);
+serverLog.info(`FHIRsmith v${packageJson.version} starting (PID ${process.pid})`);
+serverLog.info(`Node.js ${process.version} on ${os.type()} ${os.release()} (${os.arch()})`);
+serverLog.info(`Memory: ${freeMemGB} GB free / ${totalMemGB} GB total`);
+serverLog.info(`Data directory: ${folders.dataDir()}`);
+serverLog.info(`========================================`);
 
 const activeModules = config.modules ? Object.keys(config.modules)
   .filter(mod => config.modules[mod].enabled)
@@ -43,7 +55,6 @@ const PublisherModule = require('./publisher/publisher.js');
 const TokenModule = require('./token/token.js');
 const NpmProjectorModule = require('./npmprojector/npmprojector.js');
 const TXModule = require('./tx/tx.js');
-const packageJson = require('./package.json');
 
 const htmlServer = require('./library/html-server');
 const ServerStats = require("./stats");
@@ -81,6 +92,7 @@ async function initializeModules() {
   // Initialize SHL module
   if (config.modules?.shl?.enabled) {
     try {
+      serverLog.info('Initializing module: shl...');
       modules.shl = new SHLModule(stats);
       await modules.shl.initialize(config.modules.shl);
       app.use('/shl', modules.shl.router);
@@ -93,6 +105,7 @@ async function initializeModules() {
   // Initialize VCL module
   if (config.modules?.vcl?.enabled) {
     try {
+      serverLog.info('Initializing module: vcl...');
       modules.vcl = new VCLModule(stats);
       await modules.vcl.initialize(config.modules.vcl);
       app.use('/VCL', modules.vcl.router);
@@ -101,11 +114,12 @@ async function initializeModules() {
       throw error;
     }
   }
-  
+
   // Initialize XIG module
   if (config.modules?.xig?.enabled) {
     try {
-      await xigModule.initializeXigModule(stats);
+      serverLog.info('Initializing module: xig...');
+      await xigModule.initializeXigModule(stats, config.modules.xig);
       app.use('/xig', xigModule.router);
       modules.xig = xigModule;
     } catch (error) {
@@ -117,6 +131,7 @@ async function initializeModules() {
   // Initialize Packages module
   if (config.modules?.packages?.enabled) {
     try {
+      serverLog.info('Initializing module: packages...');
       modules.packages = new PackagesModule(stats);
       await modules.packages.initialize(config.modules.packages);
       app.use('/packages', modules.packages.router);
@@ -130,6 +145,7 @@ async function initializeModules() {
   // Initialize Registry module
   if (config.modules?.registry?.enabled) {
     try {
+      serverLog.info('Initializing module: registry...');
       modules.registry = new RegistryModule(stats);
       await modules.registry.initialize(config.modules.registry);
       app.use('/tx-reg', modules.registry.router);
@@ -142,6 +158,7 @@ async function initializeModules() {
   // Initialize Publisher module
   if (config.modules?.publisher?.enabled) {
     try {
+      serverLog.info('Initializing module: publisher...');
       modules.publisher = new PublisherModule(stats);
       await modules.publisher.initialize(config.modules.publisher);
       app.use('/publisher', modules.publisher.router);
@@ -154,6 +171,7 @@ async function initializeModules() {
   // Initialize Token module
   if (config.modules?.token?.enabled) {
     try {
+      serverLog.info('Initializing module: token...');
       modules.token = new TokenModule(stats);
       await modules.token.initialize(config.modules.token);
       app.use('/token', modules.token.router);
@@ -166,6 +184,7 @@ async function initializeModules() {
   // Initialize NpmProjector module
   if (config.modules?.npmprojector?.enabled) {
     try {
+      serverLog.info('Initializing module: npmprojector...');
       modules.npmprojector = new NpmProjectorModule(stats);
       await modules.npmprojector.initialize(config.modules.npmprojector);
       const basePath = NpmProjectorModule.getBasePath(config.modules.npmprojector);
@@ -181,6 +200,7 @@ async function initializeModules() {
   // because it supports multiple endpoints at different paths
   if (config.modules?.tx?.enabled) {
     try {
+      serverLog.info('Initializing module: tx...');
       modules.tx = new TXModule(stats);
       await modules.tx.initialize(config.modules.tx, app);
     } catch (error) {
@@ -365,6 +385,13 @@ async function buildRootPageContent() {
 // eslint-disable-next-line no-unused-vars
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection:', reason);
+  serverLog.error('Unhandled Rejection:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('FATAL - Uncaught Exception:', error);
+  serverLog.error('FATAL - Uncaught Exception:', error);
+  process.exitCode = 1;
 });
 
 app.get('/', async (req, res) => {
@@ -382,7 +409,7 @@ app.get('/', async (req, res) => {
       }
 
       const content = await buildRootPageContent();
-      
+
       // Build basic stats for root page
       const stats = {
         version: packageJson.version,
@@ -431,7 +458,7 @@ app.get('/', async (req, res) => {
           Object.keys(enabledModules)
             .filter(m => m !== 'tx')
             .map(m => [
-              m, 
+              m,
               m === 'vcl' ? '/VCL' : `/${m}`
             ])
         ),
@@ -542,8 +569,10 @@ async function startServer() {
       modules.packages.startInitialCrawler();
     }
   } catch (error) {
-    serverLog.error('Failed to start server:', error);
-    process.exit(1);
+    console.error('FATAL - Failed to start server:', error);
+    serverLog.error('FATAL - Failed to start server:', error);
+    // Give the logger a moment to flush before exiting
+    setTimeout(() => process.exit(1), 500);
   }
 }
 
