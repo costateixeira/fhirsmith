@@ -201,7 +201,7 @@ describe('Iso4217Services', () => {
       const ctxt = await provider.getPrepContext(false);
       await expect(
         provider.searchFilter(ctxt, 'dollar', false)
-      ).rejects.toThrow('not implemented');
+      ).rejects.toThrow('Text Search is not supported');
     });
 
     test('should throw error for unsupported filter', async () => {

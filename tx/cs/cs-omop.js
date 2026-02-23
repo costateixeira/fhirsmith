@@ -650,12 +650,6 @@ class OMOPServices extends BaseCSServices {
     return false; // OMOP filters are closed
   }
 
-  // Search filter - not implemented
-  // eslint-disable-next-line no-unused-vars
-  async searchFilter(filterContext, filter, sort) {
-    
-    throw new Error('Search filter not implemented yet');
-  }
 
   // Subsumption testing - not implemented
   async subsumesTest(codeA, codeB) {

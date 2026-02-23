@@ -200,11 +200,6 @@ class HGVSServices extends CodeSystemProvider {
     throw new Error('Filters are not supported for HGVS');
   }
 
-  async searchFilter(filterContext, filter, sort) {
-    
-    throw new Error('Filters are not supported for HGVS');
-  }
-
   async filter(filterContext, prop, op, value) {
     
     throw new Error('Filters are not supported for HGVS');

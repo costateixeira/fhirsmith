@@ -1020,13 +1020,6 @@ class LoincServices extends BaseCSServices {
     return set.hasKey(concept.key);
   }
 
-  // Search filter - placeholder for text search
-  // eslint-disable-next-line no-unused-vars
-  async searchFilter(filterContext, filter, sort) {
-
-    throw new Error('Text search not implemented yet');
-  }
-
   // Subsumption testing
   async subsumesTest(codeA, codeB) {
     await this.#ensureContext(codeA);

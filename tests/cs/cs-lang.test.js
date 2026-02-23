@@ -343,7 +343,7 @@ describe('IETF Language CodeSystem Provider', () => {
     test('should not support text search', async () => {
       await expect(
         provider.searchFilter(new FilterExecutionContext(), 'english', false)
-      ).rejects.toThrow('Text search not supported');
+      ).rejects.toThrow('Text Search is not supported');
     });
 
     test('should indicate filters are not closed', async () => {

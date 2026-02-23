@@ -179,15 +179,6 @@ class CountryCodeServices extends CodeSystemProvider {
   }
 
 
-  async searchFilter(filterContext, filter, sort) {
-    
-    assert(filterContext && filterContext instanceof FilterExecutionContext, 'filterContext must be a FilterExecutionContext');
-    assert(filter && typeof filter === 'string', 'filter must be a non-null string');
-    assert(typeof sort === 'boolean', 'sort must be a boolean');
-
-    throw new Error('Search filter not implemented for CountryCode');
-  }
-
   async filter(filterContext, prop, op, value) {
     
     assert(filterContext && filterContext instanceof FilterExecutionContext, 'filterContext must be a FilterExecutionContext');

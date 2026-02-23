@@ -245,15 +245,6 @@ class UcumCodeSystemProvider extends BaseCSServices {
     return (prop === 'canonical' && op === '=');
   }
 
-  async searchFilter(filterContext, filter, sort) {
-    
-    assert(filterContext && filterContext instanceof FilterExecutionContext, 'filterContext must be a FilterExecutionContext');
-    assert(filter && typeof filter === 'string', 'filter must be a non-null string');
-    assert(typeof sort === 'boolean', 'sort must be a boolean');
-
-    throw new Error('Search filter not implemented for UCUM');
-  }
-
   async specialFilter(filterContext, filter, sort) {
     
     assert(filterContext && filterContext instanceof FilterExecutionContext, 'filterContext must be a FilterExecutionContext');

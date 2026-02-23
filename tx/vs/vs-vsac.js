@@ -4,7 +4,6 @@ const { AbstractValueSetProvider } = require('./vs-api');
 const { ValueSetDatabase } = require('./vs-database');
 const { VersionUtilities } = require('../../library/version-utilities');
 const folders = require('../../library/folder-setup');
-const ValueSet = require("../library/valueset");
 
 /**
  * VSAC (Value Set Authority Center) ValueSet provider
@@ -460,17 +459,18 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
   // are fetched, we check to see if we've got the compose, and if we
   // haven't, then we fetch it and store it
   async checkFullVS(vs) {
-    if (!vs) {
-      return null;
-    }
-    if (vs.jsonObj.compose) {
-      return vs;
-    }
-    console.log('get a full copy for the ValueSet '+vs.url+'|'+vs.version);
-    let vsNew = await this._fetchValueSet(vs.id);
-    await this.database.upsertValueSet(vsNew);
-    this.database.addToMap(this.valueSetMap, vsNew.id, vsNew.url, vsNew.version, vsNew);
-    return new ValueSet(vsNew);
+    // if (!vs) {
+    //   return null;
+    // }
+    // if (vs.jsonObj?.compose) {
+    //   return vs;
+    // }
+    // console.log('get a full copy for the ValueSet '+vs.url+'|'+vs.version);
+    // let vsNew = await this._fetchValueSet(vs.id);
+    // await this.database.upsertValueSet(vsNew);
+    // this.database.addToMap(this.valueSetMap, vsNew.id, vsNew.url, vsNew.version, vsNew);
+    // return new ValueSet(vsNew);
+    return vs;
   }
 
   async processContentAndHistory(q, tracking, length) {
