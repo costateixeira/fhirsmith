@@ -48,6 +48,7 @@ const {bundleFromR5} = require("./xversion/xv-bundle");
 const {convertResourceToR5} = require("./xversion/xv-resource");
 const ClosureWorker = require("./workers/closure");
 const {BundleXML} = require("./xml/bundle-xml");
+const ConceptUsageTracker = require("./usage-tracker");
 // const {writeFileSync} = require("fs");
 
 class TXModule {
@@ -138,6 +139,7 @@ class TXModule {
       consoleErrors: config.consoleErrors,
       telnetErrors: config.telnetErrors
     });
+    this.usageTracker = new ConceptUsageTracker();
 
     this.log.info('Initializing TX module');
 
@@ -280,6 +282,7 @@ class TXModule {
         acceptLanguage, this.i18n, requestId, 30,
         endpointInfo.resourceCache, endpointInfo.expansionCache
       );
+      opContext.usageTracker = this.usageTracker;
 
       // Attach everything to request
       req.txProvider = endpointInfo.provider;

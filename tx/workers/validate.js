@@ -1033,6 +1033,9 @@ class ValueSetChecker {
     let i = 0;
     let impliedSystem = { value: '' };
     for (let c of code.coding || []) {
+      if (this.worker.opContext.usageTracker) {
+        this.worker.opContext.usageTracker.seeConcept(c.system, c.code);
+      }
       const csd = await this.worker.findCodeSystem(c.system, null, this.params, ['complete', 'fragment'], false, true, false, false, this.worker.requiredSupplements);
       this.worker.seeSourceProvider(csd, c.system);
       this.worker.deadCheck('check-b#1');

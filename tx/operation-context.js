@@ -447,6 +447,7 @@ class OperationContext {
     newContext.timeTracker = this.timeTracker.link();
     newContext.logEntries = [...this.logEntries];
     newContext.debugging = this.debugging;
+    newContext.usageTracker = this.usageTracker;
     return newContext;
   }
 
