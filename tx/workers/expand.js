@@ -198,6 +198,7 @@ class ValueSetCounter {
 class ValueSetExpander {
   worker;
   params;
+  excludedSystems = new Set();
   excluded = new Set();
   hasExclusions = false;
   requiredSupplements = new Set();
@@ -208,21 +209,6 @@ class ValueSetExpander {
     this.params = params;
 
     this.csCounter = new Map();
-  }
-
-  addDefinedCode(cs, system, c, imports, parent, excludeInactive, srcURL) {
-    this.worker.deadCheck('addDefinedCode');
-    let n = null;
-    if (!this.params.excludeNotForUI || !cs.isAbstract(c)) {
-      const cds = new Designations(this.worker.opContext.i18n.languageDefinitions);
-      this.listDisplays(cds, c);
-      n = this.includeCode(null, parent, system, '', c.code, cs.isAbstract(c), cs.isInactive(c), cs.isDeprecated(c), cs.codeStatus(c), cds, c.definition, c.itemWeight,
-        null, imports, c.getAllExtensionsW(), null, c.properties, null, excludeInactive, srcURL);
-    }
-    for (let i = 0; i < c.concept.length; i++) {
-      this.worker.deadCheck('addDefinedCode');
-      this.addDefinedCode(cs, system, c.concept[i], imports, n, excludeInactive, srcURL);
-    }
   }
 
   async listDisplaysFromProvider(displays, cs, context) {
@@ -446,6 +432,9 @@ class ValueSetExpander {
           if (definition) {
             this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#definition', pn, "valueString", definition);
           }
+        } else if (pn === 'usage-count') {
+          let counter = cs.usages().get(code);
+          this.defineProperty(expansion, n, 'http://fhir.org/FHIRsmith/CodeSystem/concept-properties#usage-count', pn, "valueInteger", counter ? counter.count : 0);
         } else if (csProps != null && cs != null) {
           for (const cp of csProps) {
             if (cp.code === pn) {
@@ -629,8 +618,7 @@ class ValueSetExpander {
         // nothing
       } else {
         if (vsInfo && vsInfo.isSimple) {
-          vsInfo.csDoExcludes = cs.handlesExcludes();
-          vsInfo.csDoOffset = cs.handlesOffset();
+          vsInfo.handleByCS = cs.handlesSelecting();
         }
         if (cs.contentMode() !== 'complete') {
           if (cs.contentMode() === 'not-present') {
@@ -661,6 +649,17 @@ class ValueSetExpander {
           }
         }
       }
+    }
+  }
+
+  async processCodes(path, vsSrc, compose, filter, expansion, excludeInactive, notClosed, vsInfo) {
+    const cs = await this.worker.findCodeSystem(vsInfo.system, vsInfo.version, this.params, ['complete', 'fragment'],
+      false, false, true, null, this.requiredSupplements);
+    if (cs != null) {
+
+      // set up the call to the provider
+      // call the provider
+      // include the codes
     }
   }
 
@@ -734,7 +733,7 @@ class ValueSetExpander {
             }
 
             const iter = await cs.iterator(null);
-            if (valueSets.length === 0 && this.limitCount > 0 && (iter && iter.total > this.limitCount) && this.offset < 0)  {
+            if (valueSets.length === 0 && this.limitCount > 0 && (iter && iter.total > this.limitCount) && this.offset < 0) {
               throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [vsSrc.vurl, '>' + this.limitCount]), null, 422).withDiagnostics(this.worker.opContext.diagnostics());
 
             }
@@ -756,17 +755,19 @@ class ValueSetExpander {
             }
             const prep = await cs.getPrepContext(true);
             const ctxt = await cs.searchFilter(prep, filter, false);
-            await cs.filterExclude(prep, )
             let set = await cs.executeFilters(prep);
             this.worker.opContext.log('iterate filters');
-            while (await cs.filterMore(ctxt, set)) {
+            while (await cs.filterMore(ctxt, set[0])) {
               this.worker.deadCheck('processCodes#4');
-              const c = await cs.filterConcept(ctxt, set);
-              if (await this.passesFilters(cs, c, prep, filters, 0)) {
+              const c = await cs.filterConcept(ctxt, set[0]);
+              if (await this.passesFilters(cs, c, prep, set, 1)) {
                 const cds = new Designations(this.worker.i18n.languageDefinitions);
                 await this.listDisplaysFromProvider(cds, cs, c);
-                await this.includeCode(cs, null, await cs.system(), await cs.version(), await cs.code(c), await cs.isAbstract(c), await cs.isInactive(c), await cs.deprecated(c), await cs.getCodeStatus(c),
-                  cds, await cs.definition(c), await cs.itemWeight(c), expansion, valueSets, await cs.getExtensions(c), null, await cs.getProperties(c), null, excludeInactive, vsSrc.url);
+                let added = await this.includeCode(cs, null, await cs.system(), await cs.version(), await cs.code(c), await cs.isAbstract(c), await cs.isInactive(c), await cs.isDeprecated(c), await cs.getStatus(c),
+                  cds, await cs.definition(c), await cs.itemWeight(c), expansion, valueSets, await cs.extensions(c), null, await cs.properties(c), null, excludeInactive, vsSrc.url);
+                if (added) {
+                  this.addToTotal();
+                }
               }
             }
             this.worker.opContext.log('iterate filters done');
@@ -804,21 +805,10 @@ class ValueSetExpander {
         if (cset.filter) {
           this.worker.opContext.log('prepare filters');
           const fcl = cset.filter;
-          const prep = await cs.getPrepContext(true,
-            this.params, excludeInactive, vsInfo.csDoOffset ? this.offset : -1, cs.handlesOffset() && vsInfo.csDoExcludes ? this.count : -1);
+          const prep = await cs.getPrepContext(true);
 
           if (!filter.isNull) {
-            await cs.searchFilter(filter, prep, true);
-          }
-          if (vsInfo.csDoExcludes) {
-            for (let exc of compose.exclude || []) {
-              if (exc.filter) {
-                await cs.filterExcludeFilters(prep, this.excludeFilterList(exc));
-              }
-              if (exc.concept) {
-                await cs.filterExcludeConcepts(prep, exc.concept.map(c => c.code));
-              }
-            }
+            await cs.searchFilter(prep, filter, true);
           }
 
           if (cs.specialEnumeration()) {
@@ -830,7 +820,7 @@ class ValueSetExpander {
             this.worker.deadCheck('processCodes#4a');
             const fc = fcl[i];
             if (!fc.value) {
-              throw new Issue('error', 'invalid', path+".filter["+i+"]", 'UNABLE_TO_HANDLE_SYSTEM_FILTER_WITH_NO_VALUE', this.worker.i18n.translate('UNABLE_TO_HANDLE_SYSTEM_FILTER_WITH_NO_VALUE', this.params.httpLanguages, [cs.system(), fc.property, fc.op]), 'vs-invalid', 400);
+              throw new Issue('error', 'invalid', path + ".filter[" + i + "]", 'UNABLE_TO_HANDLE_SYSTEM_FILTER_WITH_NO_VALUE', this.worker.i18n.translate('UNABLE_TO_HANDLE_SYSTEM_FILTER_WITH_NO_VALUE', this.params.httpLanguages, [cs.system(), fc.property, fc.op]), 'vs-invalid', 400);
             }
             Extensions.checkNoModifiers(fc, 'ValueSetExpander.processCodes', 'filter');
             await cs.filter(prep, fc.property, fc.op, fc.value);
@@ -877,22 +867,10 @@ class ValueSetExpander {
   async passesFilters(cs, c, prep, filters, offset) {
     for (let j = offset; j < filters.length; j++) {
       const f = filters[j];
-      // if (f instanceof SpecialProviderFilterContextNothing) {
-      //   return false;
-      // } else if (f instanceof SpecialProviderFilterContextConcepts) {
-      //   let ok = false;
-      //   for (const t of f.list) {
-      //     if (cs.sameContext(t, c)) {
-      //       ok = true;
-      //     }
-      //   }
-      //   if (!ok) return false;
-      // } else {
-        let ok = await cs.filterCheck(prep, f, c);
-        if (ok != true) {
-          return false;
-        }
-      // }
+      let ok = await cs.filterCheck(prep, f, c);
+      if (ok != true) {
+        return false;
+      }
     }
     return true;
   }
@@ -947,13 +925,11 @@ class ValueSetExpander {
       }
 
       if (!cset.concept && !cset.filter) {
-        this.opContext.log('handle system');
-        if (cs.specialEnumeration() && filters.length === 0) {
-          const base = await this.expandValueSet(cs.specialEnumeration(), '', filter, notClosed);
-          Extensions.addBoolean(expansion, 'http://hl7.org/fhir/StructureDefinition/valueset-toocostly', true);
-          this.excludeValueSet(base, expansion, valueSets, 0);
-          notClosed.value = true;
-        } else if (filter.isNull) {
+        this.worker.opContext.log('handle system');
+        if (!cset.valueSet) {
+          // excluding a whole system - we don't list the codes in this case
+          this.excludedSystems.add(cset.system + (cset.version ? '|'+cset.version : ''));
+        } else {
           if (cs.isNotClosed(filter)) {
             if (cs.specialEnumeration()) {
               Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
@@ -962,30 +938,15 @@ class ValueSetExpander {
             }
           }
 
-          const iter = await cs.getIterator(null);
-          if (valueSets.length === 0 && this.limitCount > 0 && iter.count > this.limitCount) {
-            throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [vsSrc.url, '>' + this.limitCount]), null, 422).withDiagnostics(this.worker.opContext.diagnostics());
-          }
-          while (iter.more()) {
-            this.worker.deadCheck('processCodes#3a');
-            const c = await cs.getNextContext(iter);
-            if (await this.passesFilters(cs, c, prep, filters, 0)) {
-              await this.excludeCodeAndDescendants(cs, c, expansion, valueSets, excludeInactive, vsSrc.url);
-            }
-          }
-        } else {
-          this.noTotal();
-          if (cs.isNotClosed(filter)) {
-            notClosed.value = true;
-          }
-          const prep = await cs.getPrepContext(true);
-          const ctxt = await cs.searchFilter(filter, prep, false);
-          await cs.prepare(prep);
-          while (await cs.filterMore(ctxt)) {
-            this.worker.deadCheck('processCodes#4');
-            const c = await cs.filterConcept(ctxt);
-            if (await this.passesFilters(cs, c, prep, filters, 0)) {
-              this.excludeCode(cs, await cs.system(), await cs.version(), await cs.code(c), expansion, valueSets, vsSrc.url);
+          const iter = await cs.iteratorAll();
+          if (iter) {
+            let c = await cs.nextContext(iter);
+            while (c) {
+              this.worker.deadCheck('processCodes#3a');
+              if (await this.passesFilters(cs, c, prep, filters, 0)) {
+                this.excludeCode(cs, cs.system(), cs.version(), await cs.code(c), expansion, valueSets, vsSrc.url);
+              }
+              c = await cs.nextContext(iter);
             }
           }
         }
@@ -1109,17 +1070,16 @@ class ValueSetExpander {
     if ((!this.params.excludeNotForUI || !await cs.isAbstract(context)) && (!this.params.activeOnly || !await cs.isInactive(context))) {
       const cds = new Designations(this.worker.i18n.languageDefinitions);
       await this.listDisplaysFromProvider(cds, cs, context);
-      for (const code of await cs.listCodes(context, this.params.altCodeRules)) {
-        this.worker.deadCheck('processCodeAndDescendants#2');
-        this.excludeCode(cs, await cs.system(), await cs.version(), code, expansion, imports, srcUrl);
-      }
+      this.worker.deadCheck('processCodeAndDescendants#2');
+      this.excludeCode(cs, await cs.system(), await cs.version(), context, expansion, imports, srcUrl);
     }
 
-    const iter = await cs.getIterator(context);
-    while (iter.more()) {
+    const iter = await cs.iterator(context);
+    let c = await cs.nextContext(iter);
+    while (c) {
       this.worker.deadCheck('processCodeAndDescendants#3');
-      const c = await cs.getNextContext(iter);
       await this.excludeCodeAndDescendants(cs, c, expansion, imports, excludeInactive, srcUrl);
+      c = await cs.nextContext(iter);
     }
   }
 
@@ -1139,19 +1099,21 @@ class ValueSetExpander {
 
     this.worker.opContext.log('compose #2');
 
-    if (!vsInfo.csDoExcludes) {
+    if (vsInfo.handleByCS) {
+      await this.processCodes("ValueSet.compose", source, source.jsonObj.compose, filter, expansion, this.excludeInactives(source), notClosed, vsInfo);
+    } else {
       let i = 0;
       for (const c of source.jsonObj.compose.exclude || []) {
         this.worker.deadCheck('handleCompose#4');
-        await this.excludeCodes(c, "ValueSet.compose.exclude["+i+"]", source, source.jsonObj.compose, filter, expansion, this.excludeInactives(source), notClosed);
+        await this.excludeCodes(c, "ValueSet.compose.exclude[" + i + "]", source, filter, expansion, this.excludeInactives(source), notClosed);
       }
-    }
 
-    let i = 0;
-    for (const c of source.jsonObj.compose.include || []) {
-      this.worker.deadCheck('handleCompose#5');
-      await this.includeCodes(c, "ValueSet.compose.include["+i+"]", source, filter, expansion, this.excludeInactives(source), notClosed, vsInfo);
-      i++;
+      i = 0;
+      for (const c of source.jsonObj.compose.include || []) {
+        this.worker.deadCheck('handleCompose#5');
+        await this.includeCodes(c, "ValueSet.compose.include[" + i + "]", source, source.jsonObj.compose, filter, expansion, this.excludeInactives(source), notClosed, vsInfo);
+        i++;
+      }
     }
   }
 
@@ -1382,6 +1344,43 @@ class ValueSetExpander {
       }
     }
 
+    if (result.expansion.contains && result.expansion.contains.length > 0) {
+      let hasChildren = false;
+      for (let c of result.expansion.contains) {
+        if (c.contains) {
+          hasChildren = true;
+          break;
+        }
+      }
+
+      if (!hasChildren) {
+        let sort = this.params.sort;
+        let order = 1;
+        if (sort.startsWith('-')) {
+          order = -1;
+          sort = sort.substring(1);
+        }
+        switch (sort) {
+          case "design":
+            break; // do nothing - that's the natural order of this class
+          case "code" :
+            result.expansion.contains.sort((a, b) => order * (a.code ?? 'zzz').localeCompare(b.code ?? 'zzz'));
+            break;
+          case "display" :
+            result.expansion.contains.sort((a, b) => order * (a.display ?? 'zzz').localeCompare(b.display ?? 'zzz'));
+            break;
+          case "codesystem" :
+            // do nothing about that here
+            break;
+          default:
+            if (sort.startsWith("prop:")) {
+              result.expansion.contains.sort((a, b) => order * this.sortByProp(a, b, sort.substring(5)));
+            } else {
+              // do nothing?
+            }
+        }
+      }
+    }
     return result;
   }
 
@@ -1474,6 +1473,12 @@ class ValueSetExpander {
   }
 
   isExcluded(system, version, code) {
+    if (this.excludedSystems.has(system)) {
+      return true;
+    }
+    if (this.excludedSystems.has(system+'|'+version)) {
+      return true;
+    }
     return this.excluded.has(system+'|'+version+'#'+code);
   }
 
@@ -1564,13 +1569,13 @@ class ValueSetExpander {
   scanValueSet(compose) {
     let result = { isSimple : false, hasExcludes : true, csset : new Set(), csDoExcludes : false, csDoOffset : false};
     let simple = true;
-    for (let inc of compose.include) {
-      if (!this.isSimpleInclude(inc, result.csset, false)) {
+    for (let inc of compose.include || {}) {
+      if (!this.isSimpleSelect(inc, result.csset)) {
         simple = false;
       }
     }
-    for (let exc of compose.exclude) {
-      if (!this.isSimpleInclude(exc, result.csset, true)) {
+    for (let exc of compose.exclude || []) {
+      if (!this.isSimpleSelect(exc, result.csset)) {
         simple = false;
       }
       result.hasExcludes = true;
@@ -1581,9 +1586,9 @@ class ValueSetExpander {
     return result;
   }
 
-  isSimpleInclude(inc, set, isExclude) {
+  isSimpleSelect(inc, set) {
     set.add(inc.system+"|"+inc.version);
-    return (!inc.valueset || inc.valueset.length == 0) && ((inc.filter && inc.filter.length > 0) || (isExclude && inc.concept && inc.filter.concept > 0));
+    return !inc.valueset || inc.valueset.length == 0;
   }
 
   excludeFilterList(exc) {
@@ -1594,6 +1599,37 @@ class ValueSetExpander {
     }
 
     return results;
+  }
+
+  sortByProp(a, b, name) {
+    let pA = this.getPropValue(a, name);
+    let pB = this.getPropValue(b, name);
+
+    // nulls sort last
+    if (pA == null && pB == null) return 0;
+    if (pA == null) return 1;
+    if (pB == null) return -1;
+
+    // unwrap objects with a code property
+    if (typeof pA === 'object') pA = pA.code ?? '';
+    if (typeof pB === 'object') pB = pB.code ?? '';
+
+    // numbers and booleans: subtract
+    if (typeof pA === 'number' || typeof pA === 'boolean') {
+      return pA - pB;
+    } else {
+      // strings
+      return pA.localeCompare(pB);
+    }
+  }
+
+  getPropValue(cc, name) {
+    for (let p of cc.property) {
+      if (p.code == name) {
+        return getValuePrimitive(p);
+      }
+    }
+    return null;
   }
 }
 

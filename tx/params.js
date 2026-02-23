@@ -36,6 +36,7 @@ class TxParameters {
   validating = false;
   abstractOk = true; // note true!
   inferSystem = false;
+  sort = 'design';
 
   constructor(languages, i18n, validating) {
     validateParameter(languages, 'languages', LanguageDefinitions);
@@ -240,6 +241,10 @@ class TxParameters {
         }
         case 'inferSystem': {
           if (getValuePrimitive(p) == true) this.inferSystem = true;
+          break;
+        }
+        case 'sort': {
+          this.sort = getValuePrimitive(p);
           break;
         }
         case "exclude-system": {
@@ -524,7 +529,7 @@ class TxParameters {
       this.FUid + '|' + b(this.FMembershipOnly) + '|' + this.FProperties.join(',') + '|' +
       b(this.FActiveOnly) + b(this.FDisplayWarning) + b(this.FExcludeNested) + b(this.FGenerateNarrative) + b(this.FExcludeNotForUI) + b(this.FExcludePostCoordinated) +
       b(this.FIncludeDesignations) + b(this.FIncludeDefinition) + b(this.hasActiveOnly) + b(this.hasExcludeNested) + b(this.hasGenerateNarrative) +
-      b(this.hasExcludeNotForUI) + b(this.hasExcludePostCoordinated) + b(this.hasIncludeDesignations) +
+      b(this.hasExcludeNotForUI) + b(this.hasExcludePostCoordinated) + b(this.hasIncludeDesignations) + this.sort+'|'+
       b(this.hasIncludeDefinition) + b(this.hasDefaultToLatestVersion) + b(this.hasDisplayWarning) + b(this.hasExcludeNotForUI) + b(this.hasMembershipOnly) + b(this.FDefaultToLatestVersion);
 
     if (this.hasHTTPLanguages) {
@@ -585,6 +590,7 @@ class TxParameters {
     this.hasDefaultToLatestVersion = other.hasDefaultToLatestVersion;
     this.hasMembershipOnly = other.hasMembershipOnly;
     this.hasDisplayWarning = other.hasDisplayWarning;
+    this.sort = other.sort;
 
     if (other.FProperties) {
       this.FProperties = [...other.FProperties];
