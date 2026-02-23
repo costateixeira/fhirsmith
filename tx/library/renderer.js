@@ -2,6 +2,7 @@ const {CodeSystemProvider} = require("../cs/cs-api");
 const {Extensions} = require("./extensions");
 const {div} = require("../../library/html");
 const {getValuePrimitive} = require("../../library/utilities");
+const {getValueName} = require("../../library/utilities");
 
 /**
  * @typedef {Object} TerminologyLinkResolver
@@ -904,7 +905,11 @@ class Renderer {
     this.renderProperty(tbl, 'Expansion Total', vs.expansion.total);
     this.renderProperty(tbl, 'Expansion Offset', vs.expansion.offset);
     for (let p of vs.expansion.parameter || []) {
-      await this.renderPropertyLink(tbl, "Parameter: " + p.name, getValuePrimitive(p));
+      if( getValueName(p) === 'valueUri' || getValueName(p) === 'valueCanonical') {
+        await this.renderPropertyLink(tbl, "Parameter: " + p.name, getValuePrimitive(p));
+      } else {
+        this.renderProperty(tbl, "Parameter: " + p.name, getValuePrimitive(p));
+      }
     }
 
     if (!vs.expansion.contains || vs.expansion.contains.length === 0) {
