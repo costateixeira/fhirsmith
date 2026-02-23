@@ -451,6 +451,14 @@ class TXModule {
     // Set up routes
     this.setupRoutes(router);
 
+    // Redirect /r5 → /r5/
+    app.use((req, res, next) => {
+      if (req.path === endpointPath) {
+        return res.redirect(301, endpointPath + '/');
+      }
+      next();
+    });
+
     // Register the router with the app
     app.use(endpointPath, router);
     this.routers.set(endpointPath, router);

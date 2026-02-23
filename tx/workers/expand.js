@@ -243,7 +243,6 @@ class ValueSetExpander {
   }
 
   passesImport(imp, system, code) {
-    imp.buildMap();
     return imp.hasCode(system, code);
   }
 
@@ -699,19 +698,13 @@ class ValueSetExpander {
         this.addParamUri(expansion, 'used-codesystem', sv);
 
         for (const u of cset.valueSet || []) {
-          this.worker.deadCheck('processCodes#3');
-          const s = this.pinValueSet(u);
-          let f = null;
-          this.opContext.log('import2 value set ' + s);
-          const vs = this.onGetValueSet(this, s, '');
-          if (vs != null) {
-            f = this.makeFilterForValueSet(cs, vs);
-          }
-          if (f != null) {
-            filters.push(f);
-          } else {
-            valueSets.push(new ImportedValueSet(await this.expandValueSet(s, '', filter, notClosed)));
-          }
+          this.worker.deadCheck('processCodes#2');
+          const s = this.worker.pinValueSet(u);
+          this.worker.opContext.log('import value set ' + s);
+          const ivs = new ImportedValueSet(await this.expandValueSet(s, '', filter, notClosed));
+          this.checkResourceCanonicalStatus(expansion, ivs.valueSet, this.valueSet);
+          this.addParamUri(expansion, 'used-valueset', this.worker.makeVurl(ivs.valueSet));
+          valueSets.push(ivs);
         }
 
         if (!cset.concept && !cset.filter) {
@@ -910,18 +903,13 @@ class ValueSetExpander {
       this.addParamUri(expansion, 'used-codesystem', sv);
 
       for (const u of cset.valueSet || []) {
-        const s = this.pinValueSet(u);
         this.worker.deadCheck('processCodes#3');
-        let f = null;
-        const vs = this.onGetValueSet(this, s, '');
-        if (vs != null) {
-          f = this.makeFilterForValueSet(cs, vs);
-        }
-        if (f != null) {
-          filters.push(f);
-        } else {
-          valueSets.push(new ImportedValueSet(await this.expandValueSet(s, '', filter, notClosed)));
-        }
+        const s = this.worker.pinValueSet(u);
+        this.worker.opContext.log('import value set ' + s);
+        const ivs = new ImportedValueSet(await this.expandValueSet(s, '', filter, notClosed));
+        this.checkResourceCanonicalStatus(expansion, ivs.valueSet, this.valueSet);
+        this.addParamUri(expansion, 'used-valueset', this.worker.makeVurl(ivs.valueSet));
+        valueSets.push(ivs);
       }
 
       if (!cset.concept && !cset.filter) {
