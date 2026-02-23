@@ -1166,7 +1166,12 @@ class SnomedServicesFactory extends CodeSystemFactoryProvider {
 
     if (id.startsWith('?fhir_vs=refset/')) {
       const refsetId = id.substring(16);
-      if (!this.referenceSetExists(refsetId)) {
+      let ref = this.snomedServices.concepts.findConcept(refsetId);
+      if (!ref.found) {
+        return null;
+      }
+      let rref = this.snomedServices.refSetIndex.getRefSetByConcept(ref.index);
+      if (rref == 0) {
         return null;
       }
       return {
@@ -1176,7 +1181,7 @@ class SnomedServicesFactory extends CodeSystemFactoryProvider {
         version: this.versionDate,
         name: 'SNOMEDCTRefSet' + refsetId,
         title: 'SNOMED CT Reference Set ' + refsetId,
-        description: this.getDisplayName(refsetId, ''),
+        description: this.snomedServices.getDisplayName(ref.index),
         date: now,
         compose: {
           include: [{
@@ -1193,7 +1198,8 @@ class SnomedServicesFactory extends CodeSystemFactoryProvider {
 
     if (id.startsWith('?fhir_vs=isa/')) {
       const conceptId = id.substring(13);
-      if (!this.conceptExists(conceptId)) {
+      let ref = this.snomedServices.concepts.findConcept(conceptId);
+      if (!ref.found) {
         return null;
       }
       return {
@@ -1203,7 +1209,7 @@ class SnomedServicesFactory extends CodeSystemFactoryProvider {
         version: this.versionDate,
         name: 'SNOMEDCTConcept' + conceptId,
         title: 'SNOMED CT Concept ' + conceptId + ' and descendants',
-        description: 'All Snomed CT concepts for ' + this.getDisplayName(conceptId, ''),
+        description: 'All Snomed CT concepts for ' + this.snomedServices.getDisplayName(ref.index),
         date: now,
         compose: {
           include: [{
