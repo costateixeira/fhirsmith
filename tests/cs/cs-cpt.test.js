@@ -635,7 +635,7 @@ describe('CPT Provider', () => {
 
       await expect(
         provider.searchFilter(filterContext, 'test', false)
-      ).rejects.toThrow('not implemented');
+      ).rejects.toThrow('Text Search is not supported');
     });
   });
 });
