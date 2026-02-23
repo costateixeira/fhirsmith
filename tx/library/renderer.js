@@ -904,7 +904,7 @@ class Renderer {
     this.renderProperty(tbl, 'Expansion Total', vs.expansion.total);
     this.renderProperty(tbl, 'Expansion Offset', vs.expansion.offset);
     for (let p of vs.expansion.parameter || []) {
-      await this.renderPropertyLink(tbl, "Parameter: " + p.name, getValuePrimitive(p));
+      await this.renderPropertyLink(tbl, "Parameter: " + p.name, String(getValuePrimitive(p)));
     }
 
     if (!vs.expansion.contains || vs.expansion.contains.length === 0) {
