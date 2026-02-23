@@ -608,7 +608,11 @@ class Designations {
         }
       }
     }
-
+    for (const cd of this.designations) {
+      if (!cd.language && this.isDisplay(cd)) {
+        return cd;
+      }
+    }
     return null;
   }
 
