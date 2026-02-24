@@ -21,10 +21,13 @@ class ConceptUsageTracker {
     return c;
   }
 
-  async scanValueSet(compose) {
+  async scanValueSet(compose, versions, active) {
     let ok = false;
     for (let inc of compose.include || []) {
       if (inc.system) {
+        if (active && inc.version) {
+          this.seeVersion(versions, inc.system, inc.version);
+        }
         for (let c of inc.concept || []) {
           if (c.code) {
             ok = true;
@@ -52,6 +55,15 @@ class ConceptUsageTracker {
 
   usages(system) {
     return this.map.get(system) || null;
+  }
+
+  seeVersion(versions, system, version) {
+    let set = versions[system];
+    if (set == null) {
+      set = new Set();
+      versions[system] = set;
+    }
+    set.add(version);
   }
 }
 

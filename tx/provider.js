@@ -399,6 +399,20 @@ class Provider {
     return null;
   }
 
+  async hasCsVersion(system, version) {
+    for (let cs of this.codeSystems.values()) {
+      if (cs.url == system && cs.version == version) {
+        return true;
+      }
+    }
+    for (let cp of this.codeSystemFactories.values()) {
+      if (cp.system() == system && cp.version() == version) {
+        return true;
+      }
+    }
+    return false;
+  }
+
 }
 
 module.exports = { Provider };
