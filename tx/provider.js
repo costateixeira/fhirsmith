@@ -218,9 +218,16 @@ class Provider {
         await csp.findImplicitConceptMap(url, version);
       }
     }
-
   }
 
+  listValueSetSourceCodes() {
+    let result = [];
+    for (let vsp of this.valueSetProviders) {
+      result.push(vsp.sourcePackage());
+    }
+    result.sort((a, b) => {a.localeCompare(b)});
+    return result;
+  }
 
   async listCodeSystemVersions(url) {
     let result = new Set();

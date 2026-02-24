@@ -205,19 +205,25 @@ class SearchWorker extends TerminologyWorker {
     // Convert params object to array format expected by ValueSet providers
     // Exclude control params (_offset, _count, _elements, _sort)
     const searchParams = [];
+    let source = null;
     for (const [key, value] of Object.entries(params)) {
       if (!key.startsWith('_') && value && SearchWorker.ALLOWED_PARAMS.includes(key)) {
         searchParams.push({ name: key, value: value });
       }
+      if (key == 'source') {
+        source = value;
+      }
     }
 
     for (const vsp of this.provider.valueSetProviders) {
-      this.deadCheck('searchValueSets-providers');
-      const results = await vsp.searchValueSets(searchParams, elements);
-      if (results && Array.isArray(results)) {
-        for (const vs of results) {
-          this.deadCheck('searchValueSets-results');
-          allMatches.push(vs.jsonObj || vs);
+      if (!source || source == vsp.sourcePackage()) {
+        this.deadCheck('searchValueSets-providers');
+        const results = await vsp.searchValueSets(searchParams, elements);
+        if (results && Array.isArray(results)) {
+          for (const vs of results) {
+            this.deadCheck('searchValueSets-results');
+            allMatches.push(vs.jsonObj || vs);
+          }
         }
       }
     }

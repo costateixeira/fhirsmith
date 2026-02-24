@@ -137,7 +137,7 @@ class TxHtmlRenderer {
 
 // eslint-disable-next-line no-unused-vars
   async buildSearchForm(req, mode, params) {
-    const html = await this.liquid.renderFile('search-form', { baseUrl: escape(req.baseUrl) });
+    const html = await this.liquid.renderFile('search-form', { baseUrl: escape(req.baseUrl), sourceOptions : this.buildSourceOptions(req.txProvider) });
     return html;
   }
 
@@ -1046,6 +1046,15 @@ class TxHtmlRenderer {
       inferSystemId,
       valueSetsJson: JSON.stringify(json.valueSets || [])
     });
+  }
+
+  buildSourceOptions(provider) {
+    let result = '';
+    result += `<option value="internal">internal</option>`;
+    for (let sp of provider.listValueSetSourceCodes()) {
+      result += `<option value="${sp}">${sp}</option>`;
+    }
+    return result;
   }
 }
 

@@ -51,6 +51,10 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
     });
   }
 
+  sourcePackage() {
+    return "vsac";
+  }
+
   /**
    * Initialize the provider - setup database and start refresh cycle
    * @returns {Promise<void>}
@@ -313,7 +317,7 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
    * @private
    */
   async _reloadMap() {
-    const newMap = await this.database.loadAllValueSets("vsac");
+    const newMap = await this.database.loadAllValueSets(this.sourcePackage());
 
     // Atomic replacement of the map
     this.valueSetMap = newMap;
