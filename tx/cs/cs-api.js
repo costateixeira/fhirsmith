@@ -813,6 +813,32 @@ class CodeSystemFactoryProvider {
   }
 
   /**
+   * If the data available to the provider includes the definition of some supplements,
+   * then the provider has to declare them to the server by overriding this method. The
+   * method returns a list of CodeSystem resources, with jsonObj provided. The jsonObj
+   * in this case must include the correct metadata, with content = supplement, but need
+   * not include any actual content (which might be anticipated to be large). If the
+   * server sees a CodeSystem supplement with no content that comes from a provider
+   * then the server will use fillOutSupplement to ask for the details to be populated
+   * if a client has done something that means the server needs it (mostly, it doesn't)
+   *
+   * @returns {CodeSystem[]}
+   */
+  async registerSupplements() {
+    return [];
+  }
+
+  /**
+   * see comemnts for registerSupplements()
+   *
+   * @param {CodeSystem} supplement - the supplement to flesh out
+   * @returns void
+   */
+  async fillOutSupplement(supplement) {
+    // nothing
+  }
+
+  /**
    * build and return a known concept map from the URL, if there is one.
    *
    * @param url
