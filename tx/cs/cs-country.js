@@ -22,7 +22,6 @@ class CountryCodeServices extends CodeSystemProvider {
     super(opContext, supplements);
     this.codes = codes || [];
     this.codeMap = codeMap || new Map();
-    this.supplements = [];
   }
 
   // Metadata methods
