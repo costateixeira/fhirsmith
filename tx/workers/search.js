@@ -177,6 +177,12 @@ class SearchWorker extends TerminologyWorker {
               isMatch = false;
               break;
             }
+          } else if (param === 'url') { // exact match
+            const propValue = json.url;
+            if (propValue != searchValue) {
+              isMatch = false;
+              break;
+            }
           } else {
             // Standard partial text match
             const propValue = json[jsonProp];

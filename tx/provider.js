@@ -136,8 +136,13 @@ class Provider {
     for (const resource of resources) {
       const cs = new CodeSystem(await contentLoader.loadFile(resource, contentLoader.fhirVersion()));
       cs.sourcePackage = contentLoader.pid();
-      this.codeSystems.set(cs.url, cs);
-      this.codeSystems.set(cs.vurl, cs);
+      const existing = this.codeSystems.get(cs.url);
+      if (!existing || cs.isMoreRecent(existing)) {
+        this.codeSystems.set(cs.url, cs);
+      }
+      if (cs.version) {
+        this.codeSystems.set(cs.vurl, cs);
+      }
     }
     const vs = new PackageValueSetProvider(contentLoader);
     await vs.initialize();

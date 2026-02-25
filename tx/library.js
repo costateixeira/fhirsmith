@@ -449,8 +449,13 @@ class Library {
     for (const resource of resources) {
       const cs = new CodeSystem(await contentLoader.loadFile(resource, contentLoader.fhirVersion()));
       cs.sourcePackage = contentLoader.pid();
-      cp.codeSystems.set(cs.url, cs);
-      cp.codeSystems.set(cs.vurl, cs);
+      const existing = cp.codeSystems.get(cs.url);
+      if (!existing || cs.isMoreRecent(existing)) {
+        cp.codeSystems.set(cs.url, cs);
+      }
+      if (cs.version) {
+        cp.codeSystems.set(cs.vurl, cs);
+      }
       csc++;
     }
     this.codeSystemProviders.push(cp);

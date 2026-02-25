@@ -1018,6 +1018,154 @@ describe('CodeSystem', () => {
       expect(lookupTime).toBeLessThan(10); // Should be very fast with Map lookup
     });
   });
+
+  describe('CodeSystem version comparison', () => {
+
+
+    test('Test Version Comparison', () => {
+      expect(compareVersions('semver', '1.2.0', 'semver', '1.1.0')).toBe(true);
+    });
+// --- semver (explicit) ---
+    test('semver: major version newer', () => {
+      expect(compareVersions('semver', '2.0.0', 'semver', '1.9.9')).toBe(true);
+    });
+    test('semver: minor version newer', () => {
+      expect(compareVersions('semver', '1.2.0', 'semver', '1.1.0')).toBe(true);
+    });
+    test('semver: patch version newer', () => {
+      expect(compareVersions('semver', '1.1.1', 'semver', '1.1.0')).toBe(true);
+    });
+    test('semver: older major', () => {
+      expect(compareVersions('semver', '1.9.9', 'semver', '2.0.0')).toBe(false);
+    });
+    test('semver: equal versions', () => {
+      expect(compareVersions('semver', '1.2.0', 'semver', '1.2.0')).toBe(false);
+    });
+    test('semver: pre-release vs release', () => {
+      expect(compareVersions('semver', '1.0.0', 'semver', '1.0.0-alpha')).toBe(true);
+    });
+    test('semver: only one side declares algorithm', () => {
+      expect(compareVersions('semver', '2.0.0', null, '1.0.0')).toBe(true);
+    });
+    test('semver: other side declares algorithm', () => {
+      expect(compareVersions(null, '2.0.0', 'semver', '1.0.0')).toBe(true);
+    });
+
+// --- semver (guessed, no explicit algorithm) ---
+    test('semver guessed: newer minor', () => {
+      expect(compareVersions(null, '1.2.0', null, '1.1.0')).toBe(true);
+    });
+    test('semver guessed: older minor', () => {
+      expect(compareVersions(null, '1.1.0', null, '1.2.0')).toBe(false);
+    });
+    test('semver guessed: equal', () => {
+      expect(compareVersions(null, '1.0.0', null, '1.0.0')).toBe(false);
+    });
+
+// --- integer (explicit) ---
+    test('integer: larger is newer', () => {
+      expect(compareVersions('integer', '10', 'integer', '9')).toBe(true);
+    });
+    test('integer: smaller is not newer', () => {
+      expect(compareVersions('integer', '9', 'integer', '10')).toBe(false);
+    });
+    test('integer: equal', () => {
+      expect(compareVersions('integer', '5', 'integer', '5')).toBe(false);
+    });
+    test('integer: multi-digit vs single-digit', () => {
+      expect(compareVersions('integer', '100', 'integer', '99')).toBe(true);
+    });
+
+// --- date (explicit) ---
+    test('date: YYYY-MM-DD newer', () => {
+      expect(compareVersions('date', '2024-03-15', 'date', '2024-03-14')).toBe(true);
+    });
+    test('date: YYYY-MM-DD older', () => {
+      expect(compareVersions('date', '2024-03-14', 'date', '2024-03-15')).toBe(false);
+    });
+    test('date: YYYYMMDD newer', () => {
+      expect(compareVersions('date', '20240315', 'date', '20240314')).toBe(true);
+    });
+    test('date: YYYYMMDD older', () => {
+      expect(compareVersions('date', '20240314', 'date', '20240315')).toBe(false);
+    });
+    test('date: YYYY-MM newer', () => {
+      expect(compareVersions('date', '2024-03', 'date', '2024-02')).toBe(true);
+    });
+    test('date: YYYYMM newer', () => {
+      expect(compareVersions('date', '202403', 'date', '202402')).toBe(true);
+    });
+    test('date: different years', () => {
+      expect(compareVersions('date', '2025-01-01', 'date', '2024-12-31')).toBe(true);
+    });
+    test('date: equal dates', () => {
+      expect(compareVersions('date', '2024-03-15', 'date', '2024-03-15')).toBe(false);
+    });
+    test('date: with time component ignored', () => {
+      expect(compareVersions('date', '2024-03-15T12:00:00', 'date', '2024-03-14T23:59:59')).toBe(true);
+    });
+    test('date: mixed format YYYY-MM-DD vs YYYYMMDD', () => {
+      expect(compareVersions('date', '2024-03-15', 'date', '20240314')).toBe(true);
+    });
+    test('date: mixed format YYYY-MM vs YYYYMM', () => {
+      expect(compareVersions('date', '2024-03', 'date', '202402')).toBe(true);
+    });
+
+// --- date (guessed, no explicit algorithm) ---
+    test('date guessed: YYYY-MM-DD newer', () => {
+      expect(compareVersions(null, '2024-03-15', null, '2024-03-01')).toBe(true);
+    });
+    test('date guessed: YYYYMMDD newer', () => {
+      expect(compareVersions(null, '20240315', null, '20240301')).toBe(true);
+    });
+    test('date guessed: YYYYMM newer', () => {
+      expect(compareVersions(null, '202403', null, '202402')).toBe(true);
+    });
+    test('date guessed: YYYY-MM older', () => {
+      expect(compareVersions(null, '2024-01', null, '2024-03')).toBe(false);
+    });
+
+// --- alpha (explicit) ---
+    test('alpha: b > a', () => {
+      expect(compareVersions('alpha', 'b', 'alpha', 'a')).toBe(true);
+    });
+    test('alpha: a not > b', () => {
+      expect(compareVersions('alpha', 'a', 'alpha', 'b')).toBe(false);
+    });
+    test('alpha: equal strings', () => {
+      expect(compareVersions('alpha', 'release', 'alpha', 'release')).toBe(false);
+    });
+    test('alpha: case insensitive (R2 vs r1)', () => {
+      expect(compareVersions('alpha', 'R2', 'alpha', 'r1')).toBe(true);
+    });
+
+// --- alpha (guessed - non-semver, non-date strings) ---
+    test('alpha guessed: b > a', () => {
+      expect(compareVersions(null, 'beta', null, 'alpha')).toBe(true);
+    });
+    test('alpha guessed: release > preview', () => {
+      expect(compareVersions(null, 'release', null, 'preview')).toBe(true);
+    });
+
+// --- mismatched algorithms (one side wins) ---
+    test('mixed algorithms: semver wins over null', () => {
+      expect(compareVersions('semver', '2.0.0', null, '1.0.0')).toBe(true);
+    });
+    test('mixed algorithms: date wins over null', () => {
+      expect(compareVersions('date', '2024-03-15', null, '2024-03-01')).toBe(true);
+    });
+
+// --- no version present ---
+    test('no versions: both null', () => {
+      expect(compareVersions(null, null, null, null)).toBe(false);
+    });
+    test('no versions: one null', () => {
+      expect(compareVersions('semver', null, 'semver', '1.0.0')).toBe(false);
+    });
+    test('no versions: other null', () => {
+      expect(compareVersions('semver', '1.0.0', 'semver', null)).toBe(false);
+    });
+  });
 });
 
 /**
@@ -1441,3 +1589,24 @@ describe('Enhanced CodeSystem Validation', () => {
     });
   });
 });
+
+function compareVersions(va1, ver1, va2, ver2) {
+  let jcs1 = {resourceType: "CodeSystem", url: "http://example.org"};
+  if (va1) {
+    jcs1.versionAlgorithmCoding = { system : "http://hl7.org/fhir/version-algorithm", code : va1}
+  }
+  if (ver1) {
+    jcs1.version = ver1;
+  }
+  let cs1 = new CodeSystem(jcs1);
+  let jcs2 = {resourceType: "CodeSystem", url: "http://example.org"};
+  if (va2) {
+    jcs2.versionAlgorithmCoding = { system : "http://hl7.org/fhir/version-algorithm", code : va2}
+  }
+  if (ver2) {
+    jcs2.version = ver2;
+  }
+  let cs2 = new CodeSystem(jcs2);
+
+  return cs1.isMoreRecent(cs2);
+}
