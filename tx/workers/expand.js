@@ -12,7 +12,7 @@ const { TerminologyWorker } = require('./worker');
 const {TxParameters} = require("../params");
 const {Designations, SearchFilterText} = require("../library/designations");
 const {Extensions} = require("../library/extensions");
-const {getValuePrimitive, getValueName} = require("../../library/utilities");
+const {getValuePrimitive, getValueName, validateParameter} = require("../../library/utilities");
 const {div} = require("../../library/html");
 const {Issue, OperationOutcome} = require("../library/operation-outcome");
 const crypto = require('crypto');
@@ -624,13 +624,15 @@ class ValueSetExpander {
         if (vsInfo && vsInfo.isSimple) {
           vsInfo.handleByCS = cs.handlesSelecting();
         }
-        if (cs.contentMode() !== 'complete') {
+        if (!cs.contentMode()) {
+          throw new Issue('error', 'business-rule', null, null, 'The code system definition for ' + cset.system + ' has no content property, so this expansion cannot be performed', 'invalid');
+        } else if (cs.contentMode() !== 'complete') {
           if (cs.contentMode() === 'not-present') {
             throw new Issue('error', 'business-rule', null, null, 'The code system definition for ' + cset.system + ' has no content, so this expansion cannot be performed', 'invalid');
           } else if (cs.contentMode() === 'supplement') {
             throw new Issue('error', 'business-rule', null, null, 'The code system definition for ' + cset.system + ' defines a supplement, so this expansion cannot be performed', 'invalid');
           } else {
-            this.addParamUri(cs.contentMode(), cs.system + '|' + cs.version);
+            this.addParamUri(exp, cs.contentMode(), cs.system + '|' + cs.version);
             Extensions.addString(exp, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed",
               "This extension is based on a fragment of the code system " + cset.system);
           }
@@ -1437,6 +1439,9 @@ class ValueSetExpander {
   }
 
   addParamUri(exp, name, value) {
+    validateParameter(name, 'name', String);
+    validateParameter(value, 'value', String);
+
     if (!this.hasParam(exp, name, value)) {
       if (!exp.parameter) {
         exp.parameter = [];
