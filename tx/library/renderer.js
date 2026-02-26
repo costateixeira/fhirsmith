@@ -33,9 +33,6 @@ class Renderer {
       } else if (arg.system !== undefined && arg.version !== undefined) {
         // It's a CodeSystemProvider
         return this.displayCodedProvider(arg);
-      } else if (arg instanceof CodeSystemProvider) {
-        let cs = arg;
-        return cs.system() + "|" + cs.version();
       }
     } else if (args.length === 2) {
       return this.displayCodedSystemVersion(args[0], args[1]);
