@@ -632,7 +632,7 @@ class ValueSetExpander {
           } else if (cs.contentMode() === 'supplement') {
             throw new Issue('error', 'business-rule', null, null, 'The code system definition for ' + cset.system + ' defines a supplement, so this expansion cannot be performed', 'invalid');
           } else {
-            this.addParamUri(exp, cs.contentMode(), cs.system + '|' + cs.version);
+            this.addParamUri(exp, cs.contentMode(), cs.system() + '|' + cs.version());
             Extensions.addString(exp, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed",
               "This extension is based on a fragment of the code system " + cset.system);
           }

@@ -1,4 +1,5 @@
 const {VersionUtilities} = require("../../library/version-utilities");
+const {Extensions} = require("../library/extensions");
 
 /**
  * Converts input TerminologyCapabilities to R5 format (modifies input object for performance)
@@ -14,7 +15,17 @@ function terminologyCapabilitiesToR5(jsonObj, sourceVersion) {
   }
 
   if (VersionUtilities.isR4Ver(sourceVersion)) {
-    // R4 to R5: No major structural changes needed for TerminologyCapabilities
+    for (const cs of jsonObj.codeSystem || []) {
+      if (cs.content) {
+        let cnt = Extensions.readString("http://hl7.org/fhir/5.0/StructureDefinition/extension-TerminologyCapabilities.codeSystem.content");
+        if (cnt) {
+          delete cs.extensions;
+          cs.content = cnt;
+        }
+      }
+    }
+
+
     return jsonObj;
   }
 
@@ -124,6 +135,15 @@ function terminologyCapabilitiesR5ToR4(r5Obj) {
   }
   if (r5Obj.versionAlgorithmCoding) {
     delete r5Obj.versionAlgorithmCoding;
+  }
+  for (const cs of r5Obj.codeSystem || []) {
+    if (cs.content) {
+      if (!cs.extension) {
+        cs.extension = [];
+      }
+      cs.extension.push({"url" : "http://hl7.org/fhir/5.0/StructureDefinition/extension-TerminologyCapabilities.codeSystem.content", valueCode : cs.content});
+      delete cs.content;
+    }
   }
 
   return r5Obj;

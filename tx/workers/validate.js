@@ -44,6 +44,7 @@ class ValueSetChecker {
   valueSet;
   params;
   others = new Map();
+  indentCount = 0;
 
   constructor(worker, valueSet, params) {
     validateParameter(worker, "worker", TerminologyWorker);
@@ -302,8 +303,8 @@ class ValueSetChecker {
       this.seeValueSet();
       this.worker.opContext.addNote(this.valueSet, 'Analysing ' + this.valueSet.vurl + ' for validation purposes', this.indentCount);
       if (this.indentCount === 0) {
-        this.worker.opContext.addNote(this.valueSet, 'Parameters: ' + this.params.summary, this.indentCount);
-        let vrs = this.params.verSummary;
+        this.worker.opContext.addNote(this.valueSet, 'Parameters: ' + this.params.summary(), this.indentCount);
+        let vrs = this.params.verSummary();
         if (vrs) {
           this.worker.opContext.addNote(this.valueSet, 'Version Rules: ' + vrs, this.indentCount);
         }
@@ -1731,7 +1732,7 @@ class ValueSetChecker {
     let list = [];
     for (let filter of cset.filter) {
       let s = cset.filter.length > 1 ? "(" : "";
-      s = filter.prop+" "+filter.op+" "+filter.value;
+      s = filter.property+" "+filter.op+" "+filter.value;
       s = s + (cset.filter.length > 1 ? ")" : "");
       list.push(s)
     }

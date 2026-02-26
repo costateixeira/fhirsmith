@@ -785,6 +785,10 @@ class CodeSystemFactoryProvider {
    */
   version() { throw new Error("Must override"); }
 
+  content() {
+    return "complete";
+  }
+
   getPartialVersion() {
     let ver = this.version();
     if (ver && VersionUtilities.isSemVer(ver)) {
