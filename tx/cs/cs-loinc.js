@@ -670,7 +670,7 @@ class LoincServices extends BaseCSServices {
       sql = `SELECT DISTINCT TargetKey as Key FROM Relationships
              WHERE RelationshipTypeKey = ${this.relationships.get('Answer')}
                AND SourceKey IN (SELECT CodeKey FROM Codes WHERE Code = '${this.#sqlWrapString(value)}')
-             ORDER BY SourceKey ASC`;
+             ORDER BY TargetKey ASC`;
       lsql = `SELECT COUNT(DISTINCT TargetKey) FROM Relationships
               WHERE RelationshipTypeKey = ${this.relationships.get('Answer')}
                 AND SourceKey IN (SELECT CodeKey FROM Codes WHERE Code = '${this.#sqlWrapString(value)}')
