@@ -30,7 +30,7 @@ class CodeSystemProvider {
    */
   supplements;
 
-  constructor(opContext, supplements) {
+  constructor(opContext, supplements = null) {
     this.opContext = opContext;
     this.supplements = supplements;
     this._ensureOpContext(opContext);
@@ -489,6 +489,39 @@ class CodeSystemProvider {
   // procedure getCDSInfo(card : TCDSHookCard; langList : THTTPLanguageList; baseURL, code, display : String); virtual;
 
   /**
+   * There are two models for handling concepts and filters. The first is where the logic is entirely
+   * handled by worker classes; this is needed for value sets that select codes across systems, and
+   * with references to other value sets. This workflow consists of calling GetPrepContext, followed
+   * by some combination of filter+searchFilter, and then executeFilters
+   *
+   * followed by filterMore/filterConcept. All code system providers have to support this workflow
+   *
+   * But an important subset of value sets simply select codes from one codeSystem, from large
+   * code systems. Such processing can be done much more efficiently by the code system provider.
+   * providers that do this should return handlesSelecting() = true, and then for suitable valuesets,
+   * the method processSelection() will be called
+   */
+  handlesSelecting() {
+    return false;
+  }
+
+  /**
+   * Process a set of includes and excludes for the code system
+   *
+   * @param {TxParameters} params: information from the request that the user made, to help optimise loading
+   * @param {Object[]} includes - a list of includes from the code system. Each include may contain just the system(+version), concepts and/or filters (but won't contain value sets)
+   * @param {Object[]} excludes - a list of excludes from the code system. Each include may contain just the system(+version), concepts and/or filters (but won't contain value sets)
+   * @param {boolean} excludeInactive: whether the server will use inactive codes or not
+   * @param {int} offset if handlesOffset() and !iterate, and if the value set is a simple one that only uses this provider, then this is the applicable offset. -1 if not applicable
+   * @param {int} count if handlesOffset() and !iterate, and if the value set is a simple one that only uses this provider, then this is the applicable count. -1 if not applicable
+   * @returns {FilterConceptSet[]} filter sets. In general, it wouldn't make sense to return more than one, but providers can do if they want to. See futher comments on executeFilters
+   */
+  processSelection(params, includes, excludes, excludeInactive, offset, count) {
+    // well, you only need to override if handlesSelecting=true, but that's the only time this will be called
+    throw new Error("Must override");
+  }
+
+  /**
    * returns true if a filter is supported
    *
    * @param {String} prop
@@ -499,13 +532,15 @@ class CodeSystemProvider {
   async doesFilter(prop, op, value) { return false; }
 
   /**
-   * gets a single context in which filters will be evaluated. The application doesn't make use of this context;
-   * it's only use is to be passed back to the CodeSystem provider so it can make use of it - if it wants
+   * gets a single context in which filters will be evaluated. The server doesn't doesn't make use of this context;
+   * it's only use is to be passed back to the CodeSystem provider so it can make use of it to organise the filter process
    *
    * @param {boolean} iterate true if the conceptSets that result from this will be iterated, and false if they'll be used to locate a single code
-   * @returns {FilterExecutionContext} filter (or null, it no use for this)
-   * */
+   * @returns {FilterExecutionContext} filter
+   *
+   **/
   async getPrepContext(iterate) { return new FilterExecutionContext(iterate); }
+
 
   /**
    * executes a text search filter (whatever that means) and returns a FilterConceptSet
@@ -516,7 +551,7 @@ class CodeSystemProvider {
    * @param {String} filter user entered text search
    * @param {boolean} sort ?
    **/
-  async searchFilter(filterContext, filter, sort) { throw new Error("Must override"); } // ? must override?
+  async searchFilter(filterContext, filter, sort) { throw new Error("Text Search is not supported"); } // ? must override?
 
   /**
    * Used for searching ucum (see specialEnumeration)
@@ -532,7 +567,7 @@ class CodeSystemProvider {
   } // ? must override?
 
   /**
-   * Get a FilterConceptSet for a value set filter
+   * inform the CS provider about a filter
    *
    * throws an exception if the search filter can't be handled
    *
@@ -548,6 +583,9 @@ class CodeSystemProvider {
    * this function returns one more filters. If there were multiple filters, but only
    * one FilterConceptSet, then the code system provider has done the join across the
    * filters, otherwise the engine will do so as required
+   *
+   * The first in the set of returned FilterConceptSet is used for iterating; other
+   * FilterConceptSets are used for filterCheck();
    *
    * @param {FilterExecutionContext} filterContext filtering context
    * @returns {FilterConceptSet[]} filter sets
@@ -679,7 +717,22 @@ class CodeSystemProvider {
     return null;
   }
 
-
+  /**
+   * a record of observed usages of codes from this code system
+   * - a map of code and object which has count, an integer count
+   * of frequency of use (this server iteration, for now)
+   *
+   * Only populated when expanding, and read-only to the CS Provider
+   *
+   * @type {Map<String, Object>}
+   */
+  usages() {
+    if (this.usagesObj == undefined) {
+      this.usagesObj = this.opContext.usageTracker ? this.opContext.usageTracker.usages(this.system()) : null;
+    }
+    return this.usagesObj;
+  }
+  usagesObj = undefined;
 }
 
 class CodeSystemFactoryProvider {
@@ -757,6 +810,32 @@ class CodeSystemFactoryProvider {
    */
   async buildKnownValueSet(url, version) {
     return null;
+  }
+
+  /**
+   * If the data available to the provider includes the definition of some supplements,
+   * then the provider has to declare them to the server by overriding this method. The
+   * method returns a list of CodeSystem resources, with jsonObj provided. The jsonObj
+   * in this case must include the correct metadata, with content = supplement, but need
+   * not include any actual content (which might be anticipated to be large). If the
+   * server sees a CodeSystem supplement with no content that comes from a provider
+   * then the server will use fillOutSupplement to ask for the details to be populated
+   * if a client has done something that means the server needs it (mostly, it doesn't)
+   *
+   * @returns {CodeSystem[]}
+   */
+  async registerSupplements() {
+    return [];
+  }
+
+  /**
+   * see comemnts for registerSupplements()
+   *
+   * @param {CodeSystem} supplement - the supplement to flesh out
+   * @returns void
+   */
+  async fillOutSupplement(supplement) {
+    // nothing
   }
 
   /**

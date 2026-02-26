@@ -379,7 +379,7 @@ class ValueSetChecker {
         if (!(ccf.property === 'concept' && ['is-a', 'descendent-of'].includes(ccf.op))) {
           if (!(await cs.doesFilter(ccf.property, ccf.op, ccf.value))) {
             throw new Issue('error', 'not-supported', "ValueSet.compose."+desc+".filter["+i+"]", 'FILTER_NOT_UNDERSTOOD', this.worker.i18n.translate('FILTER_NOT_UNDERSTOOD', 
-              this.params.HTTPLanguages, [ccf.property, ccf.op, ccf.value, this.valueSet.url, cs.system]), "vs-invalid").handleAsOO(400);
+              this.params.HTTPLanguages, [ccf.property, ccf.op, ccf.value, this.valueSet.url, cs.system()]), "vs-invalid").handleAsOO(400);
           }
         }
         i++;
@@ -1033,6 +1033,9 @@ class ValueSetChecker {
     let i = 0;
     let impliedSystem = { value: '' };
     for (let c of code.coding || []) {
+      if (this.worker.opContext.usageTracker) {
+        this.worker.opContext.usageTracker.seeConcept(c.system, c.code);
+      }
       const csd = await this.worker.findCodeSystem(c.system, null, this.params, ['complete', 'fragment'], false, true, false, false, this.worker.requiredSupplements);
       this.worker.seeSourceProvider(csd, c.system);
       this.worker.deadCheck('check-b#1');

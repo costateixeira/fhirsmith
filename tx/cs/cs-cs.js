@@ -109,7 +109,6 @@ class FhirCodeSystemProvider extends BaseCSServices {
    */
   constructor(opContext, codeSystem, supplements) {
     super(opContext, supplements);
-
     if (codeSystem.content == 'supplements') {
       throw new Issue('error', 'invalid', null, 'CODESYSTEM_CS_NO_SUPPLEMENT', opContext.i18n.translate('CODESYSTEM_CS_NO_SUPPLEMENT', opContext.langs, codeSystem.vurl));
     }
@@ -1134,7 +1133,7 @@ class FhirCodeSystemProvider extends BaseCSServices {
     
 
     const results = new FhirCodeSystemProviderFilterContext();
-    const searchTerm = filter.toLowerCase();
+    const searchTerm = filter.filter.toLowerCase();
 
     // Search through all concepts
     const allConcepts = this.codeSystem.getAllConcepts();

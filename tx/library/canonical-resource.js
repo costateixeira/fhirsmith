@@ -1,3 +1,4 @@
+const {VersionUtilities, VersionPrecision} = require("../../library/version-utilities");
 
 /**
  * Base class for metadata resources to provide common interface
@@ -82,6 +83,68 @@ class CanonicalResource {
       return c.code;
     }
     return this.jsonObj.versionAlgorithmString;
+  }
+
+  guessVersionAlgorithmFromVersion(version) {
+    if (VersionUtilities.isSemVerWithWildcards(version)) {
+      return 'semver';
+    }
+    if (this.appearsToBeDate(version)) {
+      return 'date';
+    }
+    if (this.isAnInteger(version)) {
+      return 'integer';
+    }
+    return 'alpha';
+  }
+
+  /**
+   * returns true if this is more recent than other.
+   *
+   * Uses version if possible, otherwise uses date
+   *
+   * @param other
+   * @returns {boolean}
+   */
+  isMoreRecent(other) {
+    if (this.version && other.version && this.version != other.version) {
+      const fmt = this.versionAlgorithm() || other.versionAlgorithm() || this.guessVersionAlgorithmFromVersion(this.version);
+      switch (fmt) {
+        case 'semver':
+          return VersionUtilities.isThisOrLater(other.version, this.version, VersionPrecision.PATCH);
+        case 'date':
+          return this.dateIsMoreRecent(this.version, other.version);
+        case 'integer':
+          return parseInt(this.version, 10) > parseInt(other.version, 10);
+        case 'alpha': return this.version.localeCompare(other.version) > 0;
+        default: return this.version.localeCompare(other.version);
+      }
+    }
+    if (this.date && other.date && this.date != other.date) {
+      return this.dateIsMoreRecent(this.date, other.date);
+    }
+    return false;
+  }
+
+  appearsToBeDate(version) {
+    if (!version || typeof version !== 'string') return false;
+    // Strip optional time portion (T...) before checking
+    const datePart = version.split('T')[0];
+    return /^\d{4}-?\d{2}(-?\d{2})?$/.test(datePart);
+
+  }
+
+  dateIsMoreRecent(date, date2) {
+    return this.normaliseDateString(date) > this.normaliseDateString(date2);
+  }
+
+  normaliseDateString(date) {
+    // Strip time portion, then remove dashes so all formats compare uniformly as YYYYMMDD or YYYYMM
+    return date.split('T')[0].replace(/-/g, '');
+  }
+
+  isAnInteger(version) {
+    return /^\d+$/.test(version);
   }
 }
 

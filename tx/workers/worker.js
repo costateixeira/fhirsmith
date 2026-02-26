@@ -252,6 +252,8 @@ class TerminologyWorker {
   loadSupplements(url, version = '', statedSupplements) {
     const supplements = [];
 
+    // todo: look in provider for supplements
+
     if (!this.additionalResources) {
       return supplements;
     }
@@ -269,6 +271,9 @@ class TerminologyWorker {
 
         // we consider either language packs or specified supplements
         if (!(cs.isLangPack() || (statedSupplements && (statedSupplements.has(cs.url) || statedSupplements.has(cs.vurl))))) {
+          continue;
+        }
+        if (this.hasSupplement(cs, supplements)) {
           continue;
         }
         // Handle exact URL match (no version specified in supplements)
@@ -899,6 +904,15 @@ class TerminologyWorker {
     if (isDebugging()) {
       console.log(error);
     }
+  }
+
+  hasSupplement(cs, supplements) {
+    for (let t of supplements) {
+      if (t.vurl == cs.vurl) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 

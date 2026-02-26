@@ -5,7 +5,7 @@ const {CodeSystem} = require('../../tx/library/codesystem');
 const {FhirCodeSystemFactory, FhirCodeSystemProvider, FhirCodeSystemProviderContext} = require('../../tx/cs/cs-cs');
 const {Languages, Language} = require('../../library/languages');
 const {OperationContext} = require("../../tx/operation-context");
-const {Designations} = require("../../tx/library/designations");
+const {Designations, SearchFilterText} = require("../../tx/library/designations");
 const {TestUtilities} = require("../test-utilities");
 
 describe('FHIR CodeSystem Provider', () => {
@@ -1416,7 +1416,7 @@ describe('FHIR CodeSystem Provider', () => {
 
       describe('Search Filter', () => {
         test('should find concepts by exact code match', async () => {
-          const results = await simpleProvider.searchFilter(filterContext, 'code1', true);
+          const results = await simpleProvider.searchFilter(filterContext, new SearchFilterText('code1'), true);
           expect(results.size()).toBeGreaterThan(0);
 
           const concept = results.findConceptByCode('code1');
@@ -1425,7 +1425,7 @@ describe('FHIR CodeSystem Provider', () => {
         });
 
         test('should find concepts by display text match', async () => {
-          const results = await simpleProvider.searchFilter(filterContext, 'Display 1', true);
+          const results = await simpleProvider.searchFilter(filterContext, new SearchFilterText('Display 1'), true);
           expect(results.size()).toBeGreaterThan(0);
 
           const concept = results.findConceptByCode('code1');
@@ -1433,22 +1433,22 @@ describe('FHIR CodeSystem Provider', () => {
         });
 
         test('should find concepts by partial match', async () => {
-          const results = await simpleProvider.searchFilter(filterContext, 'Display', true);
+          const results = await simpleProvider.searchFilter(filterContext, new SearchFilterText('Display'), true);
           expect(results.size()).toBeGreaterThan(1); // Should find multiple concepts
         });
 
         test('should find concepts by definition match', async () => {
-          const results = await simpleProvider.searchFilter(filterContext, 'first', true);
+          const results = await simpleProvider.searchFilter(filterContext, new SearchFilterText('first'), true);
           expect(results.size()).toBeGreaterThan(0);
         });
 
         test('should return empty results for non-matching search', async () => {
-          const results = await simpleProvider.searchFilter(filterContext, 'nonexistent', true);
+          const results = await simpleProvider.searchFilter(filterContext, new SearchFilterText('nonexistent'), true);
           expect(results.size()).toBe(0);
         });
 
         test('should sort results by relevance when requested', async () => {
-          const results = await simpleProvider.searchFilter(filterContext, 'code', true);
+          const results = await simpleProvider.searchFilter(filterContext, new SearchFilterText('code'), true);
           expect(results.size()).toBeGreaterThan(1);
 
           // Results should be sorted by rating (exact matches first)
@@ -1683,7 +1683,7 @@ describe('FHIR CodeSystem Provider', () => {
 
       describe('Complex Filter Scenarios', () => {
         test('should work with German CodeSystem', async () => {
-          const results = await deProvider.searchFilter(filterContext, 'Anzeige', true);
+          const results = await deProvider.searchFilter(filterContext, new SearchFilterText('Anzeige'), true);
           expect(results.size()).toBeGreaterThan(0);
         });
 

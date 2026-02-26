@@ -23,6 +23,11 @@ class PackageValueSetProvider extends AbstractValueSetProvider {
     this.valueSetMap = new Map();
     this.initialized = false;
     this.count = 0;
+    this.sourcePackageCode = packageLoader.id();
+  }
+
+  sourcePackage() {
+    return this.sourcePackageCode;
   }
 
   /**
@@ -42,7 +47,7 @@ class PackageValueSetProvider extends AbstractValueSetProvider {
       await this._populateDatabase();
     }
 
-    this.valueSetMap = await this.database.loadAllValueSets(this.packageLoader.pid());
+    this.valueSetMap = await this.database.loadAllValueSets(this.sourcePackage());
     this.initialized = true;
   }
 

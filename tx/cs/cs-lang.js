@@ -259,16 +259,6 @@ class IETFLanguageCodeProvider extends CodeSystemProvider {
     return false;
   }
 
-  async searchFilter(filterContext, filter, sort) {
-
-    assert(filterContext && filterContext instanceof FilterExecutionContext, 'filterContext must be a FilterExecutionContext');
-    assert(filter && typeof filter === 'string', 'filter must be a non-null string');
-    assert(typeof sort === 'boolean', 'sort must be a boolean');
-
-    throw new Error('Text search not supported');
-  }
-
-
   async filter(filterContext, prop, op, value) {
 
     assert(filterContext && filterContext instanceof FilterExecutionContext, 'filterContext must be a FilterExecutionContext');

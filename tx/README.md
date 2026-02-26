@@ -26,6 +26,8 @@ Add the `tx` section to your `config.json`:
       "enabled": true,
       "librarySource": "/path/to/library.yml",
       "cacheTimeout": 30,
+      "internalLimit" : 10000,
+      "externalLimit" : 1000,
       "expansionCacheSize": 1000,
       "expansionCacheMemoryThreshold": 0,
       "endpoints": [
@@ -57,14 +59,16 @@ Add the `tx` section to your `config.json`:
 
 ### Configuration Options
 
-| Option | Type | Required | Description |
-|--------|------|----------|-------------|
-| `enabled` | boolean | Yes | Whether the module is enabled |
-| `cacheTimeout` | integer | No | How many minutes to keep client side caches (for cache-id parameter). Default: 30 |
-| `expansionCacheSize` | integer | No | Maximum number of expanded ValueSets to cache. Default: 1000 |
-| `expansionCacheMemoryThreshold` | integer | No | Heap memory usage in MB that triggers evicting oldest half of expansion cache. 0 = disabled. Default: 0 |
-| `librarySource` | string | Yes | Path to the YAML file that defines the terminology sources to load |
-| `endpoints` | array | Yes | List of endpoint configurations (at least one required) |
+| Option                          | Type    | Required | Description                                                                                             |
+|---------------------------------|---------|----------|---------------------------------------------------------------------------------------------------------|
+| `enabled`                       | boolean | Yes      | Whether the module is enabled                                                                           |
+| `cacheTimeout`                  | integer | No       | How many minutes to keep client side caches (for cache-id parameter). Default: 30                       |
+| `expansionCacheSize`            | integer | No       | Maximum number of expanded ValueSets to cache. Default: 1000                                            |
+| `expansionCacheMemoryThreshold` | integer | No       | Heap memory usage in MB that triggers evicting oldest half of expansion cache. 0 = disabled. Default: 0 |
+| `librarySource`                 | string  | Yes      | Path to the YAML file that defines the terminology sources to load                                      |
+| `internalLimit`                 | integer | No       | Largest number of codes in internal expansions                                                          |
+| `externalLimit`                 | integer | No       | Largest number of codes the server will return in an expansion                                          |
+| `endpoints`                     | array   | Yes      | List of endpoint configurations (at least one required)                                                 |
 
 ### Endpoint Configuration
 

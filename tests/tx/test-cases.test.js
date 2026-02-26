@@ -3881,6 +3881,67 @@ describe('exclude', () => {
     await runTest({"suite":"exclude","test":"exclude-zero"}, "4.0");
   });
 
+  it('exclude-allR5', async () => {
+    await runTest({"suite":"exclude","test":"exclude-all"}, "5.0");
+  });
+
+  it('exclude-allR4', async () => {
+    await runTest({"suite":"exclude","test":"exclude-all"}, "4.0");
+  });
+
+});
+
+describe('search', () => {
+  // Tests for proper functioning of text search. Note what we're not interested in the implementation of the text search itself, so we only test very obvious results. We're just interested in testing support for the parameter
+
+  it('search-all-yesR5', async () => {
+    await runTest({"suite":"search","test":"search-all-yes"}, "5.0");
+  });
+
+  it('search-all-yesR4', async () => {
+    await runTest({"suite":"search","test":"search-all-yes"}, "4.0");
+  });
+
+  it('search-all-noR5', async () => {
+    await runTest({"suite":"search","test":"search-all-no"}, "5.0");
+  });
+
+  it('search-all-noR4', async () => {
+    await runTest({"suite":"search","test":"search-all-no"}, "4.0");
+  });
+
+  it('search-filter-yesR5', async () => {
+    await runTest({"suite":"search","test":"search-filter-yes"}, "5.0");
+  });
+
+  it('search-filter-yesR4', async () => {
+    await runTest({"suite":"search","test":"search-filter-yes"}, "4.0");
+  });
+
+  it('search-filter-noR5', async () => {
+    await runTest({"suite":"search","test":"search-filter-no"}, "5.0");
+  });
+
+  it('search-filter-noR4', async () => {
+    await runTest({"suite":"search","test":"search-filter-no"}, "4.0");
+  });
+
+  it('search-enum-yesR5', async () => {
+    await runTest({"suite":"search","test":"search-enum-yes"}, "5.0");
+  });
+
+  it('search-enum-yesR4', async () => {
+    await runTest({"suite":"search","test":"search-enum-yes"}, "4.0");
+  });
+
+  it('search-enum-noR5', async () => {
+    await runTest({"suite":"search","test":"search-enum-no"}, "5.0");
+  });
+
+  it('search-enum-noR4', async () => {
+    await runTest({"suite":"search","test":"search-enum-no"}, "4.0");
+  });
+
 });
 
 describe('default-valueset-version', () => {
@@ -4440,6 +4501,102 @@ describe('snomed', () => {
     await runTest({"suite":"snomed","test":"snomed-expand-procedures"}, "4.0");
   });
 
+  it('lookupR5', async () => {
+    await runTest({"suite":"snomed","test":"lookup"}, "5.0");
+  });
+
+  it('lookupR4', async () => {
+    await runTest({"suite":"snomed","test":"lookup"}, "4.0");
+  });
+
+  it('lookup-pcR5', async () => {
+    await runTest({"suite":"snomed","test":"lookup-pc"}, "5.0");
+  });
+
+  it('lookup-pcR4', async () => {
+    await runTest({"suite":"snomed","test":"lookup-pc"}, "4.0");
+  });
+
+  it('validate-code-pc-goodR5', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-pc-good"}, "5.0");
+  });
+
+  it('validate-code-pc-goodR4', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-pc-good"}, "4.0");
+  });
+
+  it('validate-code-pc-bad1R5', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-pc-bad1"}, "5.0");
+  });
+
+  it('validate-code-pc-bad1R4', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-pc-bad1"}, "4.0");
+  });
+
+  it('validate-code-pc-bad2R5', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-pc-bad2"}, "5.0");
+  });
+
+  it('validate-code-pc-bad2R4', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-pc-bad2"}, "4.0");
+  });
+
+  it('validate-code-pc-noneR5', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-pc-none"}, "5.0");
+  });
+
+  it('validate-code-pc-noneR4', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-pc-none"}, "4.0");
+  });
+
+  it('validate-code-pc-listR5', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-pc-list"}, "5.0");
+  });
+
+  it('validate-code-pc-listR4', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-pc-list"}, "4.0");
+  });
+
+  it('validate-code-pc-list-no-pcR5', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-pc-list-no-pc"}, "5.0");
+  });
+
+  it('validate-code-pc-list-no-pcR4', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-pc-list-no-pc"}, "4.0");
+  });
+
+  it('validate-code-pc-filterR5', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-pc-filter"}, "5.0");
+  });
+
+  it('validate-code-pc-filterR4', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-pc-filter"}, "4.0");
+  });
+
+  it('expand-pc-noneR5', async () => {
+    await runTest({"suite":"snomed","test":"expand-pc-none"}, "5.0");
+  });
+
+  it('expand-pc-noneR4', async () => {
+    await runTest({"suite":"snomed","test":"expand-pc-none"}, "4.0");
+  });
+
+  it('expand-pc-listR5', async () => {
+    await runTest({"suite":"snomed","test":"expand-pc-list"}, "5.0");
+  });
+
+  it('expand-pc-listR4', async () => {
+    await runTest({"suite":"snomed","test":"expand-pc-list"}, "4.0");
+  });
+
+  it('expand-pc-filterR5', async () => {
+    await runTest({"suite":"snomed","test":"expand-pc-filter"}, "5.0");
+  });
+
+  it('expand-pc-filterR4', async () => {
+    await runTest({"suite":"snomed","test":"expand-pc-filter"}, "4.0");
+  });
+
 });
 
 describe('batch', () => {
@@ -4741,6 +4898,235 @@ describe('UCUM', () => {
 
   it('validate-ucum-all-badR4', async () => {
     await runTest({"suite":"UCUM","test":"validate-ucum-all-bad"}, "4.0");
+  });
+
+});
+
+describe('related', () => {
+  // Tests for candidate new 'related' operation
+
+  it('related-allR5', async () => {
+    await runTest({"suite":"related","test":"related-all"}, "5.0");
+  });
+
+  it('related-allR4', async () => {
+    await runTest({"suite":"related","test":"related-all"}, "4.0");
+  });
+
+  it('related-activeR5', async () => {
+    await runTest({"suite":"related","test":"related-active"}, "5.0");
+  });
+
+  it('related-activeR4', async () => {
+    await runTest({"suite":"related","test":"related-active"}, "4.0");
+  });
+
+  it('related-inactiveR5', async () => {
+    await runTest({"suite":"related","test":"related-inactive"}, "5.0");
+  });
+
+  it('related-inactiveR4', async () => {
+    await runTest({"suite":"related","test":"related-inactive"}, "4.0");
+  });
+
+  it('related-enumeratedR5', async () => {
+    await runTest({"suite":"related","test":"related-enumerated"}, "5.0");
+  });
+
+  it('related-enumeratedR4', async () => {
+    await runTest({"suite":"related","test":"related-enumerated"}, "4.0");
+  });
+
+  it('related-is-aR5', async () => {
+    await runTest({"suite":"related","test":"related-is-a"}, "5.0");
+  });
+
+  it('related-is-aR4', async () => {
+    await runTest({"suite":"related","test":"related-is-a"}, "4.0");
+  });
+
+  it('related-regex-1R5', async () => {
+    await runTest({"suite":"related","test":"related-regex-1"}, "5.0");
+  });
+
+  it('related-regex-1R4', async () => {
+    await runTest({"suite":"related","test":"related-regex-1"}, "4.0");
+  });
+
+  it('related-regex-2R5', async () => {
+    await runTest({"suite":"related","test":"related-regex-2"}, "5.0");
+  });
+
+  it('related-regex-2R4', async () => {
+    await runTest({"suite":"related","test":"related-regex-2"}, "4.0");
+  });
+
+  it('related-listsR5', async () => {
+    await runTest({"suite":"related","test":"related-lists"}, "5.0");
+  });
+
+  it('related-listsR4', async () => {
+    await runTest({"suite":"related","test":"related-lists"}, "4.0");
+  });
+
+  it('related-lists-moreR5', async () => {
+    await runTest({"suite":"related","test":"related-lists-more"}, "5.0");
+  });
+
+  it('related-lists-moreR4', async () => {
+    await runTest({"suite":"related","test":"related-lists-more"}, "4.0");
+  });
+
+  it('related-lists-lessR5', async () => {
+    await runTest({"suite":"related","test":"related-lists-less"}, "5.0");
+  });
+
+  it('related-lists-lessR4', async () => {
+    await runTest({"suite":"related","test":"related-lists-less"}, "4.0");
+  });
+
+  it('related-lists-overR5', async () => {
+    await runTest({"suite":"related","test":"related-lists-over"}, "5.0");
+  });
+
+  it('related-lists-overR4', async () => {
+    await runTest({"suite":"related","test":"related-lists-over"}, "4.0");
+  });
+
+  it('related-lists-disjR5', async () => {
+    await runTest({"suite":"related","test":"related-lists-disj"}, "5.0");
+  });
+
+  it('related-lists-disjR4', async () => {
+    await runTest({"suite":"related","test":"related-lists-disj"}, "4.0");
+  });
+
+  it('related-systemsR5', async () => {
+    await runTest({"suite":"related","test":"related-systems"}, "5.0");
+  });
+
+  it('related-systemsR4', async () => {
+    await runTest({"suite":"related","test":"related-systems"}, "4.0");
+  });
+
+  it('related-systemsR5', async () => {
+    await runTest({"suite":"related","test":"related-systems"}, "5.0");
+  });
+
+  it('related-systemsR4', async () => {
+    await runTest({"suite":"related","test":"related-systems"}, "4.0");
+  });
+
+  it('related-systems-lessR5', async () => {
+    await runTest({"suite":"related","test":"related-systems-less"}, "5.0");
+  });
+
+  it('related-systems-lessR4', async () => {
+    await runTest({"suite":"related","test":"related-systems-less"}, "4.0");
+  });
+
+  it('related-systems-moreR5', async () => {
+    await runTest({"suite":"related","test":"related-systems-more"}, "5.0");
+  });
+
+  it('related-systems-moreR4', async () => {
+    await runTest({"suite":"related","test":"related-systems-more"}, "4.0");
+  });
+
+  it('related-system-disjR5', async () => {
+    await runTest({"suite":"related","test":"related-system-disj"}, "5.0");
+  });
+
+  it('related-system-disjR4', async () => {
+    await runTest({"suite":"related","test":"related-system-disj"}, "4.0");
+  });
+
+  it('related-system-overR5', async () => {
+    await runTest({"suite":"related","test":"related-system-over"}, "5.0");
+  });
+
+  it('related-system-overR4', async () => {
+    await runTest({"suite":"related","test":"related-system-over"}, "4.0");
+  });
+
+  it('related-filters-1R5', async () => {
+    await runTest({"suite":"related","test":"related-filters-1"}, "5.0");
+  });
+
+  it('related-filters-1R4', async () => {
+    await runTest({"suite":"related","test":"related-filters-1"}, "4.0");
+  });
+
+  it('related-filters-2R5', async () => {
+    await runTest({"suite":"related","test":"related-filters-2"}, "5.0");
+  });
+
+  it('related-filters-2R4', async () => {
+    await runTest({"suite":"related","test":"related-filters-2"}, "4.0");
+  });
+
+  it('related-filters-3R5', async () => {
+    await runTest({"suite":"related","test":"related-filters-3"}, "5.0");
+  });
+
+  it('related-filters-3R4', async () => {
+    await runTest({"suite":"related","test":"related-filters-3"}, "4.0");
+  });
+
+  it('related-mixed-1R5', async () => {
+    await runTest({"suite":"related","test":"related-mixed-1"}, "5.0");
+  });
+
+  it('related-mixed-1R4', async () => {
+    await runTest({"suite":"related","test":"related-mixed-1"}, "4.0");
+  });
+
+  it('related-mixed-1-lessR5', async () => {
+    await runTest({"suite":"related","test":"related-mixed-1-less"}, "5.0");
+  });
+
+  it('related-mixed-1-lessR4', async () => {
+    await runTest({"suite":"related","test":"related-mixed-1-less"}, "4.0");
+  });
+
+  it('related-mixed-1-moreR5', async () => {
+    await runTest({"suite":"related","test":"related-mixed-1-more"}, "5.0");
+  });
+
+  it('related-mixed-1-moreR4', async () => {
+    await runTest({"suite":"related","test":"related-mixed-1-more"}, "4.0");
+  });
+
+  it('related-mixed-1-disjR5', async () => {
+    await runTest({"suite":"related","test":"related-mixed-1-disj"}, "5.0");
+  });
+
+  it('related-mixed-1-disjR4', async () => {
+    await runTest({"suite":"related","test":"related-mixed-1-disj"}, "4.0");
+  });
+
+  it('related-mixed-1-overR5', async () => {
+    await runTest({"suite":"related","test":"related-mixed-1-over"}, "5.0");
+  });
+
+  it('related-mixed-1-overR4', async () => {
+    await runTest({"suite":"related","test":"related-mixed-1-over"}, "4.0");
+  });
+
+  it('related-filters-lessR5', async () => {
+    await runTest({"suite":"related","test":"related-filters-less"}, "5.0");
+  });
+
+  it('related-filters-lessR4', async () => {
+    await runTest({"suite":"related","test":"related-filters-less"}, "4.0");
+  });
+
+  it('related-filters-moreR5', async () => {
+    await runTest({"suite":"related","test":"related-filters-more"}, "5.0");
+  });
+
+  it('related-filters-moreR4', async () => {
+    await runTest({"suite":"related","test":"related-filters-more"}, "4.0");
   });
 
 });

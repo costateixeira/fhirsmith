@@ -3,7 +3,7 @@
 <form method="get" id="searchForm" action="{{ baseUrl }}/CodeSystem">
 <table class="grid" cellpadding="0" cellspacing="0">
 <tr>
-<td colspan="2">URL: <input type="text" name="url" size="40"/></td>
+<td>URL: <input type="text" name="url" size="40"/></td>
 <td>Version: <input type="text" name="version"/></td>
 </tr>
 <tr>
@@ -11,10 +11,13 @@
 <td>Status: <select name="status" class="form-select"><option value="">(any status)</option>
 <option value="draft">draft</option><option value="active">active</option>
 <option value="retired">retired</option><option value="unknown">unknown</option></select></td>
-<td>Language: <input type="text" name="lang" size="10"/> (ietf code)</td>
 </tr>
 <tr>
-<td colspan="2" title="CodeSystem - for supplements, value sets, and concept maps">System: <input type="text" name="system" size="40"/></td>
+<td>Language: <input type="text" name="lang" size="10"/> (ietf code)</td>
+<td>Source: <select name="source" class="form-select">{{ sourceOptions }}</select></td>
+</tr>
+<tr>
+<td title="CodeSystem - for supplements, value sets, and concept maps">System: <input type="text" name="system" size="40"/></td>
 <td>CS Content: <select name="content-mode" class="form-select"><option value="">(any content)</option>
 <option value="not-present">not-present</option><option value="example">example</option>
 <option value="fragment">fragment</option><option value="complete">complete</option>

@@ -137,7 +137,7 @@ class TxHtmlRenderer {
 
 // eslint-disable-next-line no-unused-vars
   async buildSearchForm(req, mode, params) {
-    const html = await this.liquid.renderFile('search-form', { baseUrl: escape(req.baseUrl) });
+    const html = await this.liquid.renderFile('search-form', { baseUrl: escape(req.baseUrl), sourceOptions : this.buildSourceOptions(req.txProvider) });
     return html;
   }
 
@@ -801,13 +801,127 @@ class TxHtmlRenderer {
   }
 
   /**
+   * Build a human-readable description of what this search bundle represents,
+   * by parsing the self link URL parameters.
+   */
+  describeSearchBundle(json) {
+    const selfLink = json.link?.find(l => l.relation === 'self')?.url || '';
+    if (!selfLink) return '';
+
+    let urlObj;
+    try {
+      urlObj = new URL(selfLink);
+    } catch {
+      return '';
+    }
+
+    // Extract resource type from path
+    const typeMatch = selfLink.match(/\/(CodeSystem|ValueSet|ConceptMap)\b/);
+    const resourceType = typeMatch ? typeMatch[1] : 'Resource';
+
+    // Human-friendly labels for search params
+    const PARAM_LABELS = {
+      'url': 'URL',
+      'version': 'Version',
+      'name': 'Name',
+      'title': 'Title',
+      'status': 'Status',
+      'publisher': 'Publisher',
+      'description': 'Description',
+      'identifier': 'Identifier',
+      'jurisdiction': 'Jurisdiction',
+      'date': 'Date',
+      'text': 'Text',
+      'system': 'System',
+      'supplements': 'Supplements',
+      'content-mode': 'Content mode',
+      'source': 'Source'
+    };
+
+    const WORDS = {
+      'url': 'contains',
+      'version': 'contains',
+      'name': 'contains',
+      'title': 'contains',
+      'status': 'is',
+      'publisher': 'contains',
+      'description': 'contains',
+      'identifier': 'matches',
+      'jurisdiction': 'contains',
+      'date': 'matches',
+      'text': 'contains',
+      'system': 'matches',
+      'supplements': 'matches',
+      'content-mode': 'is',
+      'source': 'is'
+    };
+
+    const CONTROL_PARAMS = new Set(['_offset', '_count', '_sort', '_summary', '_elements', '_total']);
+
+    // Collect filter criteria
+    const criteria = [];
+    for (const [key, value] of urlObj.searchParams) {
+      if (key != 'mode') {
+        if (CONTROL_PARAMS.has(key) || !value) continue;
+        const label = PARAM_LABELS[key] || key;
+        const word = WORDS[key] || "contains";
+        criteria.push(`<strong>${escape(label)}</strong> ${word} &ldquo;${escape(value)}&rdquo;`);
+      }
+    }
+
+    // Collect display/pagination context
+    const total = json.total;
+    const offset = parseInt(urlObj.searchParams.get('_offset') || '0');
+    const count = parseInt(urlObj.searchParams.get('_count') || '20');
+    const sort = urlObj.searchParams.get('_sort');
+    const summary = urlObj.searchParams.get('_summary');
+    const elementsParam = urlObj.searchParams.get('_elements');
+
+    // Build the description sentence
+    let desc = `Searching <strong>${escape(resourceType)}s</strong>`;
+
+    if (criteria.length > 0) {
+      desc += ' where ' + criteria.join(', ');
+    } else {
+      desc += ' (all)';
+    }
+
+    // Pagination context
+    if (typeof total === 'number') {
+      const from = Math.min(offset + 1, total);
+      const to = Math.min(offset + count, total);
+      if (total === 0) {
+        desc += ' — <strong>no results found</strong>';
+      } else {
+        desc += ` — showing <strong>${from}–${to}</strong> of <strong>${total}</strong>`;
+      }
+    }
+
+    // Sort
+    if (sort) {
+      desc += `, sorted by <strong>${escape(sort)}</strong>`;
+    }
+
+    // Summary mode
+    if (summary && summary !== 'false') {
+      desc += ` [summary: ${escape(summary)}]`;
+    }
+
+    // Elements
+    if (elementsParam) {
+      desc += ` [fields: ${escape(elementsParam)}]`;
+    }
+
+    return `<p class="search-description">${desc}</p>`;
+  }
+
+  /**
    * Render search results as a table (when _elements is specified)
    */
   async renderSearchTable(json, elements, req) {
     const entries = json.entry || [];
-    const total = json.total || 0;
 
-    let html = `<p>Found ${total} result(s)</p>`;
+    let html = this.describeSearchBundle(json);
 
     // Pagination links
     html += this.renderPaginationLinks(json);
@@ -859,21 +973,11 @@ class TxHtmlRenderer {
    */
   async renderSearchSummary(json, req) {
     const entries = json.entry || [];
-    const total = json.total || 0;
 
-    let html = `<p>Found ${total} result(s)</p>`;
+    let html = this.describeSearchBundle(json);
 
     // Pagination links
     html += this.renderPaginationLinks(json);
-
-    // Bundle summary
-    html += '<div class="card mb-3">';
-    html += '<div class="card-header">Bundle Summary</div>';
-    html += '<div class="card-body">';
-    html += `<p><strong>Type:</strong> ${escape(json.type)}</p>`;
-    html += `<p><strong>Total:</strong> ${total}</p>`;
-    html += '</div>';
-    html += '</div>';
 
     // Each entry
     for (const entry of entries) {
@@ -1010,7 +1114,7 @@ class TxHtmlRenderer {
       html += '<div class="narrative">(No Narrative)</div>';
     }
     if (json.text && json.text.div) {
-    // Collapsible JSON source
+      // Collapsible JSON source
       html += '<div class="xhtml">';
       html += `<button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleOriginalNarrative('${resourceId}x')">`;
       html += 'Show Original Narrative</button>';
@@ -1047,8 +1151,17 @@ class TxHtmlRenderer {
       valueSetsJson: JSON.stringify(json.valueSets || [])
     });
   }
+
+  buildSourceOptions(provider) {
+    let result = '';
+    result += `<option value="internal">internal</option>`;
+    for (let sp of provider.listValueSetSourceCodes()) {
+      result += `<option value="${sp}">${sp}</option>`;
+    }
+    return result;
+  }
 }
 
 module.exports = {
- TxHtmlRenderer, loadTemplate
+  TxHtmlRenderer, loadTemplate
 };

@@ -37,7 +37,7 @@ class ValueSetDatabase {
       this._db = new sqlite3.Database(this.dbPath, sqlite3.OPEN_READONLY, (err) => {
         if (err) {
           this._db = null;
-          reject(new Error(`Failed to open database: ${err.message}`));
+          reject(new Error(`Failed to open database ${this.dbPath}: ${err.message}`));
         } else {
           resolve(this._db);
         }
@@ -122,7 +122,7 @@ class ValueSetDatabase {
     return new Promise((resolve, reject) => {
       const db = new sqlite3.Database(this.dbPath, (err) => {
         if (err) {
-          reject(new Error(`Failed to create database: ${err.message}`));
+          reject(new Error(`Failed to create database ${this.dbPath}: ${err.message}`));
           return;
         }
 
@@ -177,6 +177,7 @@ class ValueSetDatabase {
               CREATE TABLE valueset_systems (
                                                 valueset_id TEXT,
                                                 system TEXT,
+                                                version TEXT,
                                                 FOREIGN KEY (valueset_id) REFERENCES valuesets(url)
               )
           `);
@@ -193,7 +194,7 @@ class ValueSetDatabase {
           db.run('CREATE INDEX idx_identifiers_value ON valueset_identifiers(value)');
           db.run('CREATE INDEX idx_jurisdictions_system ON valueset_jurisdictions(system)');
           db.run('CREATE INDEX idx_jurisdictions_code ON valueset_jurisdictions(code)');
-          db.run('CREATE INDEX idx_systems_system ON valueset_systems(system)');
+          db.run('CREATE INDEX idx_systems_system ON valueset_systems(system, version)');
 
           db.close((err) => {
             if (err) {
@@ -392,8 +393,8 @@ class ValueSetDatabase {
           pendingOperations++;
 
           db.run(`
-              INSERT INTO valueset_systems (valueset_id, system) VALUES (?, ?)
-          `, [valueSet.id, include.system], function(err) {
+              INSERT INTO valueset_systems (valueset_id, system, version) VALUES (?, ?, ?)
+          `, [valueSet.id, include.system, include.version], function(err) {
             if (err) {
               operationError(new Error(`Failed to insert system: ${err.message}`));
             } else {
@@ -735,8 +736,15 @@ class ValueSetDatabase {
 
         case 'system':
           joins.add('JOIN valueset_systems vs ON v.id = vs.valueset_id');
-          conditions.push('vs.system = ?');
-          params.push(value);
+          if (value.includes('|')) {
+            conditions.push('vs.system = ?');
+            params.push(value.substring(0, value.indexOf('|')));
+            conditions.push('vs.version = ?');
+            params.push(value.substring(value.indexOf('|')+1));
+          } else {
+            conditions.push('vs.system = ?');
+            params.push(value);
+          }
           break;
 
         default:

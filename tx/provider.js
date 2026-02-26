@@ -136,8 +136,13 @@ class Provider {
     for (const resource of resources) {
       const cs = new CodeSystem(await contentLoader.loadFile(resource, contentLoader.fhirVersion()));
       cs.sourcePackage = contentLoader.pid();
-      this.codeSystems.set(cs.url, cs);
-      this.codeSystems.set(cs.vurl, cs);
+      const existing = this.codeSystems.get(cs.url);
+      if (!existing || cs.isMoreRecent(existing)) {
+        this.codeSystems.set(cs.url, cs);
+      }
+      if (cs.version) {
+        this.codeSystems.set(cs.vurl, cs);
+      }
     }
     const vs = new PackageValueSetProvider(contentLoader);
     await vs.initialize();
@@ -218,9 +223,16 @@ class Provider {
         await csp.findImplicitConceptMap(url, version);
       }
     }
-
   }
 
+  listValueSetSourceCodes() {
+    let result = [];
+    for (let vsp of this.valueSetProviders) {
+      result.push(vsp.sourcePackage());
+    }
+    result.sort((a, b) => {a.localeCompare(b)});
+    return result;
+  }
 
   async listCodeSystemVersions(url) {
     let result = new Set();
@@ -397,6 +409,20 @@ class Provider {
       }
     }
     return null;
+  }
+
+  async hasCsVersion(system, version) {
+    for (let cs of this.codeSystems.values()) {
+      if (cs.url == system && cs.version == version) {
+        return true;
+      }
+    }
+    for (let cp of this.codeSystemFactories.values()) {
+      if (cp.system() == system && cp.version() == version) {
+        return true;
+      }
+    }
+    return false;
   }
 
 }

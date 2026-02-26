@@ -403,7 +403,7 @@ describe('CountryCodeServices', () => {
     test('should throw error for search filter', async () => {
       await expect(
         provider.searchFilter(await provider.getPrepContext(false), 'test', false)
-      ).rejects.toThrow('not implemented');
+      ).rejects.toThrow('Text Search is not supported');
     });
 
   });

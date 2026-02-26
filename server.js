@@ -568,6 +568,19 @@ async function startServer() {
     if (modules.packages && config.modules.packages.enabled) {
       modules.packages.startInitialCrawler();
     }
+    // Run usage tracker in background after startup
+    if (modules.tx && modules.tx.library) {
+      setImmediate(async () => {
+        try {
+          serverLog.info('Starting ConceptUsageTracker scan...');
+          let count = await modules.tx.usageTracker.scanValueSets(modules.tx.library);
+          serverLog.info(`ConceptUsageTracker scan complete: ${count} valuesets list codes`);
+        } catch (err) {
+          console.log(err);
+          serverLog.error('ConceptUsageTracker scan failed:', err);
+        }
+      });
+    }
   } catch (error) {
     console.error('FATAL - Failed to start server:', error);
     serverLog.error('FATAL - Failed to start server:', error);

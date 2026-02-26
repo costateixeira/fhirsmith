@@ -12,7 +12,14 @@ function parametersToR5(jsonObj, sourceVersion) {
   if (VersionUtilities.isR5Ver(sourceVersion)) {
     return jsonObj; // No conversion needed
   }
-  throw new Error(`Unsupported FHIR version: ${sourceVersion}`);
+
+  const {convertResourceFromR5} = require("./xv-resource");
+  for (let p of jsonObj.parameter) {
+    if (p.resource) {
+      p.resource = convertResourceFromR5(p.resource, sourceVersion);
+    }
+  }
+  return jsonObj;
 }
 
 /**

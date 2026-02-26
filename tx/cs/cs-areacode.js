@@ -169,15 +169,6 @@ class AreaCodeServices extends CodeSystemProvider {
     return (prop === 'type' || prop === 'class') && op === '=';
   }
 
-  async searchFilter(filterContext, filter, sort) {
-    
-    assert(filterContext && filterContext instanceof FilterExecutionContext, 'filterContext must be a FilterExecutionContext');
-    assert(filter && typeof filter === 'string', 'filter must be a non-null string');
-    assert(typeof sort === 'boolean', 'sort must be a boolean');
-
-    throw new Error('Search filter not implemented for AreaCode');
-  }
-
   async filter(filterContext, prop, op, value) {
     
     assert(filterContext && filterContext instanceof FilterExecutionContext, 'filterContext must be a FilterExecutionContext');

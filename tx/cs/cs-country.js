@@ -22,7 +22,6 @@ class CountryCodeServices extends CodeSystemProvider {
     super(opContext, supplements);
     this.codes = codes || [];
     this.codeMap = codeMap || new Map();
-    this.supplements = [];
   }
 
   // Metadata methods
@@ -178,15 +177,6 @@ class CountryCodeServices extends CodeSystemProvider {
     return prop === 'code' && op === 'regex';
   }
 
-
-  async searchFilter(filterContext, filter, sort) {
-    
-    assert(filterContext && filterContext instanceof FilterExecutionContext, 'filterContext must be a FilterExecutionContext');
-    assert(filter && typeof filter === 'string', 'filter must be a non-null string');
-    assert(typeof sort === 'boolean', 'sort must be a boolean');
-
-    throw new Error('Search filter not implemented for CountryCode');
-  }
 
   async filter(filterContext, prop, op, value) {
     

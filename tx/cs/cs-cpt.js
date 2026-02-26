@@ -569,12 +569,7 @@ class CPTServices extends BaseCSServices {
     return filterContext.filters.some(f => !f.closed);
   }
 
-  // Search filter - not implemented
-  // eslint-disable-next-line no-unused-vars
-  async searchFilter(filterContext, filter, sort) {
-    
-    throw new Error('Text search not implemented yet');
-  }
+
 
   // Subsumption testing - not implemented
   async subsumesTest(codeA, codeB) {

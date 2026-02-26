@@ -748,6 +748,9 @@ class RxNormTypeServicesFactory extends CodeSystemFactoryProvider {
             if (d.includes('_')) {
               d = d.substring(d.lastIndexOf('_') + 1);
             }
+            if (d.includes('-')) {
+              d = d.substring(0, d.lastIndexOf('-'));
+            }
             if (/^\d+$/.test(d)) {
               version = d;
             }

@@ -8,6 +8,9 @@ class AbstractValueSetProvider {
    */
   spaceId;
 
+  code() {
+    throw new Error('code must be implemented by AbstractValueSetProvider subclass');
+  }
   /**
    * ensure that the ids on the value sets are unique, if they are
    * in the global namespace
