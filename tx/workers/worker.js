@@ -316,7 +316,7 @@ class TerminologyWorker {
       for (const ext of supplementExtensions) {
         const supplementUrl = ext.valueString || ext.valueUri;
         if (supplementUrl && !cs.hasSupplement(this.opContext, supplementUrl)) {
-          throw new TerminologyError(`ValueSet depends on supplement '${supplementUrl}' on ${cs.systemUri} that is not known`);
+          throw new TerminologyError(`ValueSet depends on supplement '${supplementUrl}' on ${cs.system} that is not known`);
         }
       }
     }
