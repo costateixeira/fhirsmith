@@ -37,7 +37,7 @@ class ServerVersionInformation {
   getCsListHtml() {
     if (this.codeSystems.length === 0) return '<ul></ul>';
     return '<ul>' + this.codeSystems.map(cs => 
-      `<li>${escape(cs)}</li>`
+      `<li>${escape(cs.uri+(cs.version ? '|'+cs.version : ''))}</li>`
     ).join('') + '</ul>';
   }
 
@@ -403,7 +403,7 @@ class ServerRegistryUtilities {
 
     return list.some(item => {
       // If we support wildcards (masks) and the item ends with "*", do prefix matching
-      let vurl = item.version ? item.uri+"|"+item.version : item.uri;
+      let vurl = item.uri ? item.version ? item.uri+"|"+item.version : item.uri : item;
       let ok = false;
       if (supportMask && vurl.endsWith('*')) {
         const prefix = vurl.slice(0, -1);
@@ -412,7 +412,7 @@ class ServerRegistryUtilities {
         // Otherwise do exact matching on both full and base URL
         ok = vurl === cs || vurl === baseCs;
       }
-      if (ok) {
+      if (ok && content) {
         content.content = item.content;
       }
       return ok;

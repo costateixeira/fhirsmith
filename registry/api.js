@@ -243,7 +243,7 @@ class RegistryAPI {
             workingVersions++;
           }
 
-          version.codeSystems.forEach(cs => totalCodeSystems.add(cs));
+          version.codeSystems.forEach(cs => totalCodeSystems.add(cs.uri+(cs.version ? '|'+cs.version : '')));
           version.valueSets.forEach(vs => totalValueSets.add(vs));
         });
       });

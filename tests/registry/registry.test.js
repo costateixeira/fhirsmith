@@ -44,10 +44,10 @@ function createSampleData() {
   version111.lastSuccess = new Date('2024-01-15T09:55:00Z');
   version111.lastTat = '250ms';
   version111.codeSystems = [
-    'http://loinc.org',
-    'http://snomed.info/sct',
-    'http://hl7.org/fhir/sid/icd-10',
-    'http://www.nlm.nih.gov/research/umls/rxnorm'
+    { uri: 'http://loinc.org' },
+    { uri: 'http://snomed.info/sct'},
+    { uri: 'http://hl7.org/fhir/sid/icd-10'},
+    { uri: 'http://www.nlm.nih.gov/research/umls/rxnorm'}
   ].sort();
   version111.valueSets = [
     'http://hl7.org/fhir/ValueSet/observation-codes',
@@ -64,9 +64,9 @@ function createSampleData() {
   version112.lastSuccess = new Date('2024-01-15T09:56:00Z');
   version112.lastTat = '180ms';
   version112.codeSystems = [
-    'http://loinc.org',
-    'http://snomed.info/sct',
-    'http://hl7.org/fhir/sid/icd-11'
+    { uri: 'http://loinc.org' },
+    { uri: 'http://snomed.info/sct' },
+    { uri: 'http://hl7.org/fhir/sid/icd-11' }
   ].sort();
   version112.valueSets = [
     'http://hl7.org/fhir/ValueSet/observation-codes'
@@ -90,9 +90,9 @@ function createSampleData() {
   version121.lastSuccess = new Date('2024-01-15T09:50:00Z');
   version121.lastTat = '180ms';
   version121.codeSystems = [
-    'http://snomed.info/sct',
-    'http://snomed.info/sct/32506021000036107', // Australian extension
-    'http://loinc.org'
+    { uri: 'http://snomed.info/sct' },
+    { uri: 'http://snomed.info/sct/32506021000036107' }, // Australian extension
+    { uri: 'http://loinc.org' }
   ].sort();
   version121.valueSets = [
     'http://snomed.info/sct?fhir_vs=ecl/<404684003',
@@ -140,9 +140,9 @@ function createSampleData() {
   version221.lastSuccess = new Date('2024-01-15T08:00:00Z');
   version221.lastTat = '50ms';
   version221.codeSystems = [
-    'http://example.org/codesystem/test1',
-    'http://example.org/codesystem/test2',
-    'http://hl7.org/fhir/sid/icd-10'
+    { uri: 'http://example.org/codesystem/test1'},
+    { uri: 'http://example.org/codesystem/test2'},
+    { uri: 'http://hl7.org/fhir/sid/icd-10' }
   ].sort();
   version221.valueSets = [
     'http://example.org/valueset/test1',
