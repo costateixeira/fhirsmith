@@ -392,7 +392,7 @@ class ServerRegistryUtilities {
     return value === mask;
   }
 
-  static hasMatchingCodeSystem(cs, list, supportMask) {
+  static hasMatchingCodeSystem(cs, list, supportMask, content) {
     if (!cs || list.length === 0) return false;
 
     // Handle URLs with pipes - extract base URL
@@ -403,13 +403,19 @@ class ServerRegistryUtilities {
 
     return list.some(item => {
       // If we support wildcards (masks) and the item ends with "*", do prefix matching
-      if (supportMask && item.endsWith('*')) {
-        const prefix = item.slice(0, -1);
-        return cs.startsWith(prefix) || baseCs.startsWith(prefix);
+      let vurl = item.version ? item.uri+"|"+item.version : item.uri;
+      let ok = false;
+      if (supportMask && vurl.endsWith('*')) {
+        const prefix = vurl.slice(0, -1);
+        ok = cs.startsWith(prefix) || baseCs.startsWith(prefix);
+      } else {
+        // Otherwise do exact matching on both full and base URL
+        ok = vurl === cs || vurl === baseCs;
       }
-
-      // Otherwise do exact matching on both full and base URL
-      return item === cs || item === baseCs;
+      if (ok) {
+        content.content = item.content;
+      }
+      return ok;
     });
   }
 

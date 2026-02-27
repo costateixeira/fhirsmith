@@ -1155,6 +1155,7 @@ class RegistryModule {
       html += '<th>URL</th>';
       html += '<th>Security</th>';
       html += '<th>Access Info</th>';
+      html += '<th>Content</th>';
       html += '</tr>';
       html += '</thead>';
       html += '<tbody>';
@@ -1165,6 +1166,7 @@ class RegistryModule {
         html += `<td><a href="${server.url}" target="_blank">${escape(server.url)}</a></td>`;
         html += `<td>${this.renderSecurityTags(server)}</td>`;
         html += `<td>${server.access_info ? escape(server.access_info) : ''}</td>`;
+        html += `<td>${server.content ? escape(server.content) : ''}</td>`;
         html += '</tr>';
       });
 

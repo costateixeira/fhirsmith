@@ -8,6 +8,7 @@ const {
   ServerInformation, 
   ServerVersionInformation,
 } = require('./model');
+const {Extensions} = require("../tx/library/extensions");
 
 const MASTER_URL = 'https://fhir.github.io/ig-registry/tx-servers.json';
 
@@ -36,32 +37,6 @@ class RegistryCrawler {
     this.log = logv;
   }
 
-  // /**
-  //  * Start the crawler with periodic updates
-  //  */
-  // start() {
-  //   if (this.crawlTimer) {
-  //     return; // Already running
-  //   }
-  //
-  //   // Initial crawl
-  //   this.crawl();
-  //
-  //   // Set up periodic crawling
-  //   this.crawlTimer = setInterval(() => {
-  //     this.crawl();
-  //   }, this.config.crawlInterval);
-  // }
-  //
-  // /**
-  //  * Stop the crawler
-  //  */
-  // stop() {
-  //   if (this.crawlTimer) {
-  //     clearInterval(this.crawlTimer);
-  //     this.crawlTimer = null;
-  //   }
-  // }
 
   /**
    * Main entry point - crawl the registry starting from the master URL
@@ -111,6 +86,7 @@ class RegistryCrawler {
       // Update the current data
       this.currentData = newData;
     } catch (error) {
+      console.log(error);
       this.addLogEntry('error', 'Exception Scanning:', error);
       this.currentData.outcome = `Error: ${error.message}`;
       this.errors.push({
@@ -165,6 +141,7 @@ class RegistryCrawler {
       }
       
     } catch (error) {
+      console.log(error);
       registry.error = error.message;
       this.addLogEntry('error', `Exception processing registry ${registry.name}: ${error.message}`, registry.address);
     }
@@ -181,7 +158,7 @@ class RegistryCrawler {
     server.name = serverConfig.name;
     server.address = serverConfig.url || '';
     server.accessInfo = serverConfig.access_info || '';
-    
+
     if (!server.name) {
       this.addLogEntry('error', 'No name provided for server', source);
       return server;
@@ -200,7 +177,7 @@ class RegistryCrawler {
     // Process each FHIR version
     const fhirVersions = serverConfig.fhirVersions || [];
     for (const versionConfig of fhirVersions) {
-      const version = await this.processServerVersion(versionConfig, server);
+      const version = await this.processServerVersion(versionConfig, server, serverConfig.exclusions);
       if (version) {
         server.versions.push(version);
       }
@@ -212,7 +189,7 @@ class RegistryCrawler {
   /**
    * Process a single server version
    */
-  async processServerVersion(versionConfig, server) {
+  async processServerVersion(versionConfig, server, exclusions) {
     const version = new ServerVersionInformation();
     version.version = versionConfig.version;
     version.address = versionConfig.url;
@@ -233,20 +210,20 @@ class RegistryCrawler {
       
       switch (majorVersion) {
         case 3:
-          await this.processServerVersionR3(version, server);
+          await this.processServerVersionR3(version, server, exclusions);
           break;
         case 4:
-          await this.processServerVersionR4(version, server);
+          await this.processServerVersionR4or5(version, server, '4.0.1', exclusions);
           break;
         case 5:
-          await this.processServerVersionR5(version, server);
+          await this.processServerVersionR4or5(version, server, '5.0.0', exclusions);
           break;
         default:
           throw new Error(`Version ${version.version} not supported`);
       }
       
       // Sort and deduplicate
-      version.codeSystems = [...new Set(version.codeSystems)].sort();
+      version.codeSystems.sort((a, b) => this.compareCS(a, b));
       version.valueSets = [...new Set(version.valueSets)].sort();
       version.lastSuccess = new Date();
       version.lastTat = `${Date.now() - startTime}ms`;
@@ -254,6 +231,7 @@ class RegistryCrawler {
       this.addLogEntry('info', `  Server ${version.address}: ${version.lastTat} for ${version.codeSystems.length} CodeSystems and ${version.valueSets.length} ValueSets`);
       
     } catch (error) {
+      console.log(error);
       const elapsed = Date.now() - startTime;
       this.addLogEntry('error', `Server ${version.address}: Error after ${elapsed}ms: ${error.message}`);
       version.error = error.message;
@@ -266,7 +244,7 @@ class RegistryCrawler {
   /**
    * Process an R3 server
    */
-  async processServerVersionR3(version, server) {
+  async processServerVersionR3(version, server, exclusions) {
     // Get capability statement
     const capabilityUrl = `${version.address}/metadata`;
     const capability = await this.fetchJson(capabilityUrl, server.name);
@@ -283,12 +261,12 @@ class RegistryCrawler {
         termCap.parameter.forEach(param => {
           if (param.name === 'system') {
             const uri = param.valueUri || param.valueString;
-            if (uri) {
+            if (uri && !this.isExcluded(uri, exclusions)) {
               version.codeSystems.push(uri);
               // Look for version parts
               if (param.part) {
                 param.part.forEach(part => {
-                  if (part.name === 'version' && part.valueString) {
+                  if (part.name === 'version' && part.valueString && !this.isExcluded(uri+'|'+part.valueString, exclusions)) {
                     version.codeSystems.push(`${uri}|${part.valueString}`);
                   }
                 });
@@ -298,24 +276,27 @@ class RegistryCrawler {
         });
       }
     } catch (error) {
+      console.log(error);
       this.addLogEntry('error', `Could not fetch terminology capabilities: ${error.message}`);
     }
     
     // Search for value sets
-    await this.fetchValueSets(version, server);
+    await this.fetchValueSets(version, server, exclusions);
   }
 
   /**
    * Process an R4 server
    */
-  async processServerVersionR4(version, server) {
+  async processServerVersionR4or5(version, server, defVersion, exclusions) {
     // Get capability statement
     const capabilityUrl = `${version.address}/metadata`;
     const capability = await this.fetchJson(capabilityUrl, server.code);
     
-    version.version = capability.fhirVersion || '4.0.1';
+    version.version = capability.fhirVersion || defVersion;
     version.software = capability.software ? capability.software.name : "unknown";
-    
+
+    let set = new Set();
+
     // Get terminology capabilities
     try {
       const termCapUrl = `${version.address}/metadata?mode=terminology`;
@@ -323,12 +304,19 @@ class RegistryCrawler {
       
       if (termCap.codeSystem) {
         termCap.codeSystem.forEach(cs => {
-          if (cs.uri) {
-            version.codeSystems.push(cs.uri);
+          let content = cs.content || Extensions.readString(cs, "http://hl7.org/fhir/5.0/StructureDefinition/extension-TerminologyCapabilities.codeSystem.content");
+          if (cs.uri && !this.isExcluded(cs.uri, exclusions)) {
+            if (!set.has(cs.uri)) {
+              set.add(cs.uri);
+              version.codeSystems.push(this.addContent({uri: cs.uri}, content));
+            }
             if (cs.version) {
               cs.version.forEach(v => {
-                if (v.code) {
-                  version.codeSystems.push(`${cs.uri}|${v.code}`);
+                if (v.code && !this.isExcluded(cs.uri+"|"+v.code, exclusions)) {
+                  if (!set.has(cs.uri+"|"+v.code)) {
+                    version.codeSystems.push(this.addContent({uri: cs.uri, version: v.code}, content));
+                    set.add(cs.uri+"|"+v.code);
+                  }
                 }
               });
             }
@@ -336,20 +324,12 @@ class RegistryCrawler {
         });
       }
     } catch (error) {
+      console.log(error);
       this.addLogEntry('error', `Could not fetch terminology capabilities: ${error.message}`);
     }
     
     // Search for value sets
-    await this.fetchValueSets(version,  server);
-  }
-
-  /**
-   * Process an R5 server
-   */
-  async processServerVersionR5(version, server) {
-    // R5 is essentially the same as R4 for our purposes
-    await this.processServerVersionR4(version, server);
-    version.version = version.version || '5.0.0';
+    await this.fetchValueSets(version, server, exclusions);
   }
 
   /**
@@ -360,9 +340,9 @@ class RegistryCrawler {
    * @param {Object} version - The server version information
    * @param {Object} server - The server information
    */
-  async fetchValueSets(version, server) {
+  async fetchValueSets(version, server, exclusions) {
     // Initial search URL
-    let searchUrl = `${version.address}/ValueSet?_elements=url,version`;
+    let searchUrl = `${version.address}/ValueSet?_elements=url,version`+(version.address.includes("fhir.org") ? "&_count=200" : "");
     try {
       // Set of URLs to avoid duplicates
       const valueSetUrls = new Set();
@@ -378,9 +358,9 @@ class RegistryCrawler {
           bundle.entry.forEach(entry => {
             if (entry.resource) {
               const vs = entry.resource;
-              if (vs.url) {
+              if (vs.url && !this.isExcluded(vs.url, exclusions)) {
                 valueSetUrls.add(vs.url);
-                if (vs.version) {
+                if (vs.version && !this.isExcluded(vs.url+'|'+vs.version, exclusions)) {
                   valueSetUrls.add(`${vs.url}|${vs.version}`);
                 }
               }
@@ -402,6 +382,7 @@ class RegistryCrawler {
       version.valueSets = Array.from(valueSetUrls).sort();
 
     } catch (error) {
+      console.log(error);
       this.addLogEntry('error', `Could not fetch value sets: ${error.message} from ${searchUrl}`);
     }
   }
@@ -478,6 +459,7 @@ class RegistryCrawler {
       return response.data;
       
     } catch (error) {
+      console.log(error);
       if (error.response) {
         throw new Error(`HTTP ${error.response.status}: ${error.response.statusText}`);
       } else if (error.request) {
@@ -634,6 +616,38 @@ class RegistryCrawler {
     return filteredLogs.slice(-limit);
   }
 
+  addContent(param, content) {
+    if (content) {
+      param.content = content;
+    }
+    return param;
+  }
+
+  compareCS(a, b) {
+    if (a.version || b.version) {
+      let s = (a.uri+'|'+a.version) || '';
+      return s.localeCompare(b.uri+'|'+b.version);
+    } else {
+      return (a.uri || '').localeCompare(b.uri);
+    }
+  }
+
+  isExcluded(url, exclusions) {
+    for (let exclusion of exclusions || []) {
+      let match = false;
+      if (exclusion.endsWith('*')) {
+        const prefix = exclusion.slice(0, -1);
+        match = url.startsWith(prefix);
+      } else {
+        // Otherwise do exact matching on both full and base URL
+        match = url === exclusion;
+      }
+      if (match) {
+        return true;
+      }
+    }
+    return false;
+  }
 }
 
 module.exports = RegistryCrawler;

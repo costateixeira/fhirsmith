@@ -17,7 +17,7 @@ function terminologyCapabilitiesToR5(jsonObj, sourceVersion) {
   if (VersionUtilities.isR4Ver(sourceVersion)) {
     for (const cs of jsonObj.codeSystem || []) {
       if (cs.content) {
-        let cnt = Extensions.readString("http://hl7.org/fhir/5.0/StructureDefinition/extension-TerminologyCapabilities.codeSystem.content");
+        let cnt = Extensions.readString(cs, "http://hl7.org/fhir/5.0/StructureDefinition/extension-TerminologyCapabilities.codeSystem.content");
         if (cnt) {
           delete cs.extensions;
           cs.content = cnt;
