@@ -158,7 +158,12 @@ class Library {
     this.log.info('Fetching Data from '+this.baseUrl);
 
     for (const source of config.sources) {
-      await this.processSource(source, this.packageManager, "fetch");
+      try {
+        await this.processSource(source, this.packageManager, "fetch");
+      } catch (error) {
+        console.error(`Failed to fetch source '${source}': ${error.message}`);
+        throw error;
+      }
     }
 
     this.log.info("Downloaded "+((this.totalDownloaded + this.packageManager.totalDownloaded)/ 1024)+" kB");
@@ -167,13 +172,23 @@ class Library {
     this.#logSystemHeader();
 
     for (const source of config.sources) {
-      await this.processSource(source, this.packageManager, "cs");
+      try {
+        await this.processSource(source, this.packageManager, "cs");
+      } catch (error) {
+        console.error(`Failed to load code systems from '${source}': ${error.message}`);
+        throw error;
+      }
     }
     this.log.info('Loading Packages');
     this.#logPackagesHeader();
 
     for (const source of config.sources) {
-      await this.processSource(source, this.packageManager, "npm");
+      try {
+        await this.processSource(source, this.packageManager, "npm");
+      } catch (error) {
+        console.error(`Failed to load package '${source}': ${error.message}`);
+        throw error;
+      }
     }
 
     const endMemory = process.memoryUsage();
