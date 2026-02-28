@@ -9,6 +9,15 @@ const htmlServer = require('../library/html-server');
 const Logger = require('../library/logger');
 const packageJson = require("../package.json");
 const escape = require('escape-html');
+const {ExpandWorker} = require("./workers/expand");
+const ValueSet = require("./library/valueset");
+const {CodeSystemXML} = require("./xml/codesystem-xml");
+const {ValueSetXML} = require("./xml/valueset-xml");
+const {BundleXML} = require("./xml/bundle-xml");
+const {CapabilityStatementXML} = require("./xml/capabilitystatement-xml");
+const {TerminologyCapabilitiesXML} = require("./xml/terminologycapabilities-xml");
+const {ParametersXML} = require("./xml/parameters-xml");
+const {OperationOutcomeXML} = require("./xml/operationoutcome-xml");
 
 const txHtmlLog = Logger.getInstance().child({ module: 'tx-html' });
 
@@ -57,10 +66,16 @@ function loadTemplate() {
 class TxHtmlRenderer {
   renderer;
   liquid;
+  languages;
+  i18n;
+  path;
 
-  constructor(renderer, liquid) {
+  constructor(renderer, liquid, languages, i18n, path) {
     this.renderer = renderer;
     this.liquid = liquid;
+    this.languages = languages;
+    this.i18n = i18n;
+    this.path = path;
   }
 
   /**
@@ -85,7 +100,7 @@ class TxHtmlRenderer {
     if (_fmt && typeof _fmt !== 'string') {
       _fmt = null;
     }
-    if (_fmt && _fmt == 'html') {
+    if (_fmt && (_fmt == 'html' || _fmt.startsWith('html/'))) {
       return true;
     }
     if (!_fmt) {
@@ -106,6 +121,14 @@ class TxHtmlRenderer {
     } else {
       const resourceType = json.resourceType || 'Response';
 
+      let pfx = resourceType;
+      if (req.path.includes('$')) {
+        let s = req.path.substring(req.path.indexOf('$') + 1).replace(/[^a-zA-Z].*$/, '');
+        switch (s) {
+          case 'expand': pfx = "Expansion for "+resourceType;
+        }
+      }
+
       if (resourceType === 'Bundle' && json.type === 'searchset') {
         // Extract the resource type being searched from self link or entries
         const selfLink = json.link?.find(l => l.relation === 'self')?.url || '';
@@ -124,11 +147,11 @@ class TxHtmlRenderer {
       }
 
       if (json.id) {
-        return `${resourceType}/${json.id}`;
+        return `${pfx} ${json.id}`;
       }
 
       if (json.name) {
-        return `${resourceType}: ${json.name}`;
+        return `${pfx} ${json.name}`;
       }
 
       return resourceType;
@@ -267,15 +290,27 @@ class TxHtmlRenderer {
       return await this.buildHomePage(req);
     } else {
       try {
+        const _fmt = req.query._format || req.query.format || req.body?._format;
+        const op = req.path.includes("$");
         const resourceType = json.resourceType;
 
         switch (resourceType) {
           case 'Parameters':
             return await this.renderParameters(json);
           case 'CodeSystem':
-            return await this.renderCodeSystem(json, inBundle);
-          case 'ValueSet':
-            return await this.renderValueSet(json, inBundle);
+            return await this.renderCodeSystem(json, inBundle, _fmt, op);
+          case 'ValueSet': {
+            let exp = undefined;
+            if (!inBundle && !op && (!_fmt || _fmt == 'html')) {
+              try {
+                let worker = new ExpandWorker(req.txOpContext, this.log, req.txProvider, this.languages, this.i18n);
+                exp = new ValueSet(await worker.handleInternalExpand(json, req));
+              } catch (error) {
+                exp = error;
+              }
+            }
+            return await this.renderValueSet(json, inBundle, _fmt, op, exp);
+          }
           case 'ConceptMap':
             return await this.renderConceptMap(json, inBundle);
           case 'CapabilityStatement':
@@ -575,35 +610,88 @@ class TxHtmlRenderer {
   /**
    * Render CodeSystem resource
    */
-  async renderCodeSystem(json, inBundle) {
-    let html = await this.renderResourceWithNarrative(json, await this.renderer.renderCodeSystem(json));
+  async renderCodeSystem(json, inBundle, _fmt) {
+    if (inBundle) {
+      return await this.renderResourceWithNarrative(json, await this.renderer.renderCodeSystem(json));
+    } else {
+      let html = `<ul class="nav nav-tabs">`;
+      html += this.tab(!_fmt || _fmt == 'html', json.resourceType, json.resourceType, 'html', json.id);
+      html += this.tab(_fmt && _fmt == 'html/json', 'JSON', json.resourceType, 'html/json', json.id);
+      html += this.tab(_fmt && _fmt == 'html/xml', 'XML', json.resourceType, 'html/xml', json.id);
+      html += this.tab(_fmt && _fmt == 'html/narrative', 'Original Narrative', json.resourceType, 'html/narrative', json.id);
+      html += this.tab(_fmt && _fmt == 'html/ops', 'LookUp / Subsumes', json.resourceType, 'html/ops', json.id);
+      html += `</ul>`;
 
-    if (!inBundle) {
-      html += await this.liquid.renderFile('codesystem-operations', {
-        opsId: this.generateResourceId(),
-        url: escape(json.url || '')
-      });
+      if (!_fmt || _fmt == 'html') {
+        html += await this.renderResourceWithNarrative(json, await this.renderer.renderCodeSystem(json));
+      } else if (_fmt == "html/json") {
+        html += await this.renderResourceJson(json);
+      } else if (_fmt == "html/xml") {
+        html += await this.renderResourceXml(json);
+      } else if (_fmt == "html/narrative") {
+        html += await this.renderResourceWithNarrative(json, json.text?.div);
+      } else if (_fmt == "html/ops") {
+        html += await this.liquid.renderFile('codesystem-operations', {
+          opsId: this.generateResourceId(),
+          vcSystemId: this.generateResourceId(),
+          inferSystemId: this.generateResourceId(),
+          url: escape(json.url || '')
+        });
+      }
+
+
+      return html;
     }
-
-    return html;
   }
 
+  tab(b, name, rtype, type, id) {
+    if (b) {
+      return `<li class="active"><a href="#">${name}</a></li>`;
+    } else {
+      return `<li><a href="${this.path}/${rtype}/${id}?_format=${type}">${name}</a></li>`;
+    }
+  }
   /**
    * Render ValueSet resource
    */
-  async renderValueSet(json, inBundle) {
-    let html = await this.renderResourceWithNarrative(json, await this.renderer.renderValueSet(json));
+  async renderValueSet(json, inBundle, _fmt, op, exp) {
+    if (inBundle || op) {
+      return await this.renderResourceWithNarrative(json, await this.renderer.renderValueSet(json));
+    } else {
+      let html = `<ul class="nav nav-tabs">`;
+      html += this.tab(!_fmt || _fmt == 'html', json.resourceType, json.resourceType, 'html', json.id);
+      html += this.tab(_fmt && _fmt == 'html/json', 'JSON', json.resourceType, 'html/json', json.id);
+      html += this.tab(_fmt && _fmt == 'html/xml', 'XML', json.resourceType, 'html/xml', json.id);
+      html += this.tab(_fmt && _fmt == 'html/narrative', 'Original Narrative', json.resourceType, 'html/narrative', json.id);
+      html += this.tab(_fmt && _fmt == 'html/ops', 'Expand / Validate', json.resourceType, 'html/ops', json.id);
+      html += `</ul>`;
 
-    if (!inBundle) {
-      html += await this.liquid.renderFile('valueset-operations', {
-        opsId: this.generateResourceId(),
-        vcSystemId: this.generateResourceId(),
-        inferSystemId: this.generateResourceId(),
-        url: escape(json.url || '')
-      });
+      if (!_fmt || _fmt == 'html') {
+        html += await this.renderResourceWithNarrative(json, await this.renderer.renderValueSet(json));
+        if (exp) {
+          html += "<h2>Expansion</h2>";
+          if (exp instanceof ValueSet) {
+            html += await this.renderer.renderVSExpansion(exp.jsonObj, false)
+          } else {
+            html += `<p>Error: {$exp}</p>`;
+          }
+        }
+      } else if (_fmt == "html/json") {
+        html += await this.renderResourceJson(json);
+      } else if (_fmt == "html/xml") {
+        html += await this.renderResourceXml(json);
+      } else if (_fmt == "html/narrative") {
+        html += await this.renderResourceWithNarrative(json, json.text?.div);
+      } else if (_fmt == "html/ops") {
+        html += await this.liquid.renderFile('valueset-operations', {
+          opsId: this.generateResourceId(),
+          vcSystemId: this.generateResourceId(),
+          inferSystemId: this.generateResourceId(),
+          url: escape(json.url || '')
+        });
+      }
+      return html;
     }
-
-    return html;
   }
 
   /**
@@ -1101,9 +1189,7 @@ class TxHtmlRenderer {
    * Render resource with text/div narrative and collapsible JSON source
    */
   async renderResourceWithNarrative(json, rendered) {
-    const resourceId = this.generateResourceId();
-
-    let html = "";
+    let html = '';
 
     // Show text/div narrative if present
     if (rendered) {
@@ -1113,30 +1199,37 @@ class TxHtmlRenderer {
     } else {
       html += '<div class="narrative">(No Narrative)</div>';
     }
-    if (json.text && json.text.div) {
-      // Collapsible JSON source
-      html += '<div class="xhtml">';
-      html += `<button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleOriginalNarrative('${resourceId}x')">`;
-      html += 'Show Original Narrative</button>';
-      html += `<div id="${resourceId}x" class="original-narrative" style="display: none; margin-top: 10px;">`;
 
-      html += '<div class="narrative">';
-      html += json.text.div;  // Already HTML, render as-is
-      html += '</div>';
-    }
-    html += '</div>';
-    html += '</div>';
+    return html;
+  }
 
-
-    // Collapsible JSON source
-    html += '<div class="json-source">';
-    html += `<button type="button" class="btn btn-sm btn-outline-secondary" onclick="toggleJsonSource('${resourceId}')">`;
-    html += 'Show JSON Source</button>';
-    html += `<div id="${resourceId}" class="json-content" style="display: none; margin-top: 10px;">`;
+  async renderResourceJson(json) {
+    let html = "";
+    html += `<div class="json-content" style="margin-top: 10px;">`;
     html += `<pre>${escape(JSON.stringify(json, null, 2))}</pre>`;
     html += '</div>';
-    html += '</div>';
+    return html;
+  }
 
+  convertResourceToXml(res) {
+    switch (res.resourceType) {
+      case "CodeSystem" : return CodeSystemXML.toXml(res);
+      case "ValueSet" : return ValueSetXML.toXml(res);
+      case "Bundle" : return BundleXML.toXml(res, this.fhirVersion);
+      case "CapabilityStatement" : return CapabilityStatementXML.toXml(res, "R5");
+      case "TerminologyCapabilities" : return TerminologyCapabilitiesXML.toXml(res, "R5");
+      case "Parameters": return ParametersXML.toXml(res, this.fhirVersion);
+      case "OperationOutcome": return OperationOutcomeXML.toXml(res, this.fhirVersion);
+    }
+    throw new Error(`Resource type ${res.resourceType} not supported in XML`);
+  }
+
+  async renderResourceXml(json) {
+    let xml = this.convertResourceToXml(json);
+    let html = "";
+    html += `<div class="xml-content" style="margin-top: 10px;">`;
+    html += `<pre>${escape(xml)}</pre>`;
+    html += '</div>';
     return html;
   }
 

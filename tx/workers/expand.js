@@ -1797,7 +1797,48 @@ class ExpandWorker extends TerminologyWorker {
     req.logInfo = this.usedSources.join("|")+txp.logInfo();
     return res.json(result);
   }
-  
+
+  /**
+   * Handle type-level expand: /ValueSet/$expand
+   * ValueSet identified by url, or provided directly in body
+   */
+  async handleInternalExpand(valueSet, req) {
+    this.deadCheck('expand-internal');
+
+    if (!valueSet.jsonObj) {
+      valueSet = new ValueSet(valueSet);
+    }
+    // Determine how the request is structured
+    let params = null;
+    this.seeSourceVS(valueSet);
+
+    if (req.method === 'POST' && req.body) {
+      if (req.body.resourceType === 'ValueSet') {
+        params = this.queryToParameters(req.query);
+      } else if (req.body.resourceType === 'Parameters') {
+        // Body is a Parameters resource
+        params = req.body;
+      } else {
+        // Assume form body - convert to Parameters
+        params = this.formToParameters(req.body, req.query);
+      }
+    } else {
+      // GET request - convert query to Parameters
+      params = this.queryToParameters(req.query);
+    }
+    this.addHttpParams(req, params);
+
+    // Handle tx-resource and cache-id parameters
+    this.setupAdditionalResources(params);
+    const logExtraOutput = this.findParameter(params, 'logExtraOutput');
+
+    let txp = new TxParameters(this.opContext.i18n.languageDefinitions, this.opContext.i18n, false);
+    txp.readParams(params);
+
+    // Perform the expansion
+    return await this.doExpand(valueSet, txp, logExtraOutput);
+  }
+
   /**
    * Handle instance-level expand: /ValueSet/{id}/$expand
    * ValueSet identified by resource ID

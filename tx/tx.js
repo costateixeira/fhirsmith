@@ -300,7 +300,7 @@ class TXModule {
       // Wrap res.json to intercept and convert to HTML if browser requests it, and log the request
       const originalJson = res.json.bind(res);
 
-      let txhtml = new TxHtmlRenderer(new Renderer(opContext, endpointInfo.provider), this.liquid);
+      let txhtml = new TxHtmlRenderer(new Renderer(opContext, endpointInfo.provider), this.liquid, this.languages, this.i18n, endpointInfo.path);
       res.json = async (data) => {
         try {
           const duration = Date.now() - req.txStartTime;
@@ -897,7 +897,7 @@ class TXModule {
     router.get('/problems.html', async (req, res) => {
       const start = Date.now();
       try {
-        let txhtml = new TxHtmlRenderer(new Renderer(req.txOpContext, req.txProvider), this.liquid);
+        let txhtml = new TxHtmlRenderer(new Renderer(req.txOpContext, req.txProvider), this.liquid, this.languages, this.i18n, req.txEndpoint.path);
         const problemFinder = new ProblemFinder();
         const content = await problemFinder.scanValueSets(req.txProvider);
         const html = await txhtml.renderPage('Problems', '<h3>ValueSet dependencies on unknown CodeSystem/Versions</h3>'+content, req.txEndpoint, req.txStartTime);

@@ -419,7 +419,7 @@ class Renderer {
         li.tx(this.translate('VALUE_SET_ALL_CODES_DEF')+" ");
         await this.renderLink(li,inc.system+(inc.version ? "|"+inc.version : ""));
       } else if (inc.concept) {
-        li.tx(this.translate('VALUE_SET_THESE_CODES_DEF'));
+        li.tx(this.translate('VALUE_SET_THESE_CODES_DEF')+" ");
         await this.renderLink(li,inc.system+(inc.version ? "|"+inc.version : ""));
         li.tx(":");
         const ul = li.ul();
@@ -896,6 +896,19 @@ class Renderer {
       }
     }
     return count;
+  }
+
+  async renderVSExpansion(vs, showProps) {
+    let div_ = div();
+    let tbl;
+    if (showProps) {
+      div_.h2().tx("Expansion Properties");
+      tbl = div_.table("grid");
+    } else {
+      tbl = div(); // dummy
+    }
+    await this.renderExpansion(div_.table("grid"), vs, tbl);
+    return div_.toString();
   }
 
   async renderExpansion(x, vs, tbl) {
