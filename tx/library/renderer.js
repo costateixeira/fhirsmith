@@ -147,6 +147,7 @@ class Renderer {
     this.renderProperty(tbl, 'GENERAL_TITLE', res.title);
     this.renderProperty(tbl, 'GENERAL_STATUS', res.status);
     this.renderPropertyMD(tbl, 'GENERAL_DEFINITION', res.description);
+    this.renderPropertyMD(tbl, 'Purpose', res.purpose);
     this.renderProperty(tbl, 'CANON_REND_PUBLISHER', res.publisher);
     this.renderProperty(tbl, 'CANON_REND_COMMITTEE', Extensions.readString(res, 'http://hl7.org/fhir/StructureDefinition/structuredefinition-wg'));
     this.renderProperty(tbl, 'GENERAL_COPYRIGHT', res.copyright);
