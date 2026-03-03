@@ -33,7 +33,12 @@ class CodeSystem extends CanonicalResource {
     // Convert to R5 format internally (modifies input for performance)
     this.jsonObj = codeSystemToR5(this.jsonObj, fhirVersion);
     if (!noMaps) {
-      this.validate();
+      try {
+        this.validate();
+      } catch (e) {
+        const id = this.jsonObj?.url ? `${this.jsonObj.url}|${this.jsonObj.version || ''}` : this.jsonObj?.name || 'unknown';
+        throw new Error(`${e.message} (in ${id})`);
+      }
       this.buildMaps();
     }
   }

@@ -402,6 +402,45 @@ app.get('/', async (req, res) => {
       return res.sendFile(overrideIndex);
     }
   }
+
+  // Check if client wants HTML response
+  const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
+
+  if (acceptsHtml) {
+    try {
+      const startTime = Date.now();
+
+      // Load template if not already loaded
+      if (!htmlServer.hasTemplate('root')) {
+        const templatePath = path.join(__dirname, 'root-template.html');
+        htmlServer.loadTemplate('root', templatePath);
+      }
+
+      const content = await buildRootPageContent();
+
+      // Load optional about box fragment from data directory
+      let about = '';
+      const aboutPath = path.join(folders.dataDir(), 'about.html');
+      if (fs.existsSync(aboutPath)) {
+        about = fs.readFileSync(aboutPath, 'utf8');
+      }
+
+      // Build basic stats for root page
+      const stats = {
+        version: packageJson.version,
+        enabledModules: Object.keys(config.modules).filter(m => config.modules[m].enabled).length,
+        processingTime: Date.now() - startTime,
+        about
+      };
+
+      const html = htmlServer.renderPage('root', escape(config.hostName) || 'FHIRsmith Server', content, stats);
+      res.setHeader('Content-Type', 'text/html');
+      res.send(html);
+    } catch (error) {
+      serverLog.error('Error rendering root page:', error);
+      htmlServer.sendErrorResponse(res, 'root', error);
+    }
+  }
   return serveFhirsmithHome(req, res);
 });
 

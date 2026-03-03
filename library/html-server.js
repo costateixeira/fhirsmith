@@ -72,7 +72,8 @@ class HtmlServer {
       .replace(/\[%total-packages%\]/g, escape(renderOptions.totalPackages.toLocaleString()))
       .replace(/\[%endpoint-path%\]/g, escape(renderOptions.endpointpath))
       .replace(/\[%fhir-version%\]/g, escape(renderOptions.fhirversion))
-      .replace(/\[%ms%\]/g, escape(renderOptions.processingTime.toString()));
+      .replace(/\[%ms%\]/g, escape(renderOptions.processingTime.toString()))
+      .replace(/\[%about%\]/g, renderOptions.about || '');
     
     // Handle any custom template variables
     if (options.templateVars) {
