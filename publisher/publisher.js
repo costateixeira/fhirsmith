@@ -91,6 +91,8 @@ class PublisherModule {
                                                id INTEGER PRIMARY KEY AUTOINCREMENT,
                                                name TEXT NOT NULL,
                                                local_folder TEXT NOT NULL,
+                                               history_templates TEXT NOT NULL,
+                                               web_templates TEXT NOT NULL,
                                                server_update_script TEXT NOT NULL,
                                                is_active BOOLEAN DEFAULT 1,
                                                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -1605,6 +1607,14 @@ class PublisherModule {
         content += '<input type="text" class="form-control" id="local_folder" name="local_folder" required>';
         content += '</div>';
         content += '<div class="col-md-4">';
+        content += '<label for="history_templates" class="form-label">History Templates</label>';
+        content += '<input type="text" class="form-control" id="history_templates" name="history_templates" required>';
+        content += '</div>';
+        content += '<div class="col-md-4">';
+        content += '<label for="web_templates" class="form-label">Web Templates</label>';
+        content += '<input type="text" class="form-control" id="web_templates" name="web_templates" required>';
+        content += '</div>';
+        content += '<div class="col-md-4">';
         content += '<label for="server_update_script" class="form-label">Update Script</label>';
         content += '<input type="text" class="form-control" id="server_update_script" name="server_update_script" required>';
         content += '</div>';
@@ -1631,6 +1641,8 @@ class PublisherModule {
             content += '<tr>';
             content += '<td>' + website.name + '</td>';
             content += '<td><code>' + website.local_folder + '</code></td>';
+            content += '<td><code>' + website.history_templates + '</code></td>';
+            content += '<td><code>' + website.web_templates + '</code></td>';
             content += '<td><code>' + website.server_update_script + '</code></td>';
             content += '<td>' + (website.is_active ? '✓' : '✗') + '</td>';
             content += '<td>' + new Date(website.created_at).toLocaleString() + '</td>';
@@ -1665,12 +1677,12 @@ class PublisherModule {
     const start = Date.now();
     try {
       try {
-        const {name, local_folder, server_update_script} = req.body;
+        const {name, local_folder, history_templates, web_templates, server_update_script} = req.body;
 
         await new Promise((resolve, reject) => {
           this.db.run(
-            'INSERT INTO websites (name, local_folder, server_update_script) VALUES (?, ?, ?)',
-            [name, local_folder, server_update_script],
+            'INSERT INTO websites (name, local_folder, history_templates, web_templates, server_update_script) VALUES (?, ?, ?, ?, ?)',
+            [name, local_folder, history_templates, web_templates, server_update_script],
             function (err) {
               if (err) reject(err);
               else resolve();
