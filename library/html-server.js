@@ -100,20 +100,26 @@ class HtmlServer {
   }
 
   sendErrorResponse(res, templateName, error, statusCode = 500) {
+    if (res.headersSent) {
+      this.log.error('[HtmlServer] Cannot send error response - headers already sent:', error.message || error);
+      return;
+    }
     const errorContent = `
       <div class="alert alert-danger">
         <h4>Error</h4>
         <p>${escape(error.message || error)}</p>
       </div>
     `;
-    
+
     try {
       const html = this.renderPage(templateName, 'Error', errorContent);
       res.status(statusCode).setHeader('Content-Type', 'text/html');
       res.send(html);
     } catch (renderError) {
       this.log.error('[HtmlServer] Error rendering error page:', renderError);
-      res.status(statusCode).send(`<h1>Error</h1><p>Failed to render error page: ${escape(renderError.message)}</p>`);
+      if (!res.headersSent) {
+        res.status(statusCode).send(`<h1>Error</h1><p>Failed to render error page: ${escape(renderError.message)}</p>`);
+      }
     }
   }
 

@@ -440,8 +440,9 @@ app.get('/', async (req, res) => {
       serverLog.error('Error rendering root page:', error);
       htmlServer.sendErrorResponse(res, 'root', error);
     }
+  } else {
+    return serveFhirsmithHome(req, res);
   }
-  return serveFhirsmithHome(req, res);
 });
 
 app.get('/fhirsmith', (req, res) => serveFhirsmithHome(req, res));
