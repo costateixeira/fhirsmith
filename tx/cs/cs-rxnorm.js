@@ -3,7 +3,7 @@ const assert = require('assert');
 const { CodeSystem } = require('../library/codesystem');
 const { CodeSystemProvider, CodeSystemFactoryProvider } = require('./cs-api');
 const {Designations} = require("../library/designations");
-const {validateArrayParameter} = require("../../library/utilities");
+const {validateArrayParameter, formatDateMMDDYYYY} = require("../../library/utilities");
 
 // Context for RxNorm concepts
 class RxNormConcept {
@@ -806,9 +806,16 @@ class RxNormTypeServicesFactory extends CodeSystemFactoryProvider {
   }
 
   id() {
-    return this.name();
+    return this.name()+"-"+this.version();
   }
 
+  describeVersion(version) {
+    try {
+      return formatDateMMDDYYYY(version);
+    } catch (error) {
+      return "v" + version;
+    }
+  }
 }
 
 // Specific RxNorm implementation

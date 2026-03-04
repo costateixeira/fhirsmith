@@ -1388,17 +1388,28 @@ class ValueSetExpander {
   }
 
   checkCanonicalStatus(exp, vurl, status, standardsStatus, experimental, source) {
+    let sourceStatus = source ? source.status : undefined;
+    let sourceStandardsStatus= source ? Extensions.readString(source, 'http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status') : undefined;
     if (standardsStatus == 'deprecated') {
-      this.addParamUri(exp, 'warning-deprecated', vurl);
+      if (sourceStandardsStatus != 'deprecated') {
+        this.addParamUri(exp, 'warning-deprecated', vurl);
+      }
     } else if (standardsStatus == 'withdrawn') {
-      this.addParamUri(exp, 'warning-withdrawn', vurl);
+      if (sourceStandardsStatus != 'withdrawn') {
+        this.addParamUri(exp, 'warning-withdrawn', vurl);
+      }
     } else if (status == 'retired') {
-      this.addParamUri(exp, 'warning-retired', vurl);
-    } else if (experimental && !source.experimental) {
-      this.addParamUri(exp, 'warning-experimental', vurl)
-    } else if (((status == 'draft') || (standardsStatus == 'draft')) &&
-      !((source.status == 'draft') || (Extensions.readString(source, 'http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status') == 'draft'))) {
-      this.addParamUri(exp, 'warning-draft', vurl)
+      if (sourceStatus != 'retired') {
+        this.addParamUri(exp, 'warning-retired', vurl);
+      }
+    } else if (experimental) {
+      if (!source.experimental) {
+        this.addParamUri(exp, 'warning-experimental', vurl);
+      }
+    } else if (((status == 'draft') || (standardsStatus == 'draft'))) {
+      if (!((source.status == 'draft') || (Extensions.readString(source, 'http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status') == 'draft'))) {
+        this.addParamUri(exp, 'warning-draft', vurl)
+      }
     }
   }
 

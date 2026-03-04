@@ -11,6 +11,7 @@ const {
 } = require('../sct/expressions');
 const {DesignationUse} = require("../library/designations");
 const {BaseCSServices} = require("./cs-base");
+const {formatDateMMDDYYYY} = require("../../library/utilities");
 
 // Context kinds matching Pascal enum
 const SnomedProviderContextKind = {
@@ -1262,11 +1263,25 @@ class SnomedServicesFactory extends CodeSystemFactoryProvider {
     return `SCT ${getEditionCode(this._sharedData.edition)}`;
   }
 
+  nameBase() {
+    return `SCT`;
+  }
+
   id() {
-    return "SCT"+this.version();
+    const match = this.version().match(/^http:\/\/snomed\.info\/sct\/(\d+)(?:\/version\/(\d{8}))?$/);
+    return "SCT-"+match[1]+"-"+match[2];
+  }
+
+  describeVersion(version) {
+    const match = version.match(/^http:\/\/snomed\.info\/sct\/(\d+)(?:\/version\/(\d{8}))?$/);
+    if (!match) return version;
+
+    const edition = getEditionName(match[1]);
+    if (!match[2]) return edition;
+
+    return edition + ' ' + formatDateMMDDYYYY(match[2].substring(4, 6) + match[2].substring(6, 8) + match[2].substring(0, 4));
   }
 }
-
 
 function getEditionName(edition) {
   const editionMap = {

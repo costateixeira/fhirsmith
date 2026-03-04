@@ -153,6 +153,7 @@ class Provider {
   }
 
   getCodeSystemById(opContext, id) {
+
     // Search through codeSystems map for matching id
     for (const cs of this.codeSystems.values()) {
       if (opContext) opContext.deadCheck('getCodeSystemById');
@@ -318,9 +319,10 @@ class Provider {
       factory = this.codeSystemFactories.get(vurlMM);
     }
     if (factory != null) {
+      let vdesc = version == null ? "" : factory.describeVersion(version);
       return {
-        link: this.path+"/CodeSystem/"+factory.id(),
-        description: factory.name()+(version ? " v"+version : "")
+        link: this.path+"/CodeSystem/x-"+factory.id(),
+        description: factory.nameBase()+' '+vdesc
       };
     }
     let cs = this.codeSystems.get(vurl);
