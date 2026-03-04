@@ -774,10 +774,17 @@ class CodeSystemFactoryProvider {
   }
 
   /**
-   * @returns {string} uri for the code system
+   * @returns {string} name for the code system
    */
   name() {
     throw new Error("Must override");
+  }
+
+  /**
+   * @returns {string} name for the code system, without version information
+   */
+  nameBase() {
+    return this.name();
   }
 
   /**
@@ -796,6 +803,16 @@ class CodeSystemFactoryProvider {
     }
     return ver;
   }
+
+  /**
+   * the version parameter might not be the same as version() once
+   * all matching rules are done
+   * @param version
+   */
+  describeVersion(version) {
+    return "v"+version;
+  }
+
 /**
    * @returns {number} how many times the factory has been asked to construct a provider
    */

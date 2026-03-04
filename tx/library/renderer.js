@@ -147,7 +147,7 @@ class Renderer {
     this.renderProperty(tbl, 'GENERAL_TITLE', res.title);
     this.renderProperty(tbl, 'GENERAL_STATUS', res.status);
     this.renderPropertyMD(tbl, 'GENERAL_DEFINITION', res.description);
-    this.renderPropertyMD(tbl, 'Purpose', res.purpose);
+    this.renderPropertyMD(tbl, 'GENERAL_PURPOSE', res.purpose);
     this.renderProperty(tbl, 'CANON_REND_PUBLISHER', res.publisher);
     this.renderProperty(tbl, 'CANON_REND_COMMITTEE', Extensions.readString(res, 'http://hl7.org/fhir/StructureDefinition/structuredefinition-wg'));
     this.renderProperty(tbl, 'GENERAL_COPYRIGHT', res.copyright);
@@ -340,7 +340,7 @@ class Renderer {
     }
     if (vs.expansion) {
       div_.h2().tx("Expansion");
-      await this.renderExpansion(div_.table("grid"), vs, tbl);
+      await this.renderExpansion(div_, vs, tbl);
     }
 
     return div_.toString();
@@ -917,12 +917,26 @@ class Renderer {
     this.renderProperty(tbl, 'Expansion Timestamp', vs.expansion.timestamp);
     this.renderProperty(tbl, 'Expansion Total', vs.expansion.total);
     this.renderProperty(tbl, 'Expansion Offset', vs.expansion.offset);
+    const warnings = [];
+    const warningNames = new Set(['deprecated', 'withdrawn', 'retired', 'experimental', 'draft']);
+    const useds = [];
+    const usedNames = new Set(['codesystem', 'valueset', 'supplement']);
     for (let p of vs.expansion.parameter || []) {
-      if( getValueName(p) === 'valueUri' || getValueName(p) === 'valueCanonical') {
+      if (p.name.startsWith('warning-') && warningNames.has(p.name.substring(8))) {
+        warnings.push(p);
+      } else if (p.name.startsWith('used-') && usedNames.has(p.name.substring(5))) {
+        useds.push(p);
+      } else if( getValueName(p) === 'valueUri' || getValueName(p) === 'valueCanonical') {
         await this.renderPropertyLink(tbl, "Parameter: " + p.name, getValuePrimitive(p));
       } else {
         this.renderProperty(tbl, "Parameter: " + p.name, getValuePrimitive(p));
       }
+    }
+    if (useds.length > 0) {
+      await this.renderUsed(x, useds);
+    }
+    if (warnings.length > 0) {
+      await this.renderWarnings(x, warnings);
     }
 
     if (!vs.expansion.contains || vs.expansion.contains.length === 0) {
@@ -949,10 +963,10 @@ class Renderer {
     }
     headerRow.th().tx(this.translate('TX_DISPLAY'));
     if (columnInfo.hasAbstract) {
-      headerRow.th().tx('Abstract');
+      headerRow.th().tx(this.translate('Abstract'));
     }
     if (columnInfo.hasInactive) {
-      headerRow.th().tx('Inactive');
+      headerRow.th().tx(this.translate('VALUE_SET_INACTIVE'));
     }
 
     // Property columns (from expansion.property definitions)
@@ -1131,12 +1145,12 @@ class Renderer {
 
     // Abstract column
     if (columnInfo.hasAbstract) {
-      tr.td().tx(contains.abstract === true ? 'true' : '');
+      tr.td().tx(contains.abstract === true ? 'abstract' : '');
     }
 
     // Inactive column
     if (columnInfo.hasInactive) {
-      tr.td().tx(contains.inactive === true ? 'true' : '');
+      tr.td().tx(contains.inactive === true ? this.translate('VALUE_SET_INACT') : '');
     }
 
     // Property columns
@@ -1579,6 +1593,52 @@ class Renderer {
     }
 
     return div_.toString();
+  }
+
+  async renderWarnings(x, warnings) {
+    await this.renderWarningsForStatus(x, 'deprecated', warnings);
+    await this.renderWarningsForStatus(x, 'withdrawn', warnings);
+    await this.renderWarningsForStatus(x, 'retired', warnings);
+    await this.renderWarningsForStatus(x, 'experimental', warnings);
+    await this.renderWarningsForStatus(x, 'draft', warnings);
+  }
+
+  async renderWarningsForStatus(x, name, warnings) {
+    const wl = warnings.filter(item => item.name == 'warning-'+name);
+    if (wl && wl.length > 0) {
+      x.para().tx(`This ValueSet depends on the following ${name} ValueSets: `);
+      let ul = x.ul();
+      for (const w of wl) {
+        const linkinfo = await this.linkResolver.resolveURL(this.opContext, getValuePrimitive(w));
+        if (linkinfo) {
+          ul.li().ah(linkinfo.link).tx(linkinfo.description);
+        } else {
+          ul.li().code().tx(getValuePrimitive(w));
+        }
+      }
+    }
+  }
+
+  async renderUsed(x, list) {
+    x.para().tx(`This ValueSet depends on the following items:`);
+    let ul = x.ul();
+    await this.renderUsedForType(ul, 'codesystem', 'CodeSystem', list);
+    await this.renderUsedForType(ul, 'valueset', 'ValueSet', list);
+    await this.renderUsedForType(ul, 'supplement', 'Supplement', list);
+  }
+
+  async renderUsedForType(ul, name, title, list) {
+    const wl = list.filter(item => item.name == 'used-' + name);
+    for (const w of wl) {
+      const li = ul.li();
+      li.tx(title+": ");
+      const linkinfo = await this.linkResolver.resolveURL(this.opContext, getValuePrimitive(w));
+      if (linkinfo) {
+        li.ah(linkinfo.link).tx(linkinfo.description);
+      } else {
+        li.code().tx(getValuePrimitive(w));
+      }
+    }
   }
 }
 

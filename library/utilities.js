@@ -274,4 +274,13 @@ class ArrayMatcher {
   }
 }
 
-module.exports = { Utilities, ArrayMatcher, validateParameter, validateOptionalParameter, validateArrayParameter, validateResource, strToBool, getValuePrimitive, getValueDT, getValueName, isAbsoluteUrl };
+const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function formatDateMMDDYYYY(s) {
+  const mm = parseInt(s.substring(0, 2), 10);
+  const dd = s.substring(2, 4);
+  const yyyy = s.substring(4, 8);
+  return dd + '-' + months[mm - 1] + ' ' + yyyy;
+}
+
+module.exports = { Utilities, ArrayMatcher, validateParameter, validateOptionalParameter, validateArrayParameter, validateResource, strToBool, getValuePrimitive, getValueDT, getValueName, isAbsoluteUrl, formatDateMMDDYYYY };

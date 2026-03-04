@@ -673,7 +673,7 @@ class TxHtmlRenderer {
           if (exp instanceof ValueSet) {
             html += await this.renderer.renderVSExpansion(exp.jsonObj, false)
           } else {
-            html += `<p>Error: {$exp}</p>`;
+            html += `<p>Error: `+exp.message+`</p>`;
           }
         }
       } else if (_fmt == "html/json") {
