@@ -5,6 +5,24 @@ All notable changes to the Health Intersections Node Server will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.6.0] - 2026-03-06
+
+### Added
+- Add support to packages server for scoped packages
+- Add support for exclusions and content tracking in tx-registry
+- Add support for serving a host
+
+### Changed
+- fix error in SCT expression validation
+- fix null error in search
+- fix search for code systems with uppercase letters in their name
+- rework html interface for CodeSystem and ValueSet
+- further work on publisehr
+
+### Tx Conformance Statement
+
+FHIRsmith passed all 1382 HL7 terminology service tests (modes tx.fhir.org,omop,general,snomed, tests v1.9.0, runner v6.8.2)
+
 ## [v0.5.6] - 2026-02-26
 
 ### Changed
