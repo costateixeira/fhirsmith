@@ -469,6 +469,8 @@ class OCLConceptMapProvider extends AbstractConceptMapProvider {
         this._sourceUrlsByCanonical.get(canonicalKey).add(resolvedSourceUrl);
         this._canonicalBySourceUrl.set(this.#norm(resolvedSourceUrl), canonical);
       } catch (e) {
+        // Ignore source lookup failures and continue resolving remaining sources.
+        continue;
       }
     }
   }
