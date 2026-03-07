@@ -23,6 +23,7 @@ const {PackageConceptMapProvider} = require("./cm/cm-package");
 class Provider {
   i18n;
   fhirVersion;
+  context;
 
   /**
    * {Map<String, CodeSystemFactoryProvider>} A list of code system factories that contains all the preloaded native code systems
@@ -33,6 +34,11 @@ class Provider {
    * {Map<String, CodeSystem>} A list of preloaded FHIR code systems
    */
   codeSystems;
+
+  /**
+   * {List<AbstractCodeSystemProvider>} code system providers, for maintaing the code system list
+   */
+  codeSystemProviders
 
   /**
    * {List<AbstractValueSetProvider>} A list of value set providers that know how to provide value sets by request
@@ -425,6 +431,47 @@ class Provider {
       }
     }
     return false;
+  }x
+
+  async updateCodeSystemList() {
+    for (let csp of this.codeSystemProviders) {
+      let changes = await csp.getCodeSystemChanges(this.fhirVersion, this.context);
+      if (changes) {
+        for (let cs of changes.added || []) {
+          this.addCodeSystem(cs);
+        }
+        for (let cs of changes.changed || []) {
+          this.addCodeSystem(cs);
+        }
+        for (let cs of changes.deleted || []) {
+          this.deleteCodeSystem(cs);
+        }
+      }
+    }
+  }
+
+  addCodeSystem(cs) {
+    const existing = this.codeSystems.get(cs.url);
+    if (!existing || cs.isMoreRecent(existing)) {
+      this.codeSystems.set(cs.url, cs);
+    }
+    if (cs.version) {
+      this.codeSystems.set(cs.vurl, cs);
+    }
+  }
+
+  deleteCodeSystem(cs) {
+    this.codeSystems.delete(cs.vurl);
+    this.codeSystems.delete(cs.url);
+    let existing = null;
+    for (let t of this.codeSystems.values()) {
+      if (!existing || t.isMoreRecent(existing)) {
+        existing = t;
+      }
+    }
+    if (existing) {
+      this.codeSystems.set(cs.url, cs);
+    }
   }
 
 }

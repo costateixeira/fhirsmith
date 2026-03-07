@@ -485,6 +485,14 @@ class PackageCrawler {
         throw new Error(`NPM Canonical "${canonical}" is not valid from ${source}`);
       }
 
+      const isTemplate = npmPackage.kind === 2; // fhir.template
+      if (npmPackage.hasInstallScripts) {
+        throw new Error(`Package ${idver} rejected: contains install scripts (preinstall/install/postinstall)`);
+      }
+      if (npmPackage.hasJavaScript && !isTemplate) {
+        throw new Error(`Package ${idver} rejected: contains JavaScript files but is not a template package`);
+      }
+
       // Extract URLs from package
       const urls = this.processPackageUrls(npmPackage);
 
@@ -554,6 +562,14 @@ class PackageCrawler {
         throw new Error('package.json not found in extracted package');
       }
 
+      const hasInstallScripts = !!(
+        packageJson.scripts && (
+          packageJson.scripts.preinstall ||
+          packageJson.scripts.install ||
+          packageJson.scripts.postinstall
+        )
+      );
+      const hasJavaScript = Object.keys(files).some(f => f.endsWith('.js') || f.endsWith('.mjs') || f.endsWith('.cjs'));
       const packageJson = JSON.parse(files['package.json']);
 
       // Extract basic NPM fields
@@ -664,6 +680,8 @@ class PackageCrawler {
         url: homepage,
         dependencies,
         kind,
+        hasInstallScripts,
+        hasJavaScript,
         notForPublication,
         files
       };

@@ -247,6 +247,14 @@ class TXModule {
     if (this.stats) {
       this.stats.addTask("Client Cache", "5 min");
     }
+    this.timers.push(setInterval(async () => {
+      try {
+        await endpointInfo.provider.updateCodeSystemList();
+      } catch (error) {
+        this.log.error(`Error updating CodeSystem list for ${endpointPath}: ${error.message}`);
+      }
+    }, 60 * 1000));
+    this.log.info(`CodeSystem list update scheduled for ${endpointPath}`);
     this.timers.push(setInterval(() => {
       endpointInfo.resourceCache.prune(cacheTimeoutMs);
     }, pruneIntervalMs));

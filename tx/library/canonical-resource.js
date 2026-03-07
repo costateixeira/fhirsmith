@@ -111,7 +111,12 @@ class CanonicalResource {
       const fmt = this.versionAlgorithm() || other.versionAlgorithm() || this.guessVersionAlgorithmFromVersion(this.version);
       switch (fmt) {
         case 'semver':
-          return VersionUtilities.isThisOrLater(other.version, this.version, VersionPrecision.PATCH);
+          try {
+            return VersionUtilities.isThisOrLater(other.version, this.version, VersionPrecision.PATCH);
+          } catch (error) {
+            // other is not semver. Not much we can do
+            return false;
+          }
         case 'date':
           return this.dateIsMoreRecent(this.version, other.version);
         case 'integer':

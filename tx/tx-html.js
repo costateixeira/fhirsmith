@@ -1246,7 +1246,7 @@ class TxHtmlRenderer {
   }
 
   buildSourceOptions(provider) {
-    let result = '';
+    let result = '<option value=""></option>';
     result += `<option value="internal">internal</option>`;
     for (let sp of provider.listValueSetSourceCodes()) {
       result += `<option value="${sp}">${sp}</option>`;

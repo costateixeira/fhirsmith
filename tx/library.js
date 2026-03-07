@@ -464,13 +464,7 @@ class Library {
     for (const resource of resources) {
       const cs = new CodeSystem(await contentLoader.loadFile(resource, contentLoader.fhirVersion()));
       cs.sourcePackage = contentLoader.pid();
-      const existing = cp.codeSystems.get(cs.url);
-      if (!existing || cs.isMoreRecent(existing)) {
-        cp.codeSystems.set(cs.url, cs);
-      }
-      if (cs.version) {
-        cp.codeSystems.set(cs.vurl, cs);
-      }
+      cp.codeSystems.push(cs);
       csc++;
     }
     this.codeSystemProviders.push(cp);
@@ -686,10 +680,12 @@ class Library {
     }
 
 
+    provider.codeSystemProviders = this.codeSystemProviders;
+    provider.context = context;
     for (const cp of this.codeSystemProviders) {
-      const csMap = await cp.listCodeSystems(fhirVersion, context);
-      for (const [key, value] of csMap) {
-        provider.codeSystems.set(key, value);
+      const csList = await cp.listCodeSystems(fhirVersion, context);
+      for (const cs of csList) {
+        provider.addCodeSystem(cs);
       }
     }
     // Don't clone valueSetProviders yet - we'll build it with correct order

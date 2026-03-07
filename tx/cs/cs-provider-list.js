@@ -7,7 +7,7 @@ class ListCodeSystemProvider extends AbstractCodeSystemProvider {
   /**
    * {Map<String, CodeSystem>} A list of code system factories that contains all the preloaded native code systems
    */
-  codeSystems = new Map();
+  codeSystems = [];
 
   /**
    * ensure that the ids on the code systems are unique, if they are
@@ -17,7 +17,7 @@ class ListCodeSystemProvider extends AbstractCodeSystemProvider {
    */
   // eslint-disable-next-line no-unused-vars
   assignIds(ids) {
-    for (const cs of this.codeSystems.values()) {
+    for (const cs of this.codeSystems) {
       if (!cs.id || ids.has("CodeSystem/"+cs.id)) {
         cs.id = ""+ids.size;
       }

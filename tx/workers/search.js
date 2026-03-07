@@ -146,9 +146,7 @@ class SearchWorker extends TerminologyWorker {
 
     for (const [key, cs] of this.provider.codeSystems) {
       this.deadCheck('searchCodeSystems');
-      if (cs.url == 'http://www.cms.gov/Medicare/Coding/HCPCSReleaseCodeSets') {
-        console.log("debug");
-      }
+
       if (key == cs.vurl) {
         const json = cs.jsonObj;
 
