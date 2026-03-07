@@ -467,5 +467,35 @@ describe('ValidateWorker', () => {
         resourceType: 'Parameters'
       }));
     });
+
+    test('POST codeableConcept validates same concept as GET url+code', async () => {
+      const { req, res } = createMockReqRes('POST', {}, {
+        resourceType: 'Parameters',
+        parameter: [
+          {
+            name: 'codeableConcept',
+            valueCodeableConcept: {
+              coding: [
+                {
+                  system: 'http://hl7.org/fhir/administrative-gender',
+                  code: 'male',
+                  display: 'Not The Preferred Display'
+                }
+              ]
+            }
+          },
+          { name: 'displayLanguage', valueString: 'pt-BR' }
+        ]
+      });
+
+      await worker.handleCodeSystem(req, res);
+
+      const payload = res.json.mock.calls[0][0];
+      const resultParam = payload.parameter.find(p => p.name === 'result');
+      expect(resultParam.valueBoolean).toBe(true);
+
+      const ccParam = payload.parameter.find(p => p.name === 'codeableConcept');
+      expect(ccParam.valueCodeableConcept.coding[0].display).toBe('Not The Preferred Display');
+    });
   });
 });
