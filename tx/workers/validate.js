@@ -2258,7 +2258,40 @@ class ValidateWorker extends TerminologyWorker {
   }
 
   normalizeCodeSystemInput(coded, mode, params) {
-    if (!coded || mode?.mode !== 'codeableConcept') {
+    if (!coded) {
+      return coded;
+    }
+
+    // Keep POST Coding + operation params equivalent to GET ?system&code&display&version.
+    if (mode?.mode === 'coding' && Array.isArray(coded.coding) && coded.coding.length > 0) {
+      const [first, ...rest] = coded.coding;
+      const normalizedCoding = {...first};
+
+      const opSystem = this.getStringParam(params, 'system') || this.getStringParam(params, 'url');
+      const opCode = this.getStringParam(params, 'code');
+      const opVersion = this.getStringParam(params, 'version');
+      const opDisplay = this.getStringParam(params, 'display');
+
+      if (!normalizedCoding.system && opSystem) {
+        normalizedCoding.system = opSystem;
+      }
+      if (!normalizedCoding.code && opCode) {
+        normalizedCoding.code = opCode;
+      }
+      if (!normalizedCoding.version && opVersion) {
+        normalizedCoding.version = opVersion;
+      }
+      if (opDisplay) {
+        normalizedCoding.display = opDisplay;
+      }
+
+      return {
+        ...coded,
+        coding: [normalizedCoding, ...rest]
+      };
+    }
+
+    if (mode?.mode !== 'codeableConcept') {
       return coded;
     }
 
