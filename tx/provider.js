@@ -431,11 +431,11 @@ class Provider {
       }
     }
     return false;
-  }
+  }x
 
-  updateCodeSystemList() {
+  async updateCodeSystemList() {
     for (let csp of this.codeSystemProviders) {
-      let changes = csp.getCodeSystemChanges(this.fhirVersion, this.context);
+      let changes = await csp.getCodeSystemChanges(this.fhirVersion, this.context);
       if (changes) {
         for (let cs of changes.added || []) {
           this.addCodeSystem(cs);
