@@ -1,0 +1,25 @@
+{
+  "server": {
+    "port": 80,
+    "cors": {
+      "origin": true,
+      "credentials": true
+    }
+  },
+  "modules": {
+    "tx": {
+      "enabled": true,
+      "librarySource": "./data/library.yml",
+      "cacheTimeout": 30,
+      "expansionCacheSize": 1000,
+      "expansionCacheMemoryThreshold": 0,
+      "endpoints": [
+        {
+          "path": "/r4",
+          "fhirVersion": "4.0",
+          "context": null
+        }
+      ]
+    }
+  }
+}

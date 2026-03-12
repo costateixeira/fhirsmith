@@ -1,0 +1,23 @@
+base:
+  # Base used for large terminology artifacts (cache files, db snapshots, etc.)
+  url: https://storage.googleapis.com/tx-fhir-org
+
+sources:
+  # Built-in providers
+  - internal:lang
+  - internal:country
+  - internal:currency
+  - internal:mimetypes
+
+  # Units
+  - ucum:tx/data/ucum-essence.xml
+
+  # Native LOINC provider (complete base)
+  - loinc:loinc-2.77-a.db
+
+  # HL7/NPM support used as fallback when OCL does not contain a resource
+  - npm:hl7.terminology
+  - npm:fhir.tx.support.r4
+
+  # Primary local source (custom content)
+  - ocl:https://oclapi2.ips.hsl.org.br

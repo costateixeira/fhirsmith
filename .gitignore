@@ -1,24 +1,18 @@
 
 .DS_Store
 
-/data
-/xig/data
+# Ignore everything in data except config.json and library.yml
+/data/*
+!/data/config.json
+!/data/library.yml
 
 node_modules/
 
-data/config.json
-
 validator_cli.jar
-
-xig/xig-download.log
 
 .idea/codeStyles/
 
-data/logs/
-
 registry/registry-data.json
-
-xig-download.log
 
 locator/
 
@@ -26,13 +20,9 @@ tests/library/.last-integration-test-run
 
 package-cache/
 
-data/passwords.ini
-
 test-cache/
 
 tests/vs/.vsac-last-run
-
-data/terminology-cache/
 
 data/shl/private-key.pem
 
