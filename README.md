@@ -229,6 +229,8 @@ GitHub Actions will automatically:
    - Change description
    ### Fixed
    - Bug fix description
+   ### Tx Conformance Statement
+     {copy content from text-cases-summary.txt}
 ```
 2. Update `package.json` to have the same release version
 
