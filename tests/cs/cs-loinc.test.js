@@ -526,6 +526,18 @@ describe('LOINC Provider', () => {
       }
     });
 
+    test('should not throw when display lookup runs with non-English context', async () => {
+      const ptContext = new OperationContext('pt-BR', opContext.i18n);
+      const ptProvider = await factory.build(ptContext, []);
+
+      try {
+        const testCode = expectedResults.basic.knownCodes[0];
+        await expect(ptProvider.display(testCode)).resolves.toBeDefined();
+      } finally {
+        ptProvider.close();
+      }
+    });
+
     test('should return correct code for context', async () => {
       const testCode = expectedResults.basic.knownCodes[0];
       const result = await provider.locate(testCode);

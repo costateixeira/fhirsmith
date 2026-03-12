@@ -33,22 +33,22 @@ Add the `tx` section to your `config.json`:
       "endpoints": [
         {
           "path": "/tx/r5",
-          "fhirVersion": 5,
+          "fhirVersion": "5.0",
           "context": null
         },
         {
           "path": "/tx/r4",
-          "fhirVersion": 4,
+          "fhirVersion": "4.0",
           "context": null
         },
         {
           "path": "/tx/r3",
-          "fhirVersion": 3,
+          "fhirVersion": "3.0",
           "context": null
         },
         {
           "path": "/tx/r4/demo",
-          "fhirVersion": 4,
+          "fhirVersion": "4.0",
           "context": "demo"
         }
       ]

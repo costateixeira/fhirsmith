@@ -1,0 +1,43 @@
+const fs = require('fs/promises');
+const fsSync = require('fs');
+
+async function ensureCacheDirectories(...dirs) {
+  for (const dir of dirs) {
+    if (!dir) {
+      continue;
+    }
+
+    try {
+      await fs.mkdir(dir, { recursive: true });
+    } catch (error) {
+      console.error('[OCL] Failed to create cache directory:', dir, error.message);
+    }
+  }
+}
+
+function getColdCacheAgeMs(cacheFilePath, logPrefix = '[OCL]') {
+  try {
+    const stats = fsSync.statSync(cacheFilePath);
+    if (!stats || !Number.isFinite(stats.mtimeMs)) {
+      return null;
+    }
+
+    return Math.max(0, Date.now() - stats.mtimeMs);
+  } catch (error) {
+    if (error && error.code !== 'ENOENT') {
+      console.error(`${logPrefix} Failed to inspect cold cache file ${cacheFilePath}: ${error.message}`);
+    }
+    return null;
+  }
+}
+
+function formatCacheAgeMinutes(ageMs) {
+  const minutes = Math.max(1, Math.round(ageMs / 60000));
+  return `${minutes} minute${minutes === 1 ? '' : 's'}`;
+}
+
+module.exports = {
+  ensureCacheDirectories,
+  getColdCacheAgeMs,
+  formatCacheAgeMinutes
+};

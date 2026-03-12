@@ -203,9 +203,12 @@ class LoincServices extends BaseCSServices {
     // Use language-aware display logic
     if (this.opContext.langs && !this.opContext.langs.isEnglishOrNothing()) {
       const displays = await this.#getDisplaysForContext(ctxt, this.opContext.langs);
+      const requestedLanguages = Array.isArray(this.opContext.langs.languages)
+        ? this.opContext.langs.languages
+        : (Array.isArray(this.opContext.langs.langs) ? this.opContext.langs.langs : []);
 
       // Try to find exact language match
-      for (const lang of this.opContext.langs.langs) {
+      for (const lang of requestedLanguages) {
         for (const display of displays) {
           if (lang.matches(display.language, true)) {
             return display.value;
@@ -214,7 +217,7 @@ class LoincServices extends BaseCSServices {
       }
 
       // Try partial language match
-      for (const lang of this.opContext.langs.langs) {
+      for (const lang of requestedLanguages) {
         for (const display of displays) {
           if (lang.matches(display.language, false)) {
             return display.value;

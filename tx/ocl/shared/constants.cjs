@@ -1,0 +1,15 @@
+const DEFAULT_BASE_URL = 'https://api.openconceptlab.org';
+const PAGE_SIZE = 100;
+const CONCEPT_PAGE_SIZE = 1000;
+const FILTERED_CONCEPT_PAGE_SIZE = 200;
+const COLD_CACHE_FRESHNESS_MS = 60 * 60 * 1000;
+const OCL_CODESYSTEM_MARKER_EXTENSION = 'http://fhir.org/FHIRsmith/StructureDefinition/ocl-codesystem';
+
+module.exports = {
+  DEFAULT_BASE_URL,
+  PAGE_SIZE,
+  CONCEPT_PAGE_SIZE,
+  FILTERED_CONCEPT_PAGE_SIZE,
+  COLD_CACHE_FRESHNESS_MS,
+  OCL_CODESYSTEM_MARKER_EXTENSION
+};
