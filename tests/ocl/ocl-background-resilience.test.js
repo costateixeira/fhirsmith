@@ -1,5 +1,4 @@
 const nock = require('nock');
-const nock = require('nock');
 const { OCLBackgroundJobQueue } = require('../../tx/ocl/cs-ocl');
 const path = require('path');
 
