@@ -2980,6 +2980,243 @@ describe('version', () => {
 
 });
 
+describe('overload', () => {
+  // A set of tests that test out handling of value sets that cross versions of the same code system
+
+  it('expand-allR5', async () => {
+    await runTest({"suite":"overload","test":"expand-all"}, "5.0");
+  });
+
+  it('expand-allR4', async () => {
+    await runTest({"suite":"overload","test":"expand-all"}, "4.0");
+  });
+
+  it('expand-all-versionedR5', async () => {
+    await runTest({"suite":"overload","test":"expand-all-versioned"}, "5.0");
+  });
+
+  it('expand-all-versionedR4', async () => {
+    await runTest({"suite":"overload","test":"expand-all-versioned"}, "4.0");
+  });
+
+  it('expand-all-mergedR5', async () => {
+    await runTest({"suite":"overload","test":"expand-all-merged"}, "5.0");
+  });
+
+  it('expand-all-mergedR4', async () => {
+    await runTest({"suite":"overload","test":"expand-all-merged"}, "4.0");
+  });
+
+  it('expand-enum-goodR5', async () => {
+    await runTest({"suite":"overload","test":"expand-enum-good"}, "5.0");
+  });
+
+  it('expand-enum-goodR4', async () => {
+    await runTest({"suite":"overload","test":"expand-enum-good"}, "4.0");
+  });
+
+  it('expand-enum-badR5', async () => {
+    await runTest({"suite":"overload","test":"expand-enum-bad"}, "5.0");
+  });
+
+  it('expand-enum-badR4', async () => {
+    await runTest({"suite":"overload","test":"expand-enum-bad"}, "4.0");
+  });
+
+  it('expand-excludeR5', async () => {
+    await runTest({"suite":"overload","test":"expand-exclude"}, "5.0");
+  });
+
+  it('expand-excludeR4', async () => {
+    await runTest({"suite":"overload","test":"expand-exclude"}, "4.0");
+  });
+
+  it('expand-exclude-versionedR5', async () => {
+    await runTest({"suite":"overload","test":"expand-exclude-versioned"}, "5.0");
+  });
+
+  it('expand-exclude-versionedR4', async () => {
+    await runTest({"suite":"overload","test":"expand-exclude-versioned"}, "4.0");
+  });
+
+  it('expand-exclude-mergedR5', async () => {
+    await runTest({"suite":"overload","test":"expand-exclude-merged"}, "5.0");
+  });
+
+  it('expand-exclude-mergedR4', async () => {
+    await runTest({"suite":"overload","test":"expand-exclude-merged"}, "4.0");
+  });
+
+  it('validate-all-goodR5', async () => {
+    await runTest({"suite":"overload","test":"validate-all-good"}, "5.0");
+  });
+
+  it('validate-all-goodR4', async () => {
+    await runTest({"suite":"overload","test":"validate-all-good"}, "4.0");
+  });
+
+  it('validate-all-good2R5', async () => {
+    await runTest({"suite":"overload","test":"validate-all-good2"}, "5.0");
+  });
+
+  it('validate-all-good2R4', async () => {
+    await runTest({"suite":"overload","test":"validate-all-good2"}, "4.0");
+  });
+
+  it('validate-all-good3R5', async () => {
+    await runTest({"suite":"overload","test":"validate-all-good3"}, "5.0");
+  });
+
+  it('validate-all-good3R4', async () => {
+    await runTest({"suite":"overload","test":"validate-all-good3"}, "4.0");
+  });
+
+  it('validate-all-good4R5', async () => {
+    await runTest({"suite":"overload","test":"validate-all-good4"}, "5.0");
+  });
+
+  it('validate-all-good4R4', async () => {
+    await runTest({"suite":"overload","test":"validate-all-good4"}, "4.0");
+  });
+
+  it('validate-all-bad2R5', async () => {
+    await runTest({"suite":"overload","test":"validate-all-bad2"}, "5.0");
+  });
+
+  it('validate-all-bad2R4', async () => {
+    await runTest({"suite":"overload","test":"validate-all-bad2"}, "4.0");
+  });
+
+  it('validate-all-bad2vR5', async () => {
+    await runTest({"suite":"overload","test":"validate-all-bad2v"}, "5.0");
+  });
+
+  it('validate-all-bad2vR4', async () => {
+    await runTest({"suite":"overload","test":"validate-all-bad2v"}, "4.0");
+  });
+
+  it('expand-all-sysverR5', async () => {
+    await runTest({"suite":"overload","test":"expand-all-sysver"}, "5.0");
+  });
+
+  it('expand-all-sysverR4', async () => {
+    await runTest({"suite":"overload","test":"expand-all-sysver"}, "4.0");
+  });
+
+  it('expand-exclude-enumR5', async () => {
+    await runTest({"suite":"overload","test":"expand-exclude-enum"}, "5.0");
+  });
+
+  it('expand-exclude-enumR4', async () => {
+    await runTest({"suite":"overload","test":"expand-exclude-enum"}, "4.0");
+  });
+
+  it('expand-mixedR5', async () => {
+    await runTest({"suite":"overload","test":"expand-mixed"}, "5.0");
+  });
+
+  it('expand-mixedR4', async () => {
+    await runTest({"suite":"overload","test":"expand-mixed"}, "4.0");
+  });
+
+  it('validate-bad-enum-code1R5', async () => {
+    await runTest({"suite":"overload","test":"validate-bad-enum-code1"}, "5.0");
+  });
+
+  it('validate-bad-enum-code1R4', async () => {
+    await runTest({"suite":"overload","test":"validate-bad-enum-code1"}, "4.0");
+  });
+
+  it('validate-bad-exclude-code1R5', async () => {
+    await runTest({"suite":"overload","test":"validate-bad-exclude-code1"}, "5.0");
+  });
+
+  it('validate-bad-exclude-code1R4', async () => {
+    await runTest({"suite":"overload","test":"validate-bad-exclude-code1"}, "4.0");
+  });
+
+  it('validate-bad-unknownR5', async () => {
+    await runTest({"suite":"overload","test":"validate-bad-unknown"}, "5.0");
+  });
+
+  it('validate-bad-unknownR4', async () => {
+    await runTest({"suite":"overload","test":"validate-bad-unknown"}, "4.0");
+  });
+
+  it('validate-v1code2-wrongdisplayR5', async () => {
+    await runTest({"suite":"overload","test":"validate-v1code2-wrongdisplay"}, "5.0");
+  });
+
+  it('validate-v1code2-wrongdisplayR4', async () => {
+    await runTest({"suite":"overload","test":"validate-v1code2-wrongdisplay"}, "4.0");
+  });
+
+  it('validate-bad-v1code4R5', async () => {
+    await runTest({"suite":"overload","test":"validate-bad-v1code4"}, "5.0");
+  });
+
+  it('validate-bad-v1code4R4', async () => {
+    await runTest({"suite":"overload","test":"validate-bad-v1code4"}, "4.0");
+  });
+
+  it('validate-bad-v2code3R5', async () => {
+    await runTest({"suite":"overload","test":"validate-bad-v2code3"}, "5.0");
+  });
+
+  it('validate-bad-v2code3R4', async () => {
+    await runTest({"suite":"overload","test":"validate-bad-v2code3"}, "4.0");
+  });
+
+  it('validate-good-code2-v1displayR5', async () => {
+    await runTest({"suite":"overload","test":"validate-good-code2-v1display"}, "5.0");
+  });
+
+  it('validate-good-code2-v1displayR4', async () => {
+    await runTest({"suite":"overload","test":"validate-good-code2-v1display"}, "4.0");
+  });
+
+  it('validate-good-enum-code3R5', async () => {
+    await runTest({"suite":"overload","test":"validate-good-enum-code3"}, "5.0");
+  });
+
+  it('validate-good-enum-code3R4', async () => {
+    await runTest({"suite":"overload","test":"validate-good-enum-code3"}, "4.0");
+  });
+
+  it('validate-good-exclude-code4R5', async () => {
+    await runTest({"suite":"overload","test":"validate-good-exclude-code4"}, "5.0");
+  });
+
+  it('validate-good-exclude-code4R4', async () => {
+    await runTest({"suite":"overload","test":"validate-good-exclude-code4"}, "4.0");
+  });
+
+  it('validate-good-v1code1R5', async () => {
+    await runTest({"suite":"overload","test":"validate-good-v1code1"}, "5.0");
+  });
+
+  it('validate-good-v1code1R4', async () => {
+    await runTest({"suite":"overload","test":"validate-good-v1code1"}, "4.0");
+  });
+
+  it('validate-good-v1code2-displayR5', async () => {
+    await runTest({"suite":"overload","test":"validate-good-v1code2-display"}, "5.0");
+  });
+
+  it('validate-good-v1code2-displayR4', async () => {
+    await runTest({"suite":"overload","test":"validate-good-v1code2-display"}, "4.0");
+  });
+
+  it('validate-good2aR5', async () => {
+    await runTest({"suite":"overload","test":"validate-good2a"}, "5.0");
+  });
+
+  it('validate-good2aR4', async () => {
+    await runTest({"suite":"overload","test":"validate-good2a"}, "4.0");
+  });
+
+});
+
 describe('fragment', () => {
   // Testing handling a code system fragment
 
@@ -3889,6 +4126,22 @@ describe('exclude', () => {
     await runTest({"suite":"exclude","test":"exclude-all"}, "4.0");
   });
 
+  it('exclude-comboR5', async () => {
+    await runTest({"suite":"exclude","test":"exclude-combo"}, "5.0");
+  });
+
+  it('exclude-comboR4', async () => {
+    await runTest({"suite":"exclude","test":"exclude-combo"}, "4.0");
+  });
+
+  it('include-comboR5', async () => {
+    await runTest({"suite":"exclude","test":"include-combo"}, "5.0");
+  });
+
+  it('include-comboR4', async () => {
+    await runTest({"suite":"exclude","test":"include-combo"}, "4.0");
+  });
+
 });
 
 describe('search', () => {
@@ -4595,6 +4848,38 @@ describe('snomed', () => {
 
   it('expand-pc-filterR4', async () => {
     await runTest({"suite":"snomed","test":"expand-pc-filter"}, "4.0");
+  });
+
+  it('validate-code-implied-1R5', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-implied-1"}, "5.0");
+  });
+
+  it('validate-code-implied-1R4', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-implied-1"}, "4.0");
+  });
+
+  it('validate-code-implied-1bR5', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-implied-1b"}, "5.0");
+  });
+
+  it('validate-code-implied-1bR4', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-implied-1b"}, "4.0");
+  });
+
+  it('validate-code-implied-2R5', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-implied-2"}, "5.0");
+  });
+
+  it('validate-code-implied-2R4', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-implied-2"}, "4.0");
+  });
+
+  it('validate-code-implied-2bR5', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-implied-2b"}, "5.0");
+  });
+
+  it('validate-code-implied-2bR4', async () => {
+    await runTest({"suite":"snomed","test":"validate-code-implied-2b"}, "4.0");
   });
 
 });
