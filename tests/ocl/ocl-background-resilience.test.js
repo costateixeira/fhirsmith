@@ -1,9 +1,7 @@
 const nock = require('nock');
-const fsp = require('fs/promises');
+const nock = require('nock');
+const { OCLBackgroundJobQueue } = require('../../tx/ocl/cs-ocl');
 const path = require('path');
-const { OCLCodeSystemProvider, OCLBackgroundJobQueue } = require('../../tx/ocl/cs-ocl');
-const { CACHE_CS_DIR, getCacheFilePath } = require('../../tx/ocl/cache/cache-paths');
-const { COLD_CACHE_FRESHNESS_MS } = require('../../tx/ocl/shared/constants');
 
 function resetQueueState() {
   OCLBackgroundJobQueue.pendingJobs = [];
