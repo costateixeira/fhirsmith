@@ -3,7 +3,9 @@ npm-debug.log
 .git
 .gitignore
 logs
-data
+data/*
+!data/config.json
+!data/library.yml
 package-cache
 *.md
 .env
