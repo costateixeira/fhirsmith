@@ -926,6 +926,9 @@ class RegistryModule {
       this.crawlInterval = null;
     }
 
+    if (this.crawler) {
+      this.crawler.shutdown();
+    }
     // Save current data
     if (this.crawler && this.currentData) {
       await this.saveData();
