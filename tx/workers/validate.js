@@ -23,6 +23,7 @@ const ValueSet = require("../library/valueset");
 const {ValueSetExpander} = require("./expand");
 const {FhirCodeSystemProvider} = require("../cs/cs-cs");
 const {CodeSystem} = require("../library/codesystem");
+const {VersionUtilities} = require("../../library/version-utilities");
 
 const DEV_IGNORE_VALUESET = false; // todo: what's going on with this (ported from pascal)
 
@@ -444,7 +445,7 @@ class ValueSetChecker {
     return await this.check(issuePath, system, version, code, null, unknownSystems, ver, inactive, normalForm, vstatus, it, op, null, null, contentMode, impliedSystem, ts, msgs, defLang);
   }
 
-  async check(path, system, version, code, displays, unknownSystems, ver, inactive, normalForm, vstatus, cause, op, vcc, params, contentMode, impliedSystem, unkCodes, messages, defLang) {
+  async check(path, system, version, code, displays, unknownSystems, ver, inactive, normalForm, vstatus, cause, op, vcc, params, contentMode, impliedSystem, unkCodes, messages, defLang, display) {
     defLang.value = new Language('en');
     this.worker.opContext.addNote(this.valueSet, 'Check "' + this.worker.renderer.displayCoded(system, version, code) + '"', this.indentCount);
 
@@ -677,11 +678,28 @@ class ValueSetChecker {
 
       if (Extensions.checkNoModifiers(this.valueSet.jsonObj.compose, 'ValueSetChecker.prepare', 'ValueSet.compose')) {
         result = false;
-        for (let cc of this.valueSet.jsonObj.compose.include || []) {
+        let determinedVersion = undefined;
+        if (!version) {
+          // if we don't have a fixed version, and we have more than one possible version, we have to pick the version
+          // now, by looking to see which version we can find the value in, starting from the most revent.
+          let includes = (this.valueSet.jsonObj.compose.include || []).filter(inc => inc.system == system);
+          let vset = new Set(includes.map(inc => inc.version).filter(Boolean));
+          if (vset.size > 1) {
+            determinedVersion = await this.pickApplicableVersion(vset, system, code, display);
+          }
+        }
+        const includes = [...(this.valueSet.jsonObj.compose.include || [])];
+        includes.sort((a, b) => {
+          if (a.system === b.system && a.version && b.version) {
+            return -VersionUtilities.compareVersionsGeneral(a.version, b.version);
+          }
+          return 0;
+        });
+        for (let cc of includes) {
           this.worker.deadCheck('check#2');
           if (!cc.system) {
             result = true;
-          } else if (cc.system === system || system === '%%null%%') {
+          } else if ((cc.system === system || system === '%%null%%') && (!determinedVersion || cc.version == determinedVersion) && this.useThisVersion(cc, version)) {
             let v = await this.determineVersion(path, cc.system, cc.version, version, op, unknownSystems, messages);
             let cs = await this.worker.findCodeSystem(system, v, this.params, ["complete", "fragment"], op,true, true, false, this.worker.requiredSupplements);
             if (cs === null) {
@@ -720,12 +738,12 @@ class ValueSetChecker {
             defLang.value = new Language(cs.defLang());
             this.worker.opContext.addNote(this.valueSet, 'CodeSystem found: ' + this.worker.renderer.displayCoded(cs) + ' for ' + this.worker.renderer.displayCoded(cc.system, v), this.indentCount);
             await this.checkCanonicalStatusCS(path, op, cs, this.valueSet);
-            ver.value = cs.version();
             this.worker.checkSupplements(cs, cc, this.worker.requiredSupplements, this.worker.usedSupplements);
             contentMode.value = cs.contentMode();
 
             let msg = '';
             if ((system === '%%null%%' || cs.system() === system) && await this.checkConceptSet(path, 'in', cs, cc, code, displays, this.valueSet, msg, inactive, normalForm, vstatus, op, vcc, messages)) {
+              ver.value = cs.version();
               result = true;
             } else {
               result = false;
@@ -766,7 +784,6 @@ class ValueSetChecker {
               }
               await this.checkCanonicalStatus(path, op, cs, this.valueSet);
               this.worker.checkSupplements(cs, cc, this.worker.requiredSupplements, this.worker.usedSupplements);
-              ver.value = cs.version();
               contentMode.value = cs.contentMode();
               let msg = '';
               excluded = (system === '%%null%%' || cs.system() === system) && await this.checkConceptSet(path, 'not in', cs, cc, code, displays, this.valueSet, msg, inactive, normalForm, vstatus, op, vcc);
@@ -1037,7 +1054,8 @@ class ValueSetChecker {
       if (this.worker.opContext.usageTracker) {
         this.worker.opContext.usageTracker.seeConcept(c.system, c.code);
       }
-      const csd = await this.worker.findCodeSystem(c.system, null, this.params, ['complete', 'fragment'], false, true, false, false, this.worker.requiredSupplements);
+      let vsImpliedVersion = this.findVSVersionForSystem(c.system);
+      const csd = await this.worker.findCodeSystem(c.system, vsImpliedVersion, this.params, ['complete', 'fragment'], false, true, false, false, this.worker.requiredSupplements);
       this.worker.seeSourceProvider(csd, c.system);
       this.worker.deadCheck('check-b#1');
       let path;
@@ -1055,7 +1073,7 @@ class ValueSetChecker {
       let ver = { value: '' };
       let contentMode = { value: null };
       let defLang = { value: null };
-      let v = await this.check(path, c.system, c.version, c.code, list, unknownSystems, ver, inactive, normalForm, vstatus, cause, op, vcc, result, contentMode, impliedSystem, ts, mt, defLang);
+      let v = await this.check(path, c.system, c.version, c.code, list, unknownSystems, ver, inactive, normalForm, vstatus, cause, op, vcc, result, contentMode, impliedSystem, ts, mt, defLang, c.display);
       if (v === false) {
         cause.value = 'code-invalid';
       }
@@ -1509,14 +1527,16 @@ class ValueSetChecker {
 
   async checkConceptSet(path, role, cs, cset, code, displays, vs, message, inactive, normalForm, vstatus, op, vcc, messages) {
     this.worker.opContext.addNote(vs, 'check code ' + role + ' ' + this.worker.renderer.displayValueSetInclude(cset) + ' at ' + path, this.indentCount);
-    inactive.value = false;
+    if (role !== 'not in') {
+      inactive.value = false;
+    }
     let result = false;
     if (!cset.concept && !cset.filter) {
       let loc = await cs.locate(code);
       result = false;
       if (loc.context == null) {
         this.worker.opContext.addNote(this.valueSet, 'Code "' + code + '" not found in ' + this.worker.renderer.displayCoded(cs)+": "+loc.mesage, this.indentCount);
-        if (!this.params.membershipOnly) {
+        if (!this.params.membershipOnly && role !== 'not in') {
           if (cs.contentMode() !== 'complete') {
             op.addIssue(new Issue('warning', 'code-invalid', addToPath(path, 'code'), 'UNKNOWN_CODE_IN_FRAGMENT', this.worker.i18n.translate('UNKNOWN_CODE_IN_FRAGMENT', this.params.HTTPLanguages, [code, cs.system(), cs.version()]), 'invalid-code'));
             result = true;
@@ -1548,16 +1568,18 @@ class ValueSetChecker {
 
         if (!(this.params.abstractOk || !(await cs.isAbstract(loc.context)))) {
           this.worker.opContext.addNote(this.valueSet, 'Code "' + code + '" found in ' + this.worker.renderer.displayCoded(cs) + ' but is abstract', this.indentCount);
-          if (!this.params.membershipOnly) {
+          if (!this.params.membershipOnly && role !== 'not in') {
             op.addIssue(new Issue('error', 'business-rule', addToPath(path, 'code'), 'ABSTRACT_CODE_NOT_ALLOWED', this.worker.i18n.translate('ABSTRACT_CODE_NOT_ALLOWED', this.params.HTTPLanguages, [cs.system(), code]), 'code-rule'));
           }
         } else if (this.excludeInactives() && await cs.isInactive(loc.context)) {
           this.worker.opContext.addNote(this.valueSet, 'Code "' + code + '" found in ' + this.worker.renderer.displayCoded(cs) + ' but is inactive', this.indentCount);
-          let msg = this.worker.i18n.translate('STATUS_CODE_WARNING_CODE', this.params.HTTPLanguages, ['not active', code]);
-          op.addIssue(new Issue('error', 'business-rule', addToPath(path, 'code'), 'STATUS_CODE_WARNING_CODE', msg, 'code-rule'));
+          if (role !== 'not in') {
+            let msg = this.worker.i18n.translate('STATUS_CODE_WARNING_CODE', this.params.HTTPLanguages, ['not active', code]);
+            op.addIssue(new Issue('error', 'business-rule', addToPath(path, 'code'), 'STATUS_CODE_WARNING_CODE', msg, 'code-rule'));
+            messages.push(msg);
+          }
           result = false;
-          messages.push(msg);
-          if (!this.params.membershipOnly) {
+          if (!this.params.membershipOnly && role !== 'not in') {
             inactive.value = true;
             inactive.path = path;
             if (inactive.value) {
@@ -1567,28 +1589,31 @@ class ValueSetChecker {
         } else if (this.params.activeOnly && await cs.isInactive(loc.context)) {
           this.worker.opContext.addNote(this.valueSet, 'Code "' + code + '" found in ' + this.worker.renderer.displayCoded(cs) + ' but is inactive', this.indentCount);
           result = false;
-          inactive.value = true;
-          inactive.path = path;
-          vstatus.value = await cs.getStatus(loc.context);
-          let msg = this.worker.i18n.translate('STATUS_CODE_WARNING_CODE', this.params.HTTPLanguages, ['not active', code]);
-          messages.push(msg);
-          op.addIssue(new Issue('error', 'business-rule', addToPath(path, 'code'), 'STATUS_CODE_WARNING_CODE', msg, 'code-rule'));
+          if (role !== 'not in') {
+            inactive.value = true;
+            inactive.path = path;
+            vstatus.value = await cs.getStatus(loc.context);
+            let msg = this.worker.i18n.translate('STATUS_CODE_WARNING_CODE', this.params.HTTPLanguages, ['not active', code]);
+            messages.push(msg);
+            op.addIssue(new Issue('error', 'business-rule', addToPath(path, 'code'), 'STATUS_CODE_WARNING_CODE', msg, 'code-rule'));
+          }
         } else {
           result = true;
-          inactive.value = await cs.isInactive(loc.context);
-          inactive.path = path;
-          vstatus.value = await cs.getStatus(loc.context);
-
-          if (vcc !== null) {
-            if (!vcc.coding) {
-              vcc.coding = [];
+          if (role !== 'not in') {
+            inactive.value = await cs.isInactive(loc.context);
+            inactive.path = path;
+            vstatus.value = await cs.getStatus(loc.context);
+            if (vcc !== null) {
+              if (!vcc.coding) {
+                vcc.coding = [];
+              }
+              vcc.coding.push({
+                system: cs.system(),
+                version: cs.version(),
+                code: await cs.code(loc.context),
+                display: displays.preferredDisplay(this.params.workingLanguages())
+              });
             }
-            vcc.coding.push({
-              system: cs.system(),
-              version: cs.version(),
-              code: await cs.code(loc.context),
-              display: displays.preferredDisplay(this.params.workingLanguages())
-            });
           }
           return result;
         }
@@ -1739,6 +1764,72 @@ class ValueSetChecker {
     return list.join(",");
   }
 
+  findVSVersionForSystem(system) {
+    let set = new Set();
+    for (let inc of this.valueSet.jsonObj.compose?.include || []) {
+      if (inc.system == system && inc.version) {
+        set.add(inc.version);
+      }
+    }
+    let v = null;
+    for (let t of set) {
+      if (!v || VersionUtilities.compareVersionsGeneral(t, v) > 0) {
+        v = t;
+      }
+    }
+    return v;
+  }
+
+  async pickApplicableVersion(vset, system, code, display) {
+    let found = [];
+    for (let v of vset) {
+      let cs = await this.worker.findCodeSystem(system, v, this.params, ["complete", "fragment"], null, true, true, false, this.worker.requiredSupplements);
+      if (cs != null) {
+        let loc = await cs.locate(code);
+        if (loc.context) {
+          if (!display || await this.displayIsOk(cs, loc.context, display)) {
+            found.push(v);
+          }
+        }
+      }
+    }
+    // if it was found in none or all of them, we don't do anything
+    if (found.length == vset.size) {
+      return undefined;
+    }
+    if (found.length > 0) {
+      let sorted = found.sort((a, b) => -VersionUtilities.compareVersionsGeneral(a, b));
+      return sorted[0];
+    } else { // well, none of them, we'll go with the latest
+      let sorted = [...vset].sort((a, b) => -VersionUtilities.compareVersionsGeneral(a, b));
+      return sorted[0];
+    }
+  }
+
+  async displayIsOk(cs, context, display) {
+    if (display == await cs.display(context)) {
+      return true;
+    }
+    const cds = new Designations(this.worker.i18n.languageDefinitions);
+    await cs.designations(context, cds);
+    return cds.designations.find(cd => cd.value == display);
+  }
+
+  hasMatchForVersion(includes, version) {
+    for (let inc of includes) {
+      if (inc.version == version) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  useThisVersion(cc, version) {
+    if (!version || cc.version == version) {
+      return true;
+    }
+    return !this.hasMatchForVersion(this.valueSet.jsonObj.compose.include || [], version);
+  }
 }
 
 function addToPath(path, name) {

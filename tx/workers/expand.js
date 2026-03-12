@@ -197,6 +197,7 @@ class ValueSetCounter {
 class ValueSetExpander {
   worker;
   params;
+  doingVersion = true;
   excludedSystems = new Set();
   excluded = new Set();
   hasExclusions = false;
@@ -495,7 +496,8 @@ class ValueSetExpander {
       }
     }
 
-    this.excluded.add(system + '|' + version + '#' + code);
+    let key = (this.doingVersion && !this.params.versionsMatch ? system + '|' + version : system) + '#' + code
+    this.excluded.add(key);
   }
 
   async checkCanExpandValueSet(uri, version) {
@@ -922,8 +924,20 @@ class ValueSetExpander {
       if (!cset.concept && !cset.filter) {
         this.worker.opContext.log('handle system');
         if (!cset.valueSet) {
-          // excluding a whole system - we don't list the codes in this case
-          this.excludedSystems.add(cset.system + (cset.version ? '|'+cset.version : ''));
+          if (!this.excludeSpecialCase) {
+            // excluding a whole system - we don't list the codes in this case
+            this.excludedSystems.add(cset.system + (this.doingVersion && cset.version ? '|' + cset.version : ''));
+          } else {
+            const iter = await cs.iteratorAll();
+            if (iter) {
+              let c = await cs.nextContext(iter);
+              while (c) {
+                this.worker.deadCheck('processCodes#3aa');
+                this.excludeCode(cs, cs.system(), cs.version(), await cs.code(c), expansion, valueSets, vsSrc.url);
+                c = await cs.nextContext(iter);
+              }
+            }
+          }
         } else {
           if (cs.isNotClosed(filter)) {
             if (cs.specialEnumeration()) {
@@ -1081,6 +1095,7 @@ class ValueSetExpander {
   async handleCompose(source, filter, expansion, notClosed, vsInfo) {
     this.worker.opContext.log('compose #1');
 
+    this.doingVersion = false;
     const ts = new Map();
     for (const c of source.jsonObj.compose.include || []) {
       this.worker.deadCheck('handleCompose#2');
@@ -1097,6 +1112,8 @@ class ValueSetExpander {
     if (vsInfo.handleByCS) {
       await this.processCodes("ValueSet.compose", source, source.jsonObj.compose, filter, expansion, this.excludeInactives(source), notClosed, vsInfo);
     } else {
+      this.checkForExclusionVersionSpecialCase(source, expansion);
+
       let i = 0;
       for (const c of source.jsonObj.compose.exclude || []) {
         this.worker.deadCheck('handleCompose#4');
@@ -1104,7 +1121,14 @@ class ValueSetExpander {
       }
 
       i = 0;
-      for (const c of source.jsonObj.compose.include || []) {
+      const includes = [...(source.jsonObj.compose.include || [])];
+      includes.sort((a, b) => {
+        if (a.system === b.system && a.version && b.version) {
+          return -VersionUtilities.compareVersionsGeneral(a.version, b.version);
+        }
+        return 0;
+      });
+      for (const c of includes) {
         this.worker.deadCheck('handleCompose#5');
         await this.includeCodes(c, "ValueSet.compose.include[" + i + "]", source, source.jsonObj.compose, filter, expansion, this.excludeInactives(source), notClosed);
         i++;
@@ -1196,6 +1220,9 @@ class ValueSetExpander {
     }
     if (this.params.hasExcludeNested) {
       this.addParamBool(exp, 'excludeNested', this.params.excludeNested);
+    }
+    if (this.params.versionsMatch) {
+      this.addParamBool(exp, 'versionsMatch', this.params.versionsMatch);
     }
     if (this.params.hasActiveOnly) {
       this.addParamBool(exp, 'activeOnly', this.params.activeOnly);
@@ -1481,14 +1508,16 @@ class ValueSetExpander {
     if (this.excludedSystems.has(system)) {
       return true;
     }
-    if (this.excludedSystems.has(system+'|'+version)) {
+    let key = this.doingVersion && !this.params.versionsMatch? system+'|'+version : system;
+    if (this.excludedSystems.has(key)) {
       return true;
     }
-    return this.excluded.has(system+'|'+version+'#'+code);
+    key = (this.doingVersion && !this.params.versionsMatch ? system+'|'+version : system)+'#'+code;
+    return this.excluded.has(key);
   }
 
   keyS(system, version, code) {
-    return system+"~"+(this.doingVersion ? version+"~" : "")+code;
+    return system+"~"+(this.doingVersion && !this.params.versionsMatch ? version+"~" : "")+code;
   }
 
   keyC(contains) {
@@ -1635,6 +1664,31 @@ class ValueSetExpander {
       }
     }
     return null;
+  }
+
+
+  // special case: excluding a different version from the include
+  checkForExclusionVersionSpecialCase(source, exp) {
+    if (!this.params.hasVersionsMatch) {
+
+
+      const includes = source.jsonObj.compose.include || [];
+      const excludes = source.jsonObj.compose.exclude || [];
+
+      if (includes.length > 0 && excludes.length > 0) {
+        const system = includes[0].system;
+        const allSameSystem = includes.every(i => i.system === system && i.version)
+          && excludes.every(e => e.system === system && e.version);
+        const noOverlap = !includes.some(i => excludes.some(e => e.version === i.version));
+
+        if (allSameSystem && noOverlap) {
+          this.params.versionsMatch = true;
+          this.excludeSpecialCase = true;
+          this.addParamBool(exp, 'versionsMatch', this.params.versionsMatch);
+
+        }
+      }
+    }
   }
 }
 
