@@ -1051,6 +1051,91 @@ class VersionUtilities {
             return url;
         }
     }
+
+
+    static isAnInteger(version) {
+        return /^\d+$/.test(version);
+    }
+
+    static appearsToBeDate(version) {
+        if (!version || typeof version !== 'string') return false;
+        // Strip optional time portion (T...) before checking
+        const datePart = version.split('T')[0];
+        return /^\d{4}-?\d{2}(-?\d{2})?$/.test(datePart);
+
+    }
+
+    static guessVersionAlgorithmFromVersion(version) {
+        if (VersionUtilities.isSemVerWithWildcards(version)) {
+            return 'semver';
+        }
+        if (this.appearsToBeDate(version)) {
+            return 'date';
+        }
+        if (this.isAnInteger(version)) {
+            return 'integer';
+        }
+        return 'alpha';
+    }
+
+    static dateIsMoreRecent(date, date2) {
+        return VersionUtilities.normaliseDateString(date) > VersionUtilities.normaliseDateString(date2);
+    }
+
+    static normaliseDateString(date) {
+        // Strip time portion, then remove dashes so all formats compare uniformly as YYYYMMDD or YYYYMM
+        return date.split('T')[0].replace(/-/g, '');
+    }
+
+
+    /**
+     * guesses the correct format, then compares accordingly
+     */
+    static compareVersionsGeneral(version1, version2) {
+        if (version1 && version2) {
+            if (version1 == version2) {
+                return 0;
+            }
+            const fmt1 = VersionUtilities.guessVersionAlgorithmFromVersion(version1);
+            const fmt2 = VersionUtilities.guessVersionAlgorithmFromVersion(version2);
+            if (fmt1 != fmt2) {
+                return version1.localeCompare(version2);
+            }
+            switch (fmt1) {
+                case 'semver': {
+                    let b1 = VersionUtilities.isThisOrLater(version1, version2, VersionPrecision.PATCH);
+                    let b2 = VersionUtilities.isThisOrLater(version2, version1, VersionPrecision.PATCH);
+                    if (b1 && b2) {
+                        return 0;
+                    } else if (b2) {
+                        return 1;
+                    } else {
+                        return -1;
+                    }
+                }
+                case 'date':
+                    if (VersionUtilities.dateIsMoreRecent(version1, version2)) {
+                        return 1;
+                    } else if (VersionUtilities.dateIsMoreRecent(version2, version1)) {
+                        return -1;
+                    } else {
+                        return 0;
+                    }
+                case 'integer':
+                    return parseInt(version1, 10) - parseInt(version2, 10);
+                case 'alpha':
+                    return version1.localeCompare(version2);
+                default:
+                    return version1.localeCompare(version2);
+            }
+        } else if (version1) {
+            return 1;
+        } else if (version2) {
+            return -1;
+        } else {
+            return 0;
+        }
+    }
 }
 
 module.exports = { VersionUtilities, VersionPrecision, SemverParser };

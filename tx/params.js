@@ -66,6 +66,7 @@ class TxParameters {
     this.FDisplayWarning = false;
     this.FMembershipOnly = false;
     this.FDiagnostics = false;
+    this.FVersionsMatch = false;
 
     this.hasActiveOnly = false;
     this.hasExcludeNested = false;
@@ -77,6 +78,7 @@ class TxParameters {
     this.hasDefaultToLatestVersion = false;
     this.hasDisplayWarning = false;
     this.hasMembershipOnly = false;
+    this.hasVersionsMatch = false;
   }
 
   readParams(params) {
@@ -197,6 +199,10 @@ class TxParameters {
         }
         case 'valueset-membership-only': {
           if (getValuePrimitive(p) == true) this.membershipOnly = true;
+          break;
+        }
+        case 'versionsMatch' : {
+          if (getValuePrimitive(p) == true) this.FVersionsMatch = true;
           break;
         }
         case 'profile' : {
@@ -387,6 +393,15 @@ class TxParameters {
     this.hasMembershipOnly = true;
   }
 
+  get versionsMatch() {
+    return this.FVersionsMatch;
+  }
+
+  set versionsMatch(value) {
+    this.FVersionsMatch = value;
+    this.hasVersionsMatch = true;
+  }
+e
   get versionRules() {
     return this.FVersionRules;
   }
@@ -411,6 +426,10 @@ class TxParameters {
 
       if (name === 'designation') {
         this.designations.push(getValuePrimitive(value));
+      }
+
+      if (name === 'versionsMatch') {
+        this.versionsMatch = getValuePrimitive(value) === 'true';
       }
     }
   }
@@ -502,6 +521,7 @@ class TxParameters {
     b('include-designations', this.FIncludeDesignations);
     b('include-definition', this.FIncludeDefinition);
     b('membership-only', this.FMembershipOnly);
+    b('versions-match', this.FVersionsMatch);
     b('default-to-latest', this.FDefaultToLatestVersion);
     b('display-warning', this.FDisplayWarning);
 
@@ -526,11 +546,11 @@ class TxParameters {
     };
 
     let s = '|'+this.count+'|'+this.limit+'|'+this.offset+
-      this.FUid + '|' + b(this.FMembershipOnly) + '|' + this.FProperties.join(',') + '|' +
+      this.FUid + '|' + b(this.FMembershipOnly) + '|' + b(this.FVersionsMatch)+'|' + this.FProperties.join(',') + '|' +
       b(this.FActiveOnly) + b(this.FDisplayWarning) + b(this.FExcludeNested) + b(this.FGenerateNarrative) + b(this.FExcludeNotForUI) + b(this.FExcludePostCoordinated) +
       b(this.FIncludeDesignations) + b(this.FIncludeDefinition) + b(this.hasActiveOnly) + b(this.hasExcludeNested) + b(this.hasGenerateNarrative) +
       b(this.hasExcludeNotForUI) + b(this.hasExcludePostCoordinated) + b(this.hasIncludeDesignations) + this.sort+'|'+
-      b(this.hasIncludeDefinition) + b(this.hasDefaultToLatestVersion) + b(this.hasDisplayWarning) + b(this.hasExcludeNotForUI) + b(this.hasMembershipOnly) + b(this.FDefaultToLatestVersion);
+      b(this.hasIncludeDefinition) + b(this.hasDefaultToLatestVersion) + b(this.hasDisplayWarning) + b(this.hasExcludeNotForUI) + b(this.hasMembershipOnly) + b(this.hasVersionsMatch) + b(this.FDefaultToLatestVersion);
 
     if (this.hasHTTPLanguages) {
       s = s + this.FHTTPLanguages.asString(true) + '|';
@@ -577,6 +597,7 @@ class TxParameters {
     this.FIncludeDefinition = other.FIncludeDefinition;
     this.FUid = other.FUid;
     this.FMembershipOnly = other.FMembershipOnly;
+    this.FVersionsMatch = other.FVersionsMatch;
     this.FDefaultToLatestVersion = other.FDefaultToLatestVersion;
     this.FDisplayWarning = other.FDisplayWarning;
     this.FDiagnostics = other.FDiagnostics;
@@ -588,7 +609,7 @@ class TxParameters {
     this.hasIncludeDesignations = other.hasIncludeDesignations;
     this.hasIncludeDefinition = other.hasIncludeDefinition;
     this.hasDefaultToLatestVersion = other.hasDefaultToLatestVersion;
-    this.hasMembershipOnly = other.hasMembershipOnly;
+    this.hasVersionsMatch = other.hasVersionsMatch;
     this.hasDisplayWarning = other.hasDisplayWarning;
     this.sort = other.sort;
 

@@ -158,10 +158,6 @@ class SearchWorker extends TerminologyWorker {
         // Check each search parameter for partial match
         let isMatch = true;
         for (const [param, searchValue] of Object.entries(searchParams)) {
-          // 'system' doesn't do anything for CodeSystem search
-          if (param === 'system') {
-            continue;
-          }
 
           // Map content-mode to content property
           const jsonProp = param === 'content-mode' ? 'content' : param;
@@ -178,7 +174,7 @@ class SearchWorker extends TerminologyWorker {
               isMatch = false;
               break;
             }
-          } else if (param === 'url') { // exact match
+          } else if (param === 'url' || param === 'system') { // exact match
             const propValue = json.url;
             if (propValue !== searchValue) {
               isMatch = false;
