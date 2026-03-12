@@ -531,12 +531,17 @@ class OCLCodeSystemProvider extends AbstractCodeSystemProvider {
 
   async #fetchAllPages(path) {
     try {
-      return await fetchAllPages(this.httpClient, path, {
+      const result = await fetchAllPages(this.httpClient, path, {
         pageSize: PAGE_SIZE,
         baseUrl: this.baseUrl,
         logger: console,
         loggerPrefix: '[OCL]'
       });
+      // Verificação extra: payload deve ser objeto ou array
+      if (!result || (typeof result !== 'object' && !Array.isArray(result))) {
+        throw new Error('[OCL] Invalid response format: expected object or array');
+      }
+      return result;
     } catch (error) {
       if (error.response) {
         console.error(`[OCL] HTTP ${error.response.status}: ${error.response.statusText}`);
