@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  fhir-server:
+    image: gointerop/fhirsmith:main
+    container_name: tx-fhir-ocl
+    ports:
+      - "8084:80"
+    volumes:
+      - ./data:/app/data
+    entrypoint: ["/app/entrypoint.sh"]
+    command: ["node", "server.js"]

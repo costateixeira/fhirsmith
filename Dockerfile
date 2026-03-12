@@ -28,4 +28,3 @@ ENV APP_VERSION=$VERSION
 
 # Expose port and define command
 EXPOSE 3000
-CMD ["node", "server.js"]
