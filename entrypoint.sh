@@ -19,4 +19,8 @@ if [ ! -f "$DATA_DIR/library.yml" ]; then
 fi
 
 # Executa o comando padrão do container
-exec "$@"
+if [ "$#" -eq 0 ]; then
+  exec node server.js
+else
+  exec "$@"
+fi

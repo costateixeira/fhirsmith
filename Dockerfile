@@ -18,9 +18,13 @@ WORKDIR /app
 # Copy installed node_modules from builder
 COPY --from=builder /app/node_modules ./node_modules
 
+
 # Bundle app source
 COPY package*.json ./
 COPY . .
+
+# Garante permissão de execução para o entrypoint
+RUN chmod +x /app/entrypoint.sh
 
 # Define build argument for version
 ARG VERSION=development
