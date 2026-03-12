@@ -18,6 +18,7 @@ const {Issue, OperationOutcome} = require("../library/operation-outcome");
 const crypto = require('crypto');
 const ValueSet = require("../library/valueset");
 const {VersionUtilities} = require("../../library/version-utilities");
+const {debugLog} = require("../operation-context");
 
 // Expansion limits (from Pascal constants)
 const EXTERNAL_DEFAULT_LIMIT = 1000;
@@ -1730,7 +1731,7 @@ class ExpandWorker extends TerminologyWorker {
       await this.handleTypeLevelExpand(req, res);
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       const statusCode = error.statusCode || 500;
       if (error instanceof Issue) {
@@ -1765,7 +1766,7 @@ class ExpandWorker extends TerminologyWorker {
       await this.handleInstanceLevelExpand(req, res);
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       const statusCode = error.statusCode || 500;
       const issueCode = error.issueCode || 'exception';

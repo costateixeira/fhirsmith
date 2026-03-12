@@ -13,6 +13,7 @@ const { Designations} = require("../library/designations");
 const {TxParameters} = require("../params");
 const {Parameters} = require("../library/parameters");
 const {Issue, OperationOutcome} = require("../library/operation-outcome");
+const {debugLog} = require("../operation-context");
 
 class LookupWorker extends TerminologyWorker {
   /**
@@ -45,7 +46,7 @@ class LookupWorker extends TerminologyWorker {
       await this.handleTypeLevelLookup(req, res);
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       const statusCode = error.statusCode || 500;
       const issueCode = error.issueCode || 'exception';
@@ -72,7 +73,7 @@ class LookupWorker extends TerminologyWorker {
       await this.handleInstanceLevelLookup(req, res);
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       const issueCode = error.issueCode || 'exception';
       return res.status(400).json({
@@ -159,7 +160,7 @@ class LookupWorker extends TerminologyWorker {
       return res.status(200).json(result);
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       if (error instanceof Issue) {
         let oo = new OperationOutcome();
@@ -223,7 +224,7 @@ class LookupWorker extends TerminologyWorker {
       return res.status(200).json(result);
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       if (error instanceof Issue) {
         let oo = new OperationOutcome();

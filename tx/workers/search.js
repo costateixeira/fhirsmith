@@ -7,6 +7,7 @@
 
 const { TerminologyWorker } = require('./worker');
 const {Utilities} = require("../../library/utilities");
+const {debugLog} = require("../operation-context");
 
 class SearchWorker extends TerminologyWorker {
   /**
@@ -114,7 +115,7 @@ class SearchWorker extends TerminologyWorker {
 
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       req.logInfo = "error "+(error.msgId || error.className);
       return res.status(500).json({
         resourceType: 'OperationOutcome',

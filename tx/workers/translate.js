@@ -12,6 +12,7 @@ const { TxParameters } = require('../params');
 const { Parameters } = require('../library/parameters');
 const { Issue, OperationOutcome } = require('../library/operation-outcome');
 const {ConceptMap} = require("../library/conceptmap");
+const {debugLog} = require("../operation-context");
 
 class TranslateWorker extends TerminologyWorker {
   /**
@@ -44,7 +45,7 @@ class TranslateWorker extends TerminologyWorker {
       await this.handleTypeLevelTranslate(req, res);
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       if (error instanceof Issue) {
         const oo = new OperationOutcome();
         oo.addIssue(error);
@@ -67,7 +68,7 @@ class TranslateWorker extends TerminologyWorker {
       await this.handleInstanceLevelTranslate(req, res);
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       if (error instanceof Issue) {
         const oo = new OperationOutcome();
         oo.addIssue(error);
@@ -410,7 +411,7 @@ class TranslateWorker extends TerminologyWorker {
       }
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       result.push({
         name: 'result',
         valueBoolean: false

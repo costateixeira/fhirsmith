@@ -6,6 +6,7 @@
 
 const { TerminologyWorker } = require('./worker');
 const { Issue, OperationOutcome } = require('../library/operation-outcome');
+const {debugLog} = require("../operation-context");
 
 class BatchWorker extends TerminologyWorker {
   /**
@@ -40,7 +41,7 @@ class BatchWorker extends TerminologyWorker {
       await this.handleBatch(req, res);
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       if (error instanceof Issue) {
         const oo = new OperationOutcome();
         oo.addIssue(error);
@@ -160,7 +161,7 @@ class BatchWorker extends TerminologyWorker {
 
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       const statusCode = error.statusCode || 500;
       const issueCode = error.issueCode || 'exception';
 

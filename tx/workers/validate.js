@@ -24,6 +24,7 @@ const {ValueSetExpander} = require("./expand");
 const {FhirCodeSystemProvider} = require("../cs/cs-cs");
 const {CodeSystem} = require("../library/codesystem");
 const {VersionUtilities} = require("../../library/version-utilities");
+const {debugLog} = require("../operation-context");
 
 const DEV_IGNORE_VALUESET = false; // todo: what's going on with this (ported from pascal)
 
@@ -124,7 +125,7 @@ class ValueSetChecker {
       }
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       throw new Error('Exception expanding value set in order to infer system: ' + error.message);
     }
     return result;
@@ -1946,7 +1947,7 @@ class ValidateWorker extends TerminologyWorker {
 
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       if (error instanceof Issue) {
         if (error.isHandleAsOO()) {
           let oo = new OperationOutcome();
@@ -2005,7 +2006,7 @@ class ValidateWorker extends TerminologyWorker {
       return result;
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       if (error instanceof Issue && !error.isHandleAsOO()) {
         return await this.handlePrepareError(error, coded, mode.mode, txp);
       } else {
@@ -2064,7 +2065,7 @@ class ValidateWorker extends TerminologyWorker {
 
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       return res.status(error.statusCode || 500).json(this.operationOutcome(
         'error', error.issueCode || 'exception', error.message));
     }
@@ -2085,7 +2086,7 @@ class ValidateWorker extends TerminologyWorker {
 
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       if (error instanceof Issue) {
         let op = new OperationOutcome();
         op.addIssue(error);
@@ -2165,7 +2166,7 @@ class ValidateWorker extends TerminologyWorker {
 
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       return res.status(error.statusCode || 500).json(this.operationOutcome(
         'error', error.issueCode || 'exception', error.message));
     }
@@ -2405,7 +2406,7 @@ class ValidateWorker extends TerminologyWorker {
       await checker.prepare();
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       if (!(error instanceof Issue) || error.isHandleAsOO()) {
         throw error;
       } else {
