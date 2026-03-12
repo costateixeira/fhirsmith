@@ -9,7 +9,7 @@ const {
   ServerVersionInformation,
 } = require('./model');
 const {Extensions} = require("../tx/library/extensions");
-const {isDebugging} = require("../tx/operation-context");
+const {debugLog} = require("../tx/operation-context");
 
 const MASTER_URL = 'https://fhir.github.io/ig-registry/tx-servers.json';
 

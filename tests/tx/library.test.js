@@ -1,6 +1,6 @@
 const {Library} = require("../../tx/library");
 const path = require("path");
-const {OperationContext, isDebugging} = require("../../tx/operation-context");
+const {OperationContext, debugLog} = require("../../tx/operation-context");
 const {Languages} = require("../../library/languages");
 
 const NO_LOAD_TEST = true;

@@ -9,7 +9,7 @@ const {XMLParser} = require('fast-xml-parser');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const {isDebugging} = require("../tx/operation-context");
+const {debugLog} = require("../tx/operation-context");
 
 class PackageCrawler {
   log;
@@ -340,6 +340,7 @@ class PackageCrawler {
 
       // Parse publication date
       let pubDate;
+      let pd;
       try {
         let pd = item.pubDate;
         pubDate = this.parsePubDate(pd);
