@@ -31,6 +31,9 @@ const { Provider } = require("./provider");
 const {I18nSupport} = require("../library/i18nsupport");
 const folders = require('../library/folder-setup');
 const {VSACValueSetProvider} = require("./vs/vs-vsac");
+const { OCLCodeSystemProvider, OCLSourceCodeSystemFactory } = require('./ocl/cs-ocl');
+const { OCLValueSetProvider } = require('./ocl/vs-ocl');
+const { OCLConceptMapProvider } = require('./ocl/cm-ocl');
 
 /**
  * This class holds all the loaded content ready for processing
@@ -95,6 +98,8 @@ class Library {
     this.codeSystemProviders = [];
     this.valueSetProviders = [];
     this.conceptMapProviders = [];
+    this.oclProviderSets = new Map();
+    this.oclConfig = {};
 
     // Create package manager for FHIR packages
     const packageServers = ['https://packages2.fhir.org/packages'];
@@ -154,6 +159,7 @@ class Library {
     const yamlContent = await fs.readFile(yamlPath, 'utf8');
     const config = yaml.parse(yamlContent);
     this.baseUrl = config.base.url;
+    this.oclConfig = config.ocl && typeof config.ocl === 'object' ? config.ocl : {};
 
     this.log.info('Fetching Data from '+this.baseUrl);
 
@@ -277,9 +283,124 @@ class Library {
       case 'url/cs':
         await this.loadUrl(packageManager, details, isDefault, mode, true);
         break;
+
+      case 'ocl':
+        await this.loadOcl(details, isDefault, mode);
+        break;
         
       default:
         throw new Error(`Unknown source type: ${type}`);
+    }
+  }
+
+  parseOclConfig(details) {
+    const text = String(details || '').trim();
+    if (!text) {
+      throw new Error('OCL source requires details, e.g. ocl:https://ocl.example.org');
+    }
+
+    const parts = text.split('|').map(p => p.trim()).filter(Boolean);
+    const baseUrl = this.resolveOclConfigValue(parts[0]);
+    if (!baseUrl) {
+      throw new Error('OCL source requires a base URL');
+    }
+
+    const config = { baseUrl };
+    for (let i = 1; i < parts.length; i++) {
+      const part = parts[i];
+      const eq = part.indexOf('=');
+      if (eq === -1) {
+        continue;
+      }
+      const key = part.substring(0, eq).trim().toLowerCase();
+      const value = this.resolveOclConfigValue(part.substring(eq + 1).trim());
+      if (!value) {
+        continue;
+      }
+      if (key === 'org') {
+        config.org = value;
+      } else if (key === 'token') {
+        config.token = value;
+      } else if (key === 'timeout') {
+        const timeout = Number(value);
+        if (Number.isFinite(timeout) && timeout > 0) {
+          config.timeout = timeout;
+        }
+      }
+    }
+
+    return config;
+  }
+
+  resolveOclConfigValue(value) {
+    const text = String(value || '').trim();
+    if (!text) {
+      return text;
+    }
+
+    if (this.oclConfig && Object.hasOwn(this.oclConfig, text)) {
+      const resolved = this.oclConfig[text];
+      if (typeof resolved === 'string') {
+        return resolved.trim();
+      }
+    }
+
+    return text;
+  }
+
+  async loadOcl(details, isDefault, mode) {
+    const config = this.parseOclConfig(details);
+    const cacheKey = `${config.baseUrl}|${config.org || ''}`;
+
+    let providerSet = this.oclProviderSets.get(cacheKey);
+    if (!providerSet) {
+      const codeSystemProvider = new OCLCodeSystemProvider(config);
+      const valueSetProvider = new OCLValueSetProvider(config);
+      const conceptMapProvider = new OCLConceptMapProvider(config);
+      providerSet = {
+        config,
+        codeSystemProvider,
+        valueSetProvider,
+        conceptMapProvider,
+        csRegistered: false,
+        factoriesRegistered: false,
+        vsRegistered: false,
+        cmRegistered: false
+      };
+      this.oclProviderSets.set(cacheKey, providerSet);
+    }
+
+    if (mode === 'fetch') {
+      return;
+    }
+
+    if (mode === 'cs') {
+      if (!providerSet.csRegistered) {
+        this.codeSystemProviders.push(providerSet.codeSystemProvider);
+        providerSet.csRegistered = true;
+      }
+
+      if (!providerSet.factoriesRegistered) {
+        await providerSet.codeSystemProvider.listCodeSystems('5.0', null);
+        const metas = providerSet.codeSystemProvider.getSourceMetas();
+        for (const meta of metas) {
+          const factory = new OCLSourceCodeSystemFactory(this.i18n, providerSet.codeSystemProvider.httpClient, meta);
+          this.registerProvider(`ocl:${config.baseUrl}`, factory, isDefault);
+        }
+        providerSet.factoriesRegistered = true;
+      }
+      return;
+    }
+
+    if (mode === 'npm') {
+      if (!providerSet.vsRegistered) {
+        this.valueSetProviders.push(providerSet.valueSetProvider);
+        providerSet.vsRegistered = true;
+      }
+      if (!providerSet.cmRegistered) {
+        this.conceptMapProviders.push(providerSet.conceptMapProvider);
+        providerSet.cmRegistered = true;
+      }
     }
   }
 

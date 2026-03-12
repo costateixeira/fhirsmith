@@ -1,0 +1,531 @@
+const { AbstractConceptMapProvider } = require('../cm/cm-api');
+const { ConceptMap } = require('../library/conceptmap');
+const { PAGE_SIZE } = require('./shared/constants');
+const { createOclHttpClient } = require('./http/client');
+const { fetchAllPages, extractItemsAndNext } = require('./http/pagination');
+
+const DEFAULT_MAX_SEARCH_PAGES = 10;
+
+class OCLConceptMapProvider extends AbstractConceptMapProvider {
+  constructor(config = {}) {
+    super();
+    const options = typeof config === 'string' ? { baseUrl: config } : (config || {});
+
+    this.org = options.org || null;
+    this.maxSearchPages = options.maxSearchPages || DEFAULT_MAX_SEARCH_PAGES;
+    const http = createOclHttpClient(options);
+    this.baseUrl = http.baseUrl;
+    this.httpClient = http.client;
+
+    this.conceptMapMap = new Map();
+    this._idMap = new Map();
+    this._sourceCandidatesCache = new Map();
+    this._sourceUrlsByCanonical = new Map();
+    this._canonicalBySourceUrl = new Map();
+  }
+
+  assignIds(ids) {
+    if (!this.spaceId) {
+      return;
+    }
+
+    const unique = new Set(this.conceptMapMap.values());
+    this._idMap.clear();
+
+    for (const cm of unique) {
+      if (!cm.id.startsWith(`${this.spaceId}-`)) {
+        const nextId = `${this.spaceId}-${cm.id}`;
+        cm.id = nextId;
+        cm.jsonObj.id = nextId;
+      }
+      this._idMap.set(cm.id, cm);
+      ids.add(`ConceptMap/${cm.id}`);
+    }
+  }
+
+  async fetchConceptMap(url, version) {
+    this._validateFetchParams(url, version);
+
+    const direct = this.conceptMapMap.get(`${url}|${version}`) || this.conceptMapMap.get(url);
+    if (direct) {
+      return direct;
+    }
+
+    const mappingId = this.#extractMappingId(url);
+    if (mappingId) {
+      return await this.fetchConceptMapById(mappingId);
+    }
+
+    const mappings = await this.#searchMappings({ from_source_url: url }, this.maxSearchPages);
+    for (const mapping of mappings) {
+      const cm = this.#toConceptMap(mapping);
+      if (cm) {
+        this.#indexConceptMap(cm);
+        if (cm.url === url && (!version || cm.version === version)) {
+          return cm;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  async fetchConceptMapById(id) {
+    if (this._idMap.has(id)) {
+      return this._idMap.get(id);
+    }
+
+    let rawId = id;
+    if (this.spaceId && id.startsWith(`${this.spaceId}-`)) {
+      rawId = id.substring(this.spaceId.length + 1);
+    }
+
+    if (this._idMap.has(rawId)) {
+      return this._idMap.get(rawId);
+    }
+
+    const response = await this.httpClient.get(`/mappings/${encodeURIComponent(rawId)}/`);
+    const cm = this.#toConceptMap(response.data);
+    if (!cm) {
+      return null;
+    }
+    this.#indexConceptMap(cm);
+    return cm;
+  }
+
+  // eslint-disable-next-line no-unused-vars
+  async searchConceptMaps(searchParams, _elements) {
+    this._validateSearchParams(searchParams);
+
+    const params = Object.fromEntries(searchParams.map(({ name, value }) => [name, String(value).toLowerCase()]));
+    const oclParams = {};
+
+    if (params.source) {
+      oclParams.from_source_url = params.source;
+    }
+    if (params.target) {
+      oclParams.to_source_url = params.target;
+    }
+
+    const mappings = await this.#searchMappings(oclParams, this.maxSearchPages);
+    const results = [];
+    for (const mapping of mappings) {
+      const cm = this.#toConceptMap(mapping);
+      if (!cm) {
+        continue;
+      }
+      this.#indexConceptMap(cm);
+      if (this.#matches(cm.jsonObj, params)) {
+        results.push(cm);
+      }
+    }
+    return results;
+  }
+
+  async findConceptMapForTranslation(opContext, conceptMaps, sourceSystem, sourceScope, targetScope, targetSystem, sourceCode = null) {
+    const sourceCandidates = await this.#candidateSourceUrls(sourceSystem);
+    const targetCandidates = await this.#candidateSourceUrls(targetSystem);
+
+    const mappings = [];
+    const sourcePaths = sourceCandidates.filter(s => String(s || '').startsWith('/orgs/'));
+
+    if (sourceCode && sourcePaths.length > 0) {
+      for (const sourcePath of sourcePaths) {
+        const conceptPath = `${this.#normalizeSourcePath(sourcePath)}concepts/${encodeURIComponent(sourceCode)}/mappings/`;
+        const found = await this.#fetchAllPages(conceptPath, { limit: PAGE_SIZE }, Math.min(2, this.maxSearchPages));
+        mappings.push(...found);
+      }
+    }
+
+    const searchKeys = new Set();
+    const searches = [];
+
+    if (sourceCandidates.length === 0 && targetCandidates.length === 0) {
+      searches.push({});
+    } else if (targetCandidates.length === 0) {
+      for (const src of sourceCandidates) {
+        const key = `from:${src}`;
+        if (!searchKeys.has(key)) {
+          searchKeys.add(key);
+          searches.push({ from_source_url: src });
+        }
+      }
+    } else if (sourceCandidates.length === 0) {
+      for (const tgt of targetCandidates) {
+        const key = `to:${tgt}`;
+        if (!searchKeys.has(key)) {
+          searchKeys.add(key);
+          searches.push({ to_source_url: tgt });
+        }
+      }
+    } else {
+      for (const src of sourceCandidates) {
+        for (const tgt of targetCandidates) {
+          const key = `from:${src}|to:${tgt}`;
+          if (!searchKeys.has(key)) {
+            searchKeys.add(key);
+            searches.push({ from_source_url: src, to_source_url: tgt });
+          }
+        }
+      }
+    }
+
+    if (mappings.length === 0) {
+      for (const search of searches) {
+        const found = await this.#searchMappings(search, Math.min(2, this.maxSearchPages));
+        mappings.push(...found);
+      }
+    }
+
+    const sourceUrlsToResolve = new Set();
+    for (const mapping of mappings) {
+      const fromSource = mapping?.from_source_url || mapping?.fromSourceUrl;
+      const toSource = mapping?.to_source_url || mapping?.toSourceUrl;
+      if (fromSource) {
+        sourceUrlsToResolve.add(fromSource);
+      }
+      if (toSource) {
+        sourceUrlsToResolve.add(toSource);
+      }
+    }
+    await this.#ensureCanonicalForSourceUrls(sourceUrlsToResolve);
+
+    const seen = new Set(conceptMaps.map(cm => cm.id || cm.url));
+    for (const mapping of mappings) {
+      const cm = this.#toConceptMap(mapping);
+      if (!cm) {
+        continue;
+      }
+      this.#indexConceptMap(cm);
+
+      const key = cm.id || cm.url;
+      if (seen.has(key)) {
+        continue;
+      }
+
+      if (this.#matchesTranslationRequest(cm, sourceSystem, sourceScope, targetScope, targetSystem, sourceCandidates, targetCandidates)) {
+        conceptMaps.push(cm);
+        seen.add(key);
+      }
+    }
+  }
+
+  cmCount() {
+    return new Set(this.conceptMapMap.values()).size;
+  }
+
+  async close() {
+  }
+
+  #indexConceptMap(cm) {
+    this.conceptMapMap.set(cm.url, cm);
+    if (cm.version) {
+      this.conceptMapMap.set(`${cm.url}|${cm.version}`, cm);
+    }
+    this.conceptMapMap.set(cm.id, cm);
+    this._idMap.set(cm.id, cm);
+  }
+
+  #toConceptMap(mapping) {
+    if (!mapping || typeof mapping !== 'object') {
+      return null;
+    }
+
+    const id = mapping.id;
+    if (!id) {
+      return null;
+    }
+
+    const url = mapping.url || `${this.baseUrl}/mappings/${id}`;
+    const source = mapping.from_source_url || mapping.fromSourceUrl || mapping.from_concept_url || mapping.fromConceptUrl || null;
+    const target = mapping.to_source_url || mapping.toSourceUrl || mapping.to_concept_url || mapping.toConceptUrl || null;
+    const sourceCode = mapping.from_concept_code || mapping.fromConceptCode;
+    const targetCode = mapping.to_concept_code || mapping.toConceptCode;
+
+    if (!source || !target || !sourceCode || !targetCode) {
+      return null;
+    }
+
+    const sourceDisplay = mapping.from_concept_name_resolved || mapping.fromConceptNameResolved || mapping.from_concept_name || mapping.fromConceptName || null;
+    const targetDisplay = mapping.to_concept_name_resolved || mapping.toConceptNameResolved || mapping.to_concept_name || mapping.toConceptName || null;
+    const sourceCanonical = this.#canonicalForSourceUrl(source) || source;
+    const targetCanonical = this.#canonicalForSourceUrl(target) || target;
+
+    const relationship = this.#toRelationship(mapping.map_type || mapping.mapType);
+    const lastUpdated = this.#toIsoDate(mapping.updated_on || mapping.updatedOn || mapping.updated_at || mapping.updatedAt);
+
+    const json = {
+      resourceType: 'ConceptMap',
+      id,
+      url,
+      version: mapping.version || null,
+      name: `mapping-${id}`,
+      title: mapping.name || `Mapping ${id}`,
+      status: 'active',
+      sourceScopeUri: mapping.from_collection_url || mapping.fromCollectionUrl || source,
+      targetScopeUri: mapping.to_collection_url || mapping.toCollectionUrl || target,
+      group: [
+        {
+          source: sourceCanonical,
+          target: targetCanonical,
+          element: [
+            {
+              code: sourceCode,
+              display: sourceDisplay,
+              target: [
+                {
+                  code: targetCode,
+                  display: targetDisplay,
+                  relationship,
+                  comment: mapping.comment || null
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    };
+
+    if (lastUpdated) {
+      json.meta = { lastUpdated };
+    }
+
+    return new ConceptMap(json, 'R5');
+  }
+
+  #toRelationship(mapType) {
+    switch ((mapType || '').toUpperCase()) {
+      case 'SAME-AS':
+        return 'equivalent';
+      case 'NARROWER-THAN':
+        return 'narrower-than';
+      case 'BROADER-THAN':
+        return 'broader-than';
+      case 'NOT-EQUIVALENT':
+        return 'not-related-to';
+      default:
+        return 'related-to';
+    }
+  }
+
+  #matches(json, params) {
+    for (const [name, value] of Object.entries(params)) {
+      if (!value) {
+        continue;
+      }
+
+      if (name === 'url') {
+        if ((json.url || '').toLowerCase() !== value) {
+          return false;
+        }
+        continue;
+      }
+
+      if (name === 'source') {
+        const src = json.group?.[0]?.source || '';
+        if (!src.toLowerCase().includes(value)) {
+          return false;
+        }
+        continue;
+      }
+
+      if (name === 'target') {
+        const tgt = json.group?.[0]?.target || '';
+        if (!tgt.toLowerCase().includes(value)) {
+          return false;
+        }
+        continue;
+      }
+
+      const field = json[name];
+      if (field == null || !String(field).toLowerCase().includes(value)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  async #searchMappings(params = {}, maxPages = this.maxSearchPages) {
+    const endpoint = this.org ? `/orgs/${encodeURIComponent(this.org)}/mappings/` : '/mappings/';
+    return await this.#fetchAllPages(endpoint, params, maxPages);
+  }
+
+  async #fetchAllPages(path, params = {}, maxPages = this.maxSearchPages) {
+    return await fetchAllPages(this.httpClient, path, {
+      params,
+      pageSize: PAGE_SIZE,
+      maxPages,
+      baseUrl: this.baseUrl
+    });
+  }
+
+  #extractItemsAndNext(payload) {
+    return extractItemsAndNext(payload, this.baseUrl);
+  }
+
+  #extractMappingId(url) {
+    if (!url) {
+      return null;
+    }
+    const match = url.match(/\/mappings\/([^/]+)\/?$/i);
+    return match ? match[1] : null;
+  }
+
+  async #candidateSourceUrls(systemUrl) {
+    if (!systemUrl) {
+      return [];
+    }
+
+    const cacheKey = this.#norm(systemUrl);
+    if (this._sourceCandidatesCache.has(cacheKey)) {
+      return this._sourceCandidatesCache.get(cacheKey);
+    }
+
+    const result = new Set();
+    result.add(systemUrl);
+
+    const canonicalKey = cacheKey;
+    const byCanonical = this._sourceUrlsByCanonical.get(canonicalKey);
+    if (byCanonical) {
+      for (const item of byCanonical) {
+        result.add(item);
+      }
+    }
+
+    const discovered = await this.#resolveSourceCandidatesFromOcl(systemUrl);
+    for (const item of discovered) {
+      result.add(item);
+    }
+
+    const out = Array.from(result);
+    this._sourceCandidatesCache.set(cacheKey, out);
+    return out;
+  }
+
+  async #resolveSourceCandidatesFromOcl(systemUrl) {
+    const endpoint = this.org ? `/orgs/${encodeURIComponent(this.org)}/sources/` : '/sources/';
+    const query = this.#queryTokenFromSystem(systemUrl);
+    if (!query) {
+      return [];
+    }
+
+    const sources = await this.#fetchAllPages(endpoint, { q: query, limit: PAGE_SIZE }, 2);
+    const targetNorm = this.#norm(systemUrl);
+    const candidates = new Set();
+
+    for (const source of sources) {
+      const canonical = source?.canonical_url || source?.canonicalUrl || null;
+      const sourceUrl = source?.url || source?.uri || null;
+      if (!sourceUrl) {
+        continue;
+      }
+
+      if (canonical) {
+        const canonicalKey = this.#norm(canonical);
+        if (!this._sourceUrlsByCanonical.has(canonicalKey)) {
+          this._sourceUrlsByCanonical.set(canonicalKey, new Set());
+        }
+        this._sourceUrlsByCanonical.get(canonicalKey).add(sourceUrl);
+        this._canonicalBySourceUrl.set(this.#norm(sourceUrl), canonical);
+
+        if (canonicalKey === targetNorm) {
+          candidates.add(sourceUrl);
+        }
+      }
+
+      if (this.#norm(sourceUrl) === targetNorm) {
+        candidates.add(sourceUrl);
+      }
+    }
+
+    return Array.from(candidates);
+  }
+
+  async #ensureCanonicalForSourceUrls(sourceUrls) {
+    for (const sourceUrl of sourceUrls || []) {
+      const sourceKey = this.#norm(sourceUrl);
+      if (!sourceKey || this._canonicalBySourceUrl.has(sourceKey)) {
+        continue;
+      }
+
+      const sourcePath = String(sourceUrl || '').trim();
+      if (!sourcePath.startsWith('/orgs/')) {
+        continue;
+      }
+
+      try {
+        const response = await this.httpClient.get(sourcePath);
+        const source = response.data || {};
+        const canonical = source.canonical_url || source.canonicalUrl;
+        const resolvedSourceUrl = source.url || source.uri || sourcePath;
+        if (!canonical) {
+          continue;
+        }
+
+        const canonicalKey = this.#norm(canonical);
+        if (!this._sourceUrlsByCanonical.has(canonicalKey)) {
+          this._sourceUrlsByCanonical.set(canonicalKey, new Set());
+        }
+        this._sourceUrlsByCanonical.get(canonicalKey).add(resolvedSourceUrl);
+        this._canonicalBySourceUrl.set(this.#norm(resolvedSourceUrl), canonical);
+      } catch (e) {
+        // Ignore source lookup failures and continue resolving remaining sources.
+        continue;
+      }
+    }
+  }
+
+  #queryTokenFromSystem(systemUrl) {
+    const raw = String(systemUrl || '').trim().replace(/\/+$/, '');
+    if (!raw) {
+      return null;
+    }
+    const slash = raw.lastIndexOf('/');
+    if (slash >= 0 && slash < raw.length - 1) {
+      return raw.substring(slash + 1);
+    }
+    return raw;
+  }
+
+  #normalizeSourcePath(sourcePath) {
+    const path = String(sourcePath || '').trim();
+    return path.endsWith('/') ? path : `${path}/`;
+  }
+
+  #canonicalForSourceUrl(sourceUrl) {
+    return this._canonicalBySourceUrl.get(this.#norm(sourceUrl)) || null;
+  }
+
+  #matchesTranslationRequest(cm, sourceSystem, sourceScope, targetScope, targetSystem, sourceCandidates, targetCandidates) {
+    if (cm.providesTranslation(sourceSystem, sourceScope, targetScope, targetSystem)) {
+      return true;
+    }
+
+    const group = cm.jsonObj?.group?.[0] || {};
+    const groupSource = this.#norm(group.source);
+    const groupTarget = this.#norm(group.target);
+
+    const sourceOk = !sourceSystem || sourceCandidates.some(s => this.#norm(s) === groupSource);
+    const targetOk = !targetSystem || targetCandidates.some(s => this.#norm(s) === groupTarget);
+    return sourceOk && targetOk;
+  }
+
+  #norm(url) {
+    return String(url || '').trim().replace(/\/+$/, '').toLowerCase();
+  }
+
+  #toIsoDate(value) {
+    if (!value) {
+      return null;
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+    return date.toISOString();
+  }
+}
+
+module.exports = {
+  OCLConceptMapProvider
+};
