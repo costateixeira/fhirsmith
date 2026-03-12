@@ -900,12 +900,6 @@ class TerminologyWorker {
     return true;
   }
 
-  debugLog(error) {
-    if (isDebugging()) {
-      console.log(error);
-    }
-  }
-
   hasSupplement(cs, supplements) {
     for (let t of supplements) {
       if (t.vurl == cs.vurl) {

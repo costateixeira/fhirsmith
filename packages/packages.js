@@ -803,6 +803,7 @@ class PackagesModule {
 
   stopCrawlerJob() {
     if (this.crawlerJob) {
+      this.crawler.shutdown();
       this.crawlerJob.stop();
       this.crawlerJob = null;
       pckLog.info('Package crawler job stopped');
