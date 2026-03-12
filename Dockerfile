@@ -22,15 +22,10 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY package*.json ./
 COPY . .
 
-# Bootstrap runtime data folder and config file
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
-
 # Define build argument for version
 ARG VERSION=development
 ENV APP_VERSION=$VERSION
 
 # Expose port and define command
 EXPOSE 3000
-ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["node", "server.js"]
