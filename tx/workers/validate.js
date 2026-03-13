@@ -944,13 +944,13 @@ class ValueSetChecker {
       if (inactive.value) {
         result.AddParamBool('inactive', inactive.value);
         if (vstatus.value && vstatus.value !== 'inactive') {
-          result.addParamStr('status', vstatus.value);
+          result.addParamCode('status', vstatus.value);
         }
         let msg = this.worker.i18n.translate('INACTIVE_CONCEPT_FOUND', this.params.HTTPLanguages, [vstatus.value, coding.code]);
         messages.push(msg);
         op.addIssue(new Issue('warning', 'business-rule', path, 'INACTIVE_CONCEPT_FOUND', msg, 'code-comment'));
       } else if (vstatus.value.toLowerCase() === 'deprecated') {
-        result.addParamStr('status', vstatus.value);
+        result.addParamCode('status', vstatus.value);
         let msg = this.worker.i18n.translate('DEPRECATED_CONCEPT_FOUND', this.params.HTTPLanguages, [vstatus.value, coding.code]);
         messages.push(msg);
         op.addIssue(new Issue('warning', 'business-rule', path, 'DEPRECATED_CONCEPT_FOUND', msg, 'code-comment'));
@@ -1348,13 +1348,18 @@ class ValueSetChecker {
     if (inactive.value) {
       result.addParamBool('inactive', inactive.value);
       if (vstatus.value && vstatus.value !== 'inactive') {
-        result.addParamStr('status', vstatus.value);
+        result.addParamCode('status', vstatus.value);
+      }
+      if (!['inactive', 'DISCOURAGED'].includes(vstatus.value)) {
+        let m = this.worker.i18n.translate('INACTIVE_CONCEPT_FOUND', this.params.HTTPLanguages, ['inactive', tcode]);
+        msg(m);
+        op.addIssue(new Issue('warning', 'business-rule', inactive.path, 'INACTIVE_CONCEPT_FOUND', m, 'code-comment'));
       }
       let m = this.worker.i18n.translate('INACTIVE_CONCEPT_FOUND', this.params.HTTPLanguages, [vstatus.value, tcode]);
       msg(m);
       op.addIssue(new Issue('warning', 'business-rule', inactive.path, 'INACTIVE_CONCEPT_FOUND', m, 'code-comment'));
     } else if (vstatus.value && vstatus.value.toLowerCase() === 'deprecated') {
-      result.addParamStr('status', 'deprecated');
+      result.addParamCode('status', 'deprecated');
       let m = this.worker.i18n.translate('DEPRECATED_CONCEPT_FOUND', this.params.HTTPLanguages, [vstatus.value, tcode]);
       msg(m);
       op.addIssue(new Issue('warning', 'business-rule', issuePath, 'DEPRECATED_CONCEPT_FOUND', m, 'code-comment'));
@@ -1494,13 +1499,13 @@ class ValueSetChecker {
       if (inactive.value) {
         result.addParamBool('inactive', inactive.value);
         if (vstatus.value && vstatus.value !== 'inactive') {
-          result.addParamStr('status', vstatus.value);
+          result.addParamCode('status', vstatus.value);
         }
         let msg = this.worker.i18n.translate('INACTIVE_CONCEPT_FOUND', this.params.HTTPLanguages, [vstatus.value, code]);
         messages.push(msg);
         op.addIssue(new Issue('warning', 'business-rule', 'code', 'INACTIVE_CONCEPT_FOUND', msg, 'code-comment'));
       } else if (vstatus.value.toLowerCase() === 'deprecated') {
-        result.addParamStr('status', vstatus.value);
+        result.addParamCode('status', vstatus.value);
         let msg = this.worker.i18n.translate('DEPRECATED_CONCEPT_FOUND', this.params.HTTPLanguages, [vstatus.value, code]);
         messages.push(msg);
         op.addIssue(new Issue('warning', 'business-rule', 'code', 'DEPRECATED_CONCEPT_FOUND', msg, 'code-comment'));
