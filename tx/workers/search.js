@@ -96,7 +96,7 @@ class SearchWorker extends TerminologyWorker {
 
         case 'ConceptMap':
           // Not implemented yet - return empty set
-          matches = [];
+          matches = await this.searchConceptMaps(params, elements);
           break;
 
         default:
@@ -226,6 +226,41 @@ class SearchWorker extends TerminologyWorker {
         if (results && Array.isArray(results)) {
           for (const vs of results) {
             this.deadCheck('searchValueSets-results');
+            allMatches.push(vs.jsonObj || vs);
+          }
+        }
+      }
+    }
+
+    return allMatches;
+  }
+
+  /**
+   * Search ConceptMaps by delegating to providers
+   */
+  async searchConceptMaps(params, elements) {
+    const allMatches = [];
+
+    // Convert params object to array format expected by ValueSet providers
+    // Exclude control params (_offset, _count, _elements, _sort)
+    const searchParams = [];
+    let source = null;
+    for (const [key, value] of Object.entries(params)) {
+      if (!key.startsWith('_') && value && SearchWorker.ALLOWED_PARAMS.includes(key)) {
+        searchParams.push({ name: key, value: value });
+      }
+      if (key == 'source') {
+        source = value;
+      }
+    }
+
+    for (const cmsp of this.provider.conceptMapProviders) {
+      if (!source || source == cmsp.sourcePackage()) {
+        this.deadCheck('searchConceptMaps-providers');
+        const results = await cmsp.searchConceptMaps(searchParams, elements);
+        if (results && Array.isArray(results)) {
+          for (const vs of results) {
+            this.deadCheck('searchConceptMaps-results');
             allMatches.push(vs.jsonObj || vs);
           }
         }

@@ -317,8 +317,8 @@ class Renderer {
     }
   }
 
-  translate(msgId) {
-    return this.opContext.i18n.formatPhrase(msgId, this.opContext.langs, []);
+  translate(msgId, params = []) {
+    return this.opContext.i18n.formatPhrase(msgId, this.opContext.langs, params);
   }
 
   translatePlural(num, msgId) {
@@ -1640,6 +1640,574 @@ class Renderer {
       }
     }
   }
+
+  // Methods to add to the Renderer class in renderer.js for ConceptMap rendering.
+// These follow the Java ConceptMapRenderer logic and use the same translated strings.
+
+// ---- Add these methods to the Renderer class ----
+
+  /**
+   * Render a ConceptMap resource to HTML.
+   * Follows the same pattern as renderValueSet/renderCodeSystem:
+   * metadata table (reusing renderMetadataTable), then group-by-group rendering.
+   */
+  async renderConceptMap(cm) {
+    if (cm.json) {
+      cm = cm.json;
+    }
+
+    let div_ = div();
+
+    // Metadata table
+    div_.h3().tx("Properties");
+    await this.renderMetadataTable(cm, div_.table("grid"));
+
+    div_.h3("Mapping Details");
+    // Source/Target scope line (mirrors Java: CONC_MAP_FROM / CONC_MAP_TO)
+    const p = div_.para();
+    p.tx(this.translate('CONC_MAP_FROM') + " ");
+    const sourceScope = cm.sourceScope || cm.sourceCanonical || cm.sourceUri;
+    if (sourceScope) {
+      await this.renderLink(p, sourceScope);
+    } else {
+      p.tx(this.translate('CONC_MAP_NOT_SPEC'));
+    }
+    p.tx(" " + this.translate('CONC_MAP_TO') + " ");
+    const targetScope = cm.targetScope || cm.targetCanonical || cm.targetUri;
+    if (targetScope) {
+      await this.renderLink(p, targetScope);
+    } else {
+      p.tx(this.translate('CONC_MAP_NOT_SPEC'));
+    }
+
+    div_.br();
+
+    // Render each group
+    let gc = 0;
+    for (const grp of cm.group || []) {
+      gc++;
+      if (gc > 1) {
+        div_.hr();
+      }
+      await this.renderConceptMapGroup(div_, cm, grp, gc);
+    }
+
+    return div_.toString();
+  }
+
+  /**
+   * Render a single ConceptMap group.
+   * Determines whether this is a "simple" group (1:1 mappings, no dependsOn/product)
+   * or a "complex" group, and delegates accordingly.
+   */
+  async renderConceptMapGroup(x, cm, grp, gc) {
+    // Analyze the group to determine rendering mode
+    let hasComment = false;
+    let hasProperties = false;
+    let ok = true; // true = simple rendering
+
+    const props = {};   // property code -> Set of systems
+    const sources = { code: new Set() };
+    const targets = { code: new Set() };
+
+    if (grp.source) sources.code.add(grp.source);
+    if (grp.target) targets.code.add(grp.target);
+
+    for (const elem of grp.element || []) {
+      const isSimple = elem.noMap ||
+        (elem.target && elem.target.length === 1 &&
+          (!elem.target[0].dependsOn || elem.target[0].dependsOn.length === 0) &&
+          (!elem.target[0].product || elem.target[0].product.length === 0));
+      ok = ok && isSimple;
+
+      if (Extensions.readString(elem, 'http://hl7.org/fhir/StructureDefinition/conceptmap-nomap-comment')) {
+        hasComment = true;
+      }
+
+      for (const tgt of elem.target || []) {
+        if (tgt.comment) {
+          hasComment = true;
+        }
+        for (const pp of tgt.property || []) {
+          if (!props[pp.code]) {
+            props[pp.code] = new Set();
+          }
+        }
+        for (const d of tgt.dependsOn || []) {
+          if (!sources[d.attribute]) {
+            sources[d.attribute] = new Set();
+          }
+        }
+        for (const d of tgt.product || []) {
+          if (!targets[d.attribute]) {
+            targets[d.attribute] = new Set();
+          }
+        }
+      }
+    }
+
+    if (Object.keys(props).length > 0) {
+      hasProperties = true;
+    }
+
+    // Group header
+    const pp = x.para();
+    pp.b().tx(this.translate('CONC_MAP_GRP', [gc])+ " ");
+    pp.tx(this.translate('CONC_MAP_FROM') + " ");
+    if (grp.source) {
+      await this.renderLink(pp, grp.source);
+    } else {
+      pp.code().tx(this.translate('CONC_MAP_CODE_SYS_UNSPEC'));
+    }
+    pp.tx(" to ");
+    if (grp.target) {
+      await this.renderLink(pp, grp.target);
+    } else {
+      pp.code().tx(this.translate('CONC_MAP_CODE_SYS_UNSPEC'));
+    }
+
+    if (ok) {
+      await this.renderSimpleConceptMapGroup(x, grp, hasComment);
+    } else {
+      await this.renderComplexConceptMapGroup(x, grp, hasComment, hasProperties, props, sources, targets);
+    }
+  }
+
+  /**
+   * Render a simple ConceptMap group: Source | Relationship | Target | Comment
+   * This is the "ok" path from the Java code where all elements have at most
+   * one target and no dependsOn/product.
+   */
+  async renderSimpleConceptMapGroup(x, grp, hasComment) {
+    const tbl = x.table("grid");
+    let tr = tbl.tr();
+    tr.td().b().tx(this.translate('CONC_MAP_SOURCE'));
+    tr.td().b().tx(this.translate('CONC_MAP_REL'));
+    tr.td().b().tx(this.translate('CONC_MAP_TRGT'));
+    if (hasComment) {
+      tr.td().b().tx(this.translate('GENERAL_COMMENT'));
+    }
+
+    for (const elem of grp.element || []) {
+      tr = tbl.tr();
+      const td = tr.td();
+      td.tx(elem.code);
+      const display = elem.display || await this.getDisplayForConcept(grp.source, elem.code);
+      if (display && !this.isSameCodeAndDisplay(elem.code, display)) {
+        td.tx(" (" + display + ")");
+      }
+
+      if (elem.noMap) {
+        const nomapComment = Extensions.readString(elem, 'http://hl7.org/fhir/StructureDefinition/conceptmap-nomap-comment');
+        if (!hasComment) {
+          tr.td().colspan("2").style("background-color: #efefef").tx("(not mapped)");
+        } else if (nomapComment) {
+          tr.td().colspan("2").style("background-color: #efefef").tx("(not mapped)");
+          tr.td().style("background-color: #efefef").tx(nomapComment);
+        } else {
+          tr.td().colspan("3").style("background-color: #efefef").tx("(not mapped)");
+        }
+      } else {
+        let first = true;
+        for (const tgt of elem.target || []) {
+          if (first) {
+            first = false;
+          } else {
+            tr = tbl.tr();
+            tr.td().style("opacity: 0.5").tx('"');
+          }
+
+          // Relationship cell
+          this.renderConceptMapRelationship(tr, tgt);
+
+          // Target code cell
+          const tgtTd = tr.td();
+          tgtTd.tx(tgt.code || '');
+          const tgtDisplay = tgt.display || await this.getDisplayForConcept(grp.target, tgt.code);
+          if (tgtDisplay && !this.isSameCodeAndDisplay(tgt.code, tgtDisplay)) {
+            tgtTd.tx(" (" + tgtDisplay + ")");
+          }
+
+          if (hasComment) {
+            tr.td().tx(tgt.comment || '');
+          }
+        }
+      }
+    }
+    this.addUnmapped(tbl, grp);
+  }
+
+  /**
+   * Render a complex ConceptMap group with dependsOn, product, and/or property columns.
+   * This is the "!ok" path from the Java code.
+   */
+  async renderComplexConceptMapGroup(x, grp, hasComment, hasProperties, props, sources, targets) {
+    // Check if any targets have relationships
+    let hasRelationships = false;
+    for (const elem of grp.element || []) {
+      for (const tgt of elem.target || []) {
+        if (tgt.relationship) {
+          hasRelationships = true;
+        }
+      }
+    }
+
+    const tbl = x.table("grid");
+
+    // First header row: Source Details | Relationship | Target Details | Comment | Properties
+    let tr = tbl.tr();
+    const sourceColCount = 1 + Object.keys(sources).length - 1; // code + dependsOn attributes
+    const targetColCount = 1 + Object.keys(targets).length - 1; // code + product attributes
+    tr.td().colspan(String(sourceColCount + 1)).b().tx(this.translate('CONC_MAP_SRC_DET'));
+    if (hasRelationships) {
+      tr.td().b().tx(this.translate('CONC_MAP_REL'));
+    }
+    tr.td().colspan(String(targetColCount + 1)).b().tx(this.translate('CONC_MAP_TRGT_DET'));
+    if (hasComment) {
+      tr.td().b().tx(this.translate('GENERAL_COMMENT'));
+    }
+    if (hasProperties) {
+      tr.td().colspan(String(Object.keys(props).length)).b().tx(this.translate('GENERAL_PROPS'));
+    }
+
+    // Second header row: actual column headers
+    tr = tbl.tr();
+
+    // Source code column
+    if (sources.code.size === 1) {
+      const url = [...sources.code][0];
+      await this.renderCSDetailsLink(tr, url, true);
+    } else {
+      tr.td().b().tx(this.translate('GENERAL_CODE'));
+    }
+    // Source dependsOn attribute columns
+    for (const s of Object.keys(sources)) {
+      if (s !== 'code') {
+        if (sources[s].size === 1) {
+          const url = [...sources[s]][0];
+          await this.renderCSDetailsLink(tr, url, false);
+        } else {
+          tr.td().b().tx(this.getDescForConcept(s));
+        }
+      }
+    }
+    // Relationship column
+    if (hasRelationships) {
+      tr.td();
+    }
+    // Target code column
+    if (targets.code.size === 1) {
+      const url = [...targets.code][0];
+      await this.renderCSDetailsLink(tr, url, true);
+    } else {
+      tr.td().b().tx(this.translate('GENERAL_CODE'));
+    }
+    // Target product attribute columns
+    for (const s of Object.keys(targets)) {
+      if (s !== 'code') {
+        if (targets[s].size === 1) {
+          const url = [...targets[s]][0];
+          await this.renderCSDetailsLink(tr, url, false);
+        } else {
+          tr.td().b().tx(this.getDescForConcept(s));
+        }
+      }
+    }
+    // Comment column header
+    if (hasComment) {
+      tr.td();
+    }
+    // Property column headers
+    if (hasProperties) {
+      for (const s of Object.keys(props)) {
+        if (props[s].size === 1) {
+          const url = [...props[s]][0];
+          await this.renderCSDetailsLink(tr, url, false);
+        } else {
+          tr.td().b().tx(this.getDescForConcept(s));
+        }
+      }
+    }
+
+    // Data rows
+    for (const elem of grp.element || []) {
+      if (elem.noMap) {
+        tr = tbl.tr();
+        const td = tr.td().style("border-right-width: 0px");
+        if (sources.code.size === 1) {
+          td.tx(elem.code);
+        } else {
+          td.tx(grp.source + " / " + elem.code);
+        }
+        const display = elem.display || await this.getDisplayForConcept(grp.source, elem.code);
+        tr.td().style("border-left-width: 0px").tx(display || '');
+
+        const nomapComment = Extensions.readString(elem, 'http://hl7.org/fhir/StructureDefinition/conceptmap-nomap-comment');
+        if (nomapComment) {
+          tr.td().colspan("3").style("background-color: #efefef").tx("(not mapped)");
+          tr.td().style("background-color: #efefef").tx(nomapComment);
+        } else {
+          tr.td().colspan("4").style("background-color: #efefef").tx("(not mapped)");
+        }
+      } else {
+        let first = true;
+        for (let ti = 0; ti < (elem.target || []).length; ti++) {
+          const tgt = elem.target[ti];
+          const last = ti === elem.target.length - 1;
+          tr = tbl.tr();
+
+          // Source code cell
+          const td = tr.td().style("border-right-width: 0px");
+          if (!first && !last) {
+            td.style("border-top-style: none; border-bottom-style: none");
+          } else if (!first) {
+            td.style("border-top-style: none");
+          } else if (!last) {
+            td.style("border-bottom-style: none");
+          }
+
+          if (first) {
+            if (sources.code.size === 1) {
+              td.tx(elem.code);
+            } else {
+              td.tx(grp.source + " / " + elem.code);
+            }
+            const display = elem.display || await this.getDisplayForConcept(grp.source, elem.code);
+            const dispTd = tr.td();
+            if (!last) {
+              dispTd.style("border-left-width: 0px; border-bottom-style: none");
+            } else {
+              dispTd.style("border-left-width: 0px");
+            }
+            dispTd.tx(display || '');
+          } else {
+            // Empty display cell for subsequent targets
+            const dispTd = tr.td();
+            if (!last) {
+              dispTd.style("border-left-width: 0px; border-top-style: none; border-bottom-style: none");
+            } else {
+              dispTd.style("border-top-style: none; border-left-width: 0px");
+            }
+          }
+
+          // Source dependsOn columns
+          for (const s of Object.keys(sources)) {
+            if (s !== 'code') {
+              const depTd = tr.td();
+              const val = this.getDependsOnValue(tgt.dependsOn, s, sources[s].size !== 1);
+              depTd.tx(val || '');
+              const depDisplay = this.getDependsOnDisplay(tgt.dependsOn, s);
+              if (depDisplay) {
+                depTd.tx(" (" + depDisplay + ")");
+              }
+            }
+          }
+
+          first = false;
+
+          // Relationship cell
+          if (hasRelationships) {
+            this.renderConceptMapRelationship(tr, tgt);
+          }
+
+          // Target code cell
+          const tgtTd = tr.td().style("border-right-width: 0px");
+          if (targets.code.size === 1) {
+            tgtTd.tx(tgt.code || '');
+          } else {
+            tgtTd.tx((grp.target || '') + " / " + (tgt.code || ''));
+          }
+          const tgtDisplay = tgt.display || await this.getDisplayForConcept(grp.target, tgt.code);
+          tr.td().style("border-left-width: 0px").tx(tgtDisplay || '');
+
+          // Target product columns
+          for (const s of Object.keys(targets)) {
+            if (s !== 'code') {
+              const prodTd = tr.td();
+              const val = this.getDependsOnValue(tgt.product, s, targets[s].size !== 1);
+              prodTd.tx(val || '');
+              const prodDisplay = this.getDependsOnDisplay(tgt.product, s);
+              if (prodDisplay) {
+                prodTd.tx(" (" + prodDisplay + ")");
+              }
+            }
+          }
+
+          // Comment cell
+          if (hasComment) {
+            tr.td().tx(tgt.comment || '');
+          }
+
+          // Property cells
+          if (hasProperties) {
+            for (const s of Object.keys(props)) {
+              const propTd = tr.td();
+              propTd.tx(this.getPropertyValueFromList(tgt.property, s));
+            }
+          }
+        }
+      }
+    }
+    this.addUnmapped(tbl, grp);
+  }
+
+  /**
+   * Render the relationship cell for a target element.
+   * Handles both R5 relationship codes and legacy R4 equivalence codes via extension.
+   */
+  renderConceptMapRelationship(tr, tgt) {
+    if (tgt.relationship) {
+      tr.td().tx(this.presentRelationshipCode(tgt.relationship));
+    } else if (tgt.equivalence) {
+      tr.td().tx(this.presentEquivalenceCode(tgt.equivalence));
+    } else {
+      tr.td().tx("(" + "equivalent" + ")");
+    }
+  }
+
+  /**
+   * Render a code system details link in a header cell.
+   * Mirrors Java renderCSDetailsLink.
+   */
+  async renderCSDetailsLink(tr, url, span2) {
+    const td = tr.td();
+    if (span2) {
+      td.colspan("2");
+    }
+    td.b().tx(this.translate('CONC_MAP_CODES'));
+    td.tx(" " + this.translate('CONC_MAP_FRM') + " ");
+    const linkinfo = this.linkResolver ? await this.linkResolver.resolveURL(this.opContext, url) : null;
+    if (linkinfo) {
+      td.ah(linkinfo.link).tx(linkinfo.description);
+    } else {
+      td.tx(url);
+    }
+  }
+
+  /**
+   * Translate a FHIR R5 ConceptMap relationship code to a human-readable string.
+   * Uses the same strings as the Java renderer.
+   */
+  presentRelationshipCode(code) {
+    switch (code) {
+      case 'related-to':                   return 'is related to';
+      case 'equivalent':                   return 'is equivalent to';
+      case 'source-is-narrower-than-target': return 'is narrower than';
+      case 'source-is-broader-than-target':  return 'is broader than';
+      case 'not-related-to':               return 'is not related to';
+      default:                             return code;
+    }
+  }
+
+  /**
+   * Translate a legacy (R2/R3/R4) ConceptMap equivalence code to a human-readable string.
+   * Uses the same strings as the Java renderer.
+   */
+  presentEquivalenceCode(code) {
+    switch (code) {
+      case 'relatedto':    return 'is related to';
+      case 'equivalent':   return 'is equivalent to';
+      case 'equal':        return 'is equal to';
+      case 'wider':        return 'maps to wider concept';
+      case 'subsumes':     return 'is subsumed by';
+      case 'narrower':     return 'maps to narrower concept';
+      case 'specializes':  return 'has specialization';
+      case 'inexact':      return 'maps loosely to';
+      case 'unmatched':    return 'has no match';
+      case 'disjoint':     return 'is not related to';
+      default:             return code;
+    }
+  }
+
+  /**
+   * Check if a code and its display text are essentially the same
+   * (ignoring spaces, hyphens, and case).
+   */
+  isSameCodeAndDisplay(code, display) {
+    if (!code || !display) return false;
+    const c = code.replace(/[ -]/g, '').toLowerCase();
+    const d = display.replace(/[ -]/g, '').toLowerCase();
+    return c === d;
+  }
+
+  /**
+   * Look up a display string for a concept. Delegates to the linkResolver if available.
+   */
+  async getDisplayForConcept(system, code) {
+    if (!system || !code) return null;
+    if (!this.linkResolver) return null;
+    const result = await this.linkResolver.resolveCode(this.opContext, system, null, code);
+    return result ? result.description : null;
+  }
+
+  /**
+   * Get a description for a concept attribute code (used in complex table headers).
+   * Mirrors Java getDescForConcept.
+   */
+  getDescForConcept(s) {
+    if (s.startsWith('http://hl7.org/fhir/v2/element/')) {
+      return 'v2 ' + s.substring('http://hl7.org/fhir/v2/element/'.length);
+    }
+    return s;
+  }
+
+  /**
+   * Extract a value from a dependsOn or product list by attribute name.
+   */
+  getDependsOnValue(list, attribute, withSystem) {
+    if (!list) return null;
+    for (const item of list) {
+      if (item.attribute === attribute) {
+        // R5 uses value[x], try common types
+        if (item.valueCode) return item.valueCode;
+        if (item.valueString) return item.valueString;
+        if (item.valueCoding) return item.valueCoding.code || '';
+        if (item.value) return String(item.value);
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Extract a display from a dependsOn or product list by attribute name.
+   */
+  getDependsOnDisplay(list, attribute) {
+    // In current FHIR, dependsOn display is not directly available;
+    // would require a lookup. Return null for now (matches Java which also returns null).
+    return null;
+  }
+
+  /**
+   * Extract a property value from a target's property list by code.
+   */
+  getPropertyValueFromList(list, code) {
+    if (!list) return '';
+    const results = [];
+    for (const item of list) {
+      if (item.code === code) {
+        // R5 MappingPropertyComponent uses value[x]
+        if (item.valueCode !== undefined) results.push(item.valueCode);
+        else if (item.valueString !== undefined) results.push(item.valueString);
+        else if (item.valueCoding !== undefined) results.push(item.valueCoding.code || '');
+        else if (item.valueBoolean !== undefined) results.push(String(item.valueBoolean));
+        else if (item.valueInteger !== undefined) results.push(String(item.valueInteger));
+        else if (item.valueDecimal !== undefined) results.push(String(item.valueDecimal));
+        else if (item.valueDateTime !== undefined) results.push(item.valueDateTime);
+      }
+    }
+    return results.join(', ');
+  }
+
+  /**
+   * Render the unmapped section for a group, if present.
+   * Currently a stub matching the Java implementation.
+   */
+  addUnmapped(tbl, grp) {
+    if (grp.unmapped) {
+      // TODO: render unmapped mode/code/url when needed
+    }
+  }
+
 }
 
 module.exports = { Renderer };
