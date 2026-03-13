@@ -1,7 +1,5 @@
 # ![🔥](static/FHIRsmith64.png) FHIRsmith - FHIR Server toolkit
 
-
-
 This server provides a set of server-side services that are useful for the FHIR Community. The set of are two kinds of services:
 
 ## Modules useful to anyone in the community
@@ -31,9 +29,20 @@ in-build support for SSL, rate limiting etc.
 
 There are 4 executable programs:
 * the server (`node server`)
-* the test cases (`npm test`)
 * the terminology importer (`node --max-old-space-size=8192 tx/importers/tx-import XXX`) - see [Doco](tx/importers/readme.md)
+* the test cases (`npm test`)
 * the test cases generater (`node tx/tests/testcases-generator.js`)
+
+Unless you're developing, you only need the first two
+
+### Quick Start
+
+* Install FHIRSmith (using docker, or an NPM release, or just get the code by git)
+* Figure out the data directory 
+* Provide a configuration to tell the server what to run (see documentation below, or use a [prebuilt configuration]/configurations/readme.md)
+* Run the server 
+
+For further details of these steps, read on
 
 ### Data Directory
 
@@ -41,7 +50,7 @@ The server separates code from runtime data. All databases, caches, logs, and do
 files are stored in a single data directory. The location is determined by:
 
 1. The `FHIRSMITH_DATA_DIR` environment variable (if set)
-2. Otherwise, defaults to `./data` relative to the working directory
+2. Otherwise, defaults to `./data` relative to the working directory (development set up)
 
 The data directory contains (depending on which modules are in use):
 * `config.json` — server and module configuration
