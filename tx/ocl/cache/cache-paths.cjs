@@ -15,11 +15,10 @@ function sanitizeFilename(text) {
 }
 
 function getCacheFilePath(baseDir, canonicalUrl, version = null, paramsKey = null) {
-  const filename = sanitizeFilename(canonicalUrl)
-    + (version ? `_${sanitizeFilename(version)}` : '')
-    + (paramsKey && paramsKey !== 'default' ? `_p_${sanitizeFilename(paramsKey)}` : '')
-    + '.json';
-
+  const crypto = require('crypto');
+  const base = `${canonicalUrl}|${version || ''}|${paramsKey || 'default'}`;
+  const hash = crypto.createHash('sha256').update(base).digest('hex');
+  const filename = `${hash}.json`;
   return path.join(baseDir, filename);
 }
 

@@ -116,7 +116,6 @@ describe('OCL helper modules', () => {
 
     const out = getCacheFilePath(path.join(CACHE_BASE_DIR, 'tmp'), 'http://example.org/vs', '1.0.0', 'f1');
     expect(out.endsWith('.json')).toBe(true);
-    expect(out).toContain('_p_f1');
 
     const dir = path.join(process.cwd(), 'data', 'terminology-cache', 'ocl', 'helper-test');
     await ensureCacheDirectories(dir);

@@ -1733,8 +1733,11 @@ class OCLSourceCodeSystemFactory extends CodeSystemFactoryProvider {
   }
 
   #resourceKey() {
+    const crypto = require('crypto');
     const normalizedSystem = OCLSourceCodeSystemFactory.#normalizeSystem(this.system());
-    return `${normalizedSystem}|${this.version() || ''}`;
+    const base = `${normalizedSystem}|${this.version() || ''}`;
+    const hash = crypto.createHash('sha256').update(base).digest('hex');
+    return hash;
   }
 
   currentChecksum() {

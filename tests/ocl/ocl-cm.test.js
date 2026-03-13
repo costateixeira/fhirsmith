@@ -158,7 +158,10 @@ describe('OCL ConceptMap integration', () => {
       url: 'http://example.org/cached-cm',
       version: '1.0.0'
     };
-    provider.conceptMapMap.set('http://example.org/cached-cm|1.0.0', cached);
+    // Gerar hash igual ao m├®todo de produ├º├úo
+    const crypto = require('crypto');
+    const cacheKey = crypto.createHash('sha256').update('http://example.org/cached-cm|1.0.0').digest('hex');
+    provider.conceptMapMap.set(cacheKey, cached);
     const out = await provider.fetchConceptMap('http://example.org/cached-cm', '1.0.0');
     expect(out).toBe(cached);
   });

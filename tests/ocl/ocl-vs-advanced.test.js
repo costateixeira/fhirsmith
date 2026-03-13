@@ -190,7 +190,9 @@ describe('OCL ValueSet advanced provider behavior', () => {
     provider.valueSetMap.set(`${vs.url}|${vs.version}`, vs);
     provider.valueSetMap.set(vs.id, vs);
 
-    const cacheKey = `${vs.url}|${vs.version}|default`;
+    const crypto = require('crypto');
+    const base = `${vs.url}|${vs.version}|default`;
+    const cacheKey = crypto.createHash('sha256').update(base).digest('hex');
     provider.backgroundExpansionCache.set(cacheKey, {
       expansion: { contains: [{ system: 'x', code: '1' }] },
       metadataSignature: 'stale-signature',

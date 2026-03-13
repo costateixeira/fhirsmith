@@ -22,13 +22,28 @@ function normalizeCanonicalSystem(system) {
     return system;
   }
 
-  const trimmed = system.trim();
+  let trimmed = system.trim();
   if (!trimmed) {
     return trimmed;
   }
 
-  // Treat canonical URLs with and without trailing slash as equivalent.
-  return trimmed.replace(/\/+$/, '');
+  // Normaliza protocolo para evitar falsos positivos no cache
+  // http://, https://, urn:uuid: s├úo tratados como diferentes, mas remove duplicidade de barras
+  // Remove barras finais
+  trimmed = trimmed.replace(/\/+$/, '');
+
+  // Corrige casos de https: sem barras
+  if (/^https:[^/]/.test(trimmed)) {
+    trimmed = trimmed.replace(/^https:/, 'https://');
+  }
+  if (/^http:[^/]/.test(trimmed)) {
+    trimmed = trimmed.replace(/^http:/, 'http://');
+  }
+
+  // Remove m├║ltiplas barras ap├│s protocolo
+  trimmed = trimmed.replace(/^(https?:\/)+/, '$1//');
+
+  return trimmed;
 }
 
 class OCLValueSetProvider extends AbstractValueSetProvider {
@@ -868,7 +883,9 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     if (!base) {
       return null;
     }
-    return `${base}|${paramsKey || 'default'}`;
+    const crypto = require('crypto');
+    const hash = crypto.createHash('sha256').update(`${base}|${paramsKey || 'default'}`).digest('hex');
+    return hash;
   }
 
   #invalidateExpansionCache(vs) {
