@@ -1,4 +1,4 @@
-const { OCLCodeSystemProvider, OCLSourceCodeSystemProvider } = require('../../tx/ocl/cs-ocl');
+const { OCLCodeSystemProvider } = require('../../tx/ocl/cs-ocl');
 
 describe('OCLCodeSystemProvider', () => {
   it('should instantiate with default config', () => {

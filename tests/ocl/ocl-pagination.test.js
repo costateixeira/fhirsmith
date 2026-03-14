@@ -1,4 +1,4 @@
-const { extractItemsAndNext, fetchAllPages } = require('../../tx/ocl/http/pagination');
+const { extractItemsAndNext } = require('../../tx/ocl/http/pagination');
 
 describe('pagination', () => {
   it('should extract items and next from array', () => {

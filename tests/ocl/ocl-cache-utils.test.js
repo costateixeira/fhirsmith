@@ -1,6 +1,4 @@
-const { ensureCacheDirectories, getColdCacheAgeMs, formatCacheAgeMinutes } = require('../../tx/ocl/cache/cache-utils');
-const fs = require('fs');
-const path = require('path');
+const { formatCacheAgeMinutes } = require('../../tx/ocl/cache/cache-utils');
 
 describe('cache-utils', () => {
   it('should format cache age in minutes', () => {
