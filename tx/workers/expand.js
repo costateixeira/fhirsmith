@@ -549,6 +549,7 @@ class ValueSetExpander {
   }
 
   async importValueSet(vs, expansion, imports, offset) {
+    let count = 0;
     this.canBeHierarchy = false;
     for (let p of vs.expansion.parameter || []) {
       let vn = getValueName(p);
@@ -559,14 +560,17 @@ class ValueSetExpander {
 
     for (const c of vs.expansion.contains || []) {
       this.worker.deadCheck('importValueSet');
-      await this.importValueSetItem(null, c, imports, offset);
+      count += await this.importValueSetItem(null, c, imports, offset);
     }
+    return count;
   }
 
   async importValueSetItem(p, c, imports, offset) {
+    let count = 0;
     this.worker.deadCheck('importValueSetItem');
     const s = this.keyC(c);
-    if (this.passesImports(imports, c.system, c.code, offset) && !this.map.has(s)) {
+    if (this.passesImports(imports, c.system, c.code, offset) && !this.map.has(s) && !this.isExcluded(c.system, c.version, c.code)) {
+      count++;
       this.fullList.push(c);
       if (p != null) {
         if (!p.contains) {p.contains = [] }
@@ -578,8 +582,9 @@ class ValueSetExpander {
     }
     for (const cc of c.contains || []) {
       this.worker.deadCheck('importValueSetItem');
-      await this.importValueSetItem(c, cc, imports, offset);
+      count += await this.importValueSetItem(c, cc, imports, offset);
     }
+    return count;
   }
 
   excludeValueSet(vs, expansion, imports, offset) {
@@ -693,7 +698,7 @@ class ValueSetExpander {
         this.addParamUri(expansion, 'used-valueset', this.worker.makeVurl(ivs.valueSet));
         valueSets.push(ivs);
       }
-      await this.importValueSet(valueSets[0].valueSet, expansion, valueSets, 1);
+      this.addToTotal(await this.importValueSet(valueSets[0].valueSet, expansion, valueSets, 1));
     } else {
       const filters = [];
       const prep = null;
