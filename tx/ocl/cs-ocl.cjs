@@ -21,13 +21,12 @@ function normalizeCanonicalSystem(system) {
     return system;
   }
 
-  const trimmed = system.trim();
+  let trimmed = system.trim();
   if (!trimmed) {
     return trimmed;
   }
 
-  // Treat canonical URLs with and without trailing slash as equivalent.
-  return trimmed.replace(/\/+$/, '');
+  return trimmed;
 }
 
 class OCLCodeSystemProvider extends AbstractCodeSystemProvider {
@@ -517,26 +516,29 @@ class OCLCodeSystemProvider extends AbstractCodeSystemProvider {
   }
 
   #normalizePath(pathValue) {
+    // Não normaliza nem remove barras, retorna exatamente o valor fornecido pelo autor
     if (!pathValue) {
       return null;
     }
     if (typeof pathValue !== 'string') {
       return null;
     }
-    if (pathValue.startsWith('http://') || pathValue.startsWith('https://')) {
-      return pathValue;
-    }
-    return `${this.baseUrl}${pathValue.startsWith('/') ? '' : '/'}${pathValue}`;
+    return pathValue;
   }
 
   async #fetchAllPages(path) {
     try {
-      return await fetchAllPages(this.httpClient, path, {
+      const result = await fetchAllPages(this.httpClient, path, {
         pageSize: PAGE_SIZE,
         baseUrl: this.baseUrl,
         logger: console,
         loggerPrefix: '[OCL]'
       });
+      // Extra check: payload must be object or array
+      if (!result || (typeof result !== 'object' && !Array.isArray(result))) {
+        throw new Error('[OCL] Invalid response format: expected object or array');
+      }
+      return result;
     } catch (error) {
       if (error.response) {
         console.error(`[OCL] HTTP ${error.response.status}: ${error.response.statusText}`);
@@ -1728,8 +1730,11 @@ class OCLSourceCodeSystemFactory extends CodeSystemFactoryProvider {
   }
 
   #resourceKey() {
+    const crypto = require('crypto');
     const normalizedSystem = OCLSourceCodeSystemFactory.#normalizeSystem(this.system());
-    return `${normalizedSystem}|${this.version() || ''}`;
+    const base = `${normalizedSystem}|${this.version() || ''}`;
+    const hash = crypto.createHash('sha256').update(base).digest('hex');
+    return hash;
   }
 
   currentChecksum() {

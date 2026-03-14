@@ -12,6 +12,7 @@ const { FhirCodeSystemProvider } = require('../cs/cs-cs');
 const {TxParameters} = require("../params");
 const {Parameters} = require("../library/parameters");
 const {Issue, OperationOutcome} = require("../library/operation-outcome");
+const {debugLog} = require("../operation-context");
 class SubsumesWorker extends TerminologyWorker {
   /**
    * @param {OperationContext} opContext - Operation context
@@ -43,7 +44,7 @@ class SubsumesWorker extends TerminologyWorker {
       await this.handleTypeLevelSubsumes(req, res);
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       req.logInfo = "error "+(error.msgId || error.className);
       if (error instanceof Issue) {
         let oo = new OperationOutcome();
@@ -67,7 +68,7 @@ class SubsumesWorker extends TerminologyWorker {
       await this.handleInstanceLevelSubsumes(req, res);
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       if (error instanceof Issue) {
         let oo = new OperationOutcome();
         oo.addIssue(error);

@@ -7,6 +7,7 @@
 
 const { TerminologyWorker } = require('./worker');
 const {Utilities} = require("../../library/utilities");
+const {debugLog} = require("../operation-context");
 
 class SearchWorker extends TerminologyWorker {
   /**
@@ -31,15 +32,18 @@ class SearchWorker extends TerminologyWorker {
 
   // Allowed search parameters
   static ALLOWED_PARAMS = [
-    '_offset', '_count', '_elements', '_sort', '_summary', '_total',
+    '_offset', '_count', '_elements', '_sort', '_summary', '_total', '_format',
     'url', 'version', 'content-mode', 'date', 'description',
     'supplements', 'identifier', 'jurisdiction', 'name',
     'publisher', 'status', 'system', 'title', 'text'
   ];
 
-  // Summary elements for _summary=true (common metadata fields)
-  static SUMMARY_ELEMENTS = ['resourceType', 'id', 'meta', 'url', 'version',
-    'name', 'title', 'status', 'date', 'publisher', 'description'];
+  // Summary elements for _summary=true (marked elements per resource type)
+  static SUMMARY_ELEMENTS = {
+    CodeSystem: ['meta', 'url', 'version', 'name', 'title', 'status', 'experimental', 'date', 'publisher', 'description', 'jurisdiction', 'content'],
+    ValueSet: ['meta', 'url', 'version', 'name', 'title', 'status', 'experimental', 'date', 'publisher', 'description', 'jurisdiction'],
+    ConceptMap: ['meta', 'url', 'version', 'name', 'title', 'status', 'experimental', 'date', 'publisher', 'description', 'jurisdiction']
+  };
 
   // Sortable fields
   static SORT_FIELDS = ['id', 'url', 'version', 'date', 'name', 'vurl'];
@@ -66,7 +70,7 @@ class SearchWorker extends TerminologyWorker {
       let elements;
       switch (summary) {
         case 'true':
-          elements = SearchWorker.SUMMARY_ELEMENTS;
+          elements = SearchWorker.SUMMARY_ELEMENTS[resourceType] || [];
           break;
         case 'text':
           elements = ['resourceType', 'id', 'meta', 'text'];
@@ -95,7 +99,7 @@ class SearchWorker extends TerminologyWorker {
 
         case 'ConceptMap':
           // Not implemented yet - return empty set
-          matches = [];
+          matches = await this.searchConceptMaps(params, elements);
           break;
 
         default:
@@ -109,12 +113,12 @@ class SearchWorker extends TerminologyWorker {
       const bundle = this.buildSearchBundle(
         req, resourceType, matches, offset, count, elements, summary, totalMode
       );
-      req.logInfo = summary === 'count' ? `count: ${bundle.total}` : `${bundle.entry.length} matches`;
+      req.logInfo = `${bundle.entry ? bundle.entry.length : 0} matches`;
       return res.json(bundle);
 
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       req.logInfo = "error "+(error.msgId || error.className);
       return res.status(500).json({
         resourceType: 'OperationOutcome',
@@ -235,6 +239,41 @@ class SearchWorker extends TerminologyWorker {
   }
 
   /**
+   * Search ConceptMaps by delegating to providers
+   */
+  async searchConceptMaps(params, elements) {
+    const allMatches = [];
+
+    // Convert params object to array format expected by ValueSet providers
+    // Exclude control params (_offset, _count, _elements, _sort)
+    const searchParams = [];
+    let source = null;
+    for (const [key, value] of Object.entries(params)) {
+      if (!key.startsWith('_') && value && SearchWorker.ALLOWED_PARAMS.includes(key)) {
+        searchParams.push({ name: key, value: value });
+      }
+      if (key == 'source') {
+        source = value;
+      }
+    }
+
+    for (const cmsp of this.provider.conceptMapProviders) {
+      if (!source || source == cmsp.sourcePackage()) {
+        this.deadCheck('searchConceptMaps-providers');
+        const results = await cmsp.searchConceptMaps(searchParams, elements);
+        if (results && Array.isArray(results)) {
+          for (const vs of results) {
+            this.deadCheck('searchConceptMaps-results');
+            allMatches.push(vs.jsonObj || vs);
+          }
+        }
+      }
+    }
+
+    return allMatches;
+  }
+
+  /**
    * Check if a value matches the search term (partial, case-insensitive)
    */
   matchValue(propValue, searchValue) {
@@ -300,15 +339,15 @@ class SearchWorker extends TerminologyWorker {
   /**
    * Build a FHIR search Bundle with pagination
    */
-  buildSearchBundle(req, resourceType, allMatches, offset, count, elements, summary = 'false', totalMode = 'accurate') {
-    const total = allMatches.length;
+  buildSearchBundle(req, resourceType, allMatches, offset, count, elements, summary, totalParam) {
+    const totalCount = allMatches.length;
 
-    // For _summary=count, return just the count
+    // Handle _summary=count - only return total, no entries
     if (summary === 'count') {
       return {
         resourceType: 'Bundle',
         type: 'searchset',
-        total: total
+        total: totalCount
       };
     }
 
@@ -360,7 +399,7 @@ class SearchWorker extends TerminologyWorker {
     }
 
     // Next link (if more results)
-    if (offset + count < total) {
+    if (offset + count < totalCount) {
       const nextParams = new URLSearchParams(searchParams);
       nextParams.set('_offset', offset + count);
       links.push({
@@ -370,7 +409,7 @@ class SearchWorker extends TerminologyWorker {
     }
 
     // Last link
-    const lastOffset = Math.max(0, Math.floor((total - 1) / count) * count);
+    const lastOffset = Math.max(0, Math.floor((totalCount - 1) / count) * count);
     const lastParams = new URLSearchParams(searchParams);
     lastParams.set('_offset', lastOffset);
     links.push({
@@ -380,7 +419,7 @@ class SearchWorker extends TerminologyWorker {
 
     // Build entries
     const entries = pageResults.map(resource => {
-      // Apply _elements filter if specified
+      // Apply _elements or _summary filter if specified
       let filteredResource = resource;
       if (elements) {
         filteredResource = this.filterElements(resource, elements);
@@ -401,8 +440,9 @@ class SearchWorker extends TerminologyWorker {
       link: links,
       entry: entries
     };
-    if (totalMode !== 'none') {
-      bundle.total = total;
+    // Add total unless _total=none
+    if (totalParam !== 'none') {
+      bundle.total = totalCount;
     }
     return bundle;
   }
@@ -422,6 +462,13 @@ class SearchWorker extends TerminologyWorker {
         filtered[element] = resource[element];
       }
     }
+
+    // Mark as SUBSETTED per FHIR spec
+    filtered.meta = filtered.meta ? { ...filtered.meta } : {};
+    filtered.meta.tag = [
+      ...(filtered.meta.tag || []),
+      { system: 'http://terminology.hl7.org/CodeSystem/v3-ObservationValue', code: 'SUBSETTED' }
+    ];
 
     return filtered;
   }

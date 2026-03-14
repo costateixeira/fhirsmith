@@ -22,13 +22,12 @@ function normalizeCanonicalSystem(system) {
     return system;
   }
 
-  const trimmed = system.trim();
+  let trimmed = system.trim();
   if (!trimmed) {
     return trimmed;
   }
 
-  // Treat canonical URLs with and without trailing slash as equivalent.
-  return trimmed.replace(/\/+$/, '');
+  return trimmed;
 }
 
 class OCLValueSetProvider extends AbstractValueSetProvider {
@@ -484,7 +483,15 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     if (pathValue.startsWith('http://') || pathValue.startsWith('https://')) {
       return pathValue;
     }
-    return `${this.baseUrl}${pathValue.startsWith('/') ? '' : '/'}${pathValue}`;
+    // Remove extra slashes and normalize full URL
+    let base = this.baseUrl.replace(/\/+$/, '');
+    let path = pathValue.replace(/^\/+/, '');
+    let url = `${base}/${path}`;
+    // Remove all duplicate slashes except after protocol
+    url = url.replace(/([^:])\/+/g, '$1/');
+    // Remove trailing slashes
+    url = url.replace(/\/+$/, '');
+    return url;
   }
 
   #buildCollectionConceptsPath(collection) {
@@ -868,7 +875,9 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     if (!base) {
       return null;
     }
-    return `${base}|${paramsKey || 'default'}`;
+    const crypto = require('crypto');
+    const hash = crypto.createHash('sha256').update(`${base}|${paramsKey || 'default'}`).digest('hex');
+    return hash;
   }
 
   #invalidateExpansionCache(vs) {

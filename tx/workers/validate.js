@@ -24,6 +24,7 @@ const {ValueSetExpander} = require("./expand");
 const {FhirCodeSystemProvider} = require("../cs/cs-cs");
 const {CodeSystem} = require("../library/codesystem");
 const {VersionUtilities} = require("../../library/version-utilities");
+const {debugLog} = require("../operation-context");
 
 const DEV_IGNORE_VALUESET = false; // todo: what's going on with this (ported from pascal)
 
@@ -124,7 +125,7 @@ class ValueSetChecker {
       }
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       throw new Error('Exception expanding value set in order to infer system: ' + error.message);
     }
     return result;
@@ -943,13 +944,13 @@ class ValueSetChecker {
       if (inactive.value) {
         result.AddParamBool('inactive', inactive.value);
         if (vstatus.value && vstatus.value !== 'inactive') {
-          result.addParamStr('status', vstatus.value);
+          result.addParamCode('status', vstatus.value);
         }
         let msg = this.worker.i18n.translate('INACTIVE_CONCEPT_FOUND', this.params.HTTPLanguages, [vstatus.value, coding.code]);
         messages.push(msg);
         op.addIssue(new Issue('warning', 'business-rule', path, 'INACTIVE_CONCEPT_FOUND', msg, 'code-comment'));
       } else if (vstatus.value.toLowerCase() === 'deprecated') {
-        result.addParamStr('status', vstatus.value);
+        result.addParamCode('status', vstatus.value);
         let msg = this.worker.i18n.translate('DEPRECATED_CONCEPT_FOUND', this.params.HTTPLanguages, [vstatus.value, coding.code]);
         messages.push(msg);
         op.addIssue(new Issue('warning', 'business-rule', path, 'DEPRECATED_CONCEPT_FOUND', msg, 'code-comment'));
@@ -1347,13 +1348,18 @@ class ValueSetChecker {
     if (inactive.value) {
       result.addParamBool('inactive', inactive.value);
       if (vstatus.value && vstatus.value !== 'inactive') {
-        result.addParamStr('status', vstatus.value);
+        result.addParamCode('status', vstatus.value);
+      }
+      if (!['inactive', 'DISCOURAGED'].includes(vstatus.value)) {
+        let m = this.worker.i18n.translate('INACTIVE_CONCEPT_FOUND', this.params.HTTPLanguages, ['inactive', tcode]);
+        msg(m);
+        op.addIssue(new Issue('warning', 'business-rule', inactive.path, 'INACTIVE_CONCEPT_FOUND', m, 'code-comment'));
       }
       let m = this.worker.i18n.translate('INACTIVE_CONCEPT_FOUND', this.params.HTTPLanguages, [vstatus.value, tcode]);
       msg(m);
       op.addIssue(new Issue('warning', 'business-rule', inactive.path, 'INACTIVE_CONCEPT_FOUND', m, 'code-comment'));
     } else if (vstatus.value && vstatus.value.toLowerCase() === 'deprecated') {
-      result.addParamStr('status', 'deprecated');
+      result.addParamCode('status', 'deprecated');
       let m = this.worker.i18n.translate('DEPRECATED_CONCEPT_FOUND', this.params.HTTPLanguages, [vstatus.value, tcode]);
       msg(m);
       op.addIssue(new Issue('warning', 'business-rule', issuePath, 'DEPRECATED_CONCEPT_FOUND', m, 'code-comment'));
@@ -1493,13 +1499,13 @@ class ValueSetChecker {
       if (inactive.value) {
         result.addParamBool('inactive', inactive.value);
         if (vstatus.value && vstatus.value !== 'inactive') {
-          result.addParamStr('status', vstatus.value);
+          result.addParamCode('status', vstatus.value);
         }
         let msg = this.worker.i18n.translate('INACTIVE_CONCEPT_FOUND', this.params.HTTPLanguages, [vstatus.value, code]);
         messages.push(msg);
         op.addIssue(new Issue('warning', 'business-rule', 'code', 'INACTIVE_CONCEPT_FOUND', msg, 'code-comment'));
       } else if (vstatus.value.toLowerCase() === 'deprecated') {
-        result.addParamStr('status', vstatus.value);
+        result.addParamCode('status', vstatus.value);
         let msg = this.worker.i18n.translate('DEPRECATED_CONCEPT_FOUND', this.params.HTTPLanguages, [vstatus.value, code]);
         messages.push(msg);
         op.addIssue(new Issue('warning', 'business-rule', 'code', 'DEPRECATED_CONCEPT_FOUND', msg, 'code-comment'));
@@ -1946,7 +1952,7 @@ class ValidateWorker extends TerminologyWorker {
 
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       if (error instanceof Issue) {
         if (error.isHandleAsOO()) {
           let oo = new OperationOutcome();
@@ -2005,7 +2011,7 @@ class ValidateWorker extends TerminologyWorker {
       return result;
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       if (error instanceof Issue && !error.isHandleAsOO()) {
         return await this.handlePrepareError(error, coded, mode.mode, txp);
       } else {
@@ -2064,7 +2070,7 @@ class ValidateWorker extends TerminologyWorker {
 
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       return res.status(error.statusCode || 500).json(this.operationOutcome(
         'error', error.issueCode || 'exception', error.message));
     }
@@ -2085,7 +2091,7 @@ class ValidateWorker extends TerminologyWorker {
 
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       if (error instanceof Issue) {
         let op = new OperationOutcome();
         op.addIssue(error);
@@ -2165,7 +2171,7 @@ class ValidateWorker extends TerminologyWorker {
 
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       return res.status(error.statusCode || 500).json(this.operationOutcome(
         'error', error.issueCode || 'exception', error.message));
     }
@@ -2405,7 +2411,7 @@ class ValidateWorker extends TerminologyWorker {
       await checker.prepare();
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       if (!(error instanceof Issue) || error.isHandleAsOO()) {
         throw error;
       } else {

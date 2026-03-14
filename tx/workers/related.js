@@ -16,6 +16,7 @@ const ValueSet = require("../library/valueset");
 const {ValueSetExpander} = require("./expand");
 const {SearchFilterText} = require("../library/designations");
 const {ArrayMatcher} = require("../../library/utilities");
+const {debugLog} = require("../operation-context");
 
 
 class RelatedWorker extends TerminologyWorker {
@@ -49,7 +50,7 @@ class RelatedWorker extends TerminologyWorker {
       await this.handleTypeLevelRelated(req, res);
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       const statusCode = error.statusCode || 500;
       if (error instanceof Issue) {
@@ -84,7 +85,7 @@ class RelatedWorker extends TerminologyWorker {
       await this.handleInstanceLevelRelated(req, res);
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       const statusCode = error.statusCode || 500;
       const issueCode = error.issueCode || 'exception';

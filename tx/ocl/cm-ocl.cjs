@@ -46,7 +46,10 @@ class OCLConceptMapProvider extends AbstractConceptMapProvider {
   async fetchConceptMap(url, version) {
     this._validateFetchParams(url, version);
 
-    const direct = this.conceptMapMap.get(`${url}|${version}`) || this.conceptMapMap.get(url);
+    const crypto = require('crypto');
+    const base = `${url}|${version || ''}`;
+    const hash = crypto.createHash('sha256').update(base).digest('hex');
+    const direct = this.conceptMapMap.get(hash);
     if (direct) {
       return direct;
     }

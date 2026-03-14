@@ -9,11 +9,12 @@ const {XMLParser} = require('fast-xml-parser');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const {debugLog} = require("../tx/operation-context");
 
 class PackageCrawler {
   log;
   packages = new Set();
-  
+
   constructor(config, db, stats) {
     this.config = config;
     this.db = db;
@@ -21,6 +22,7 @@ class PackageCrawler {
     this.totalBytes = 0;
     this.crawlerLog = {};
     this.errors = '';
+    this.abortController = null;
     this.db.run('PRAGMA journal_mode = WAL');
     this.db.run('PRAGMA busy_timeout = 5000');
   }
@@ -28,7 +30,8 @@ class PackageCrawler {
   async crawl(log) {
     this.log = log;
     this.packages.clear();
-    
+    this.abortController = new AbortController();
+
     const startTime = Date.now();
     this.crawlerLog = {
       startTime: new Date().toISOString(),
@@ -54,6 +57,7 @@ class PackageCrawler {
 
       // Process each feed
       for (const feedConfig of masterResponse.feeds) {
+        if (this.abortController?.signal.aborted) break;
         if (!feedConfig.url) {
           this.log.info('Skipping feed with no URL: '+ feedConfig);
           continue;
@@ -71,6 +75,7 @@ class PackageCrawler {
       }
       // process simplifier last
       for (const feedConfig of masterResponse.feeds) {
+        if (this.abortController?.signal.aborted) break;
         if (!feedConfig.url) {
           this.log.info('Skipping feed with no URL: '+ feedConfig);
           continue;
@@ -123,6 +128,7 @@ class PackageCrawler {
       } else {
         const response = await axios.get(url, {
           timeout: 30000,
+          signal: this.abortController?.signal,
           headers: {
             'User-Agent': 'FHIR Package Crawler/1.0'
           }
@@ -130,7 +136,7 @@ class PackageCrawler {
         return response.data;
       }
     } catch (error) {
-      console.log(error);
+      debugLog(error);
       if (error.response && error.response.status === 429) {
         throw new Error(`RATE_LIMITED: Server returned 429 Too Many Requests for ${url}`);
       }
@@ -151,6 +157,7 @@ class PackageCrawler {
       } else {
         const response = await axios.get(url, {
           timeout: 30000,
+          signal: this.abortController?.signal,
           headers: {
             'User-Agent': 'FHIR Package Crawler/1.0'
           }
@@ -165,6 +172,7 @@ class PackageCrawler {
         return parser.parse(response.data);
       }
     } catch (error) {
+      debugLog(error);
       if (error.response && error.response.status === 429) {
         throw new Error(`RATE_LIMITED: Server returned 429 Too Many Requests for ${url}`);
       }
@@ -182,6 +190,7 @@ class PackageCrawler {
         const response = await axios.get(url, {
           timeout: 60000,
           responseType: 'arraybuffer',
+          signal: this.abortController?.signal,
           headers: {
             'User-Agent': 'FHIR Package Crawler/1.0'
           }
@@ -191,6 +200,7 @@ class PackageCrawler {
         return Buffer.from(response.data);
       }
     } catch (error) {
+      debugLog(error);
       if (error.response && error.response.status === 429) {
         throw new Error(`RATE_LIMITED: Server returned 429 Too Many Requests for ${url}`);
       }
@@ -222,6 +232,7 @@ class PackageCrawler {
       this.log.info(`Found ${items.length} items in feed`);
 
       for (let i = 0; i < items.length; i++) {
+        if (this.abortController?.signal.aborted) break;
         try {
           await this.updateItem(url, items[i], i, packageRestrictions, feedLog);
         } catch (itemError) {
@@ -244,7 +255,7 @@ class PackageCrawler {
       }
 
     } catch (error) {
-      console.log(error);
+      debugLog(error);
       // Check if this is a 429 error on feed fetch
       if (error.message.includes('RATE_LIMITED')) {
         this.log.info(`Rate limited while fetching feed ${url}, skipping this feed`);
@@ -302,7 +313,7 @@ class PackageCrawler {
       }
 
       // Check package restrictions
-      if (!this.isPackageAllowed(id, source, packageRestrictions)) {
+      if (!this.isPackageAllowed(id, source, packageRestrictions).allowed) {
         if (!source.includes('simplifier.net')) {
           const error = `The package ${id} is not allowed to come from ${source}`;
           this.log.info(error);
@@ -329,11 +340,12 @@ class PackageCrawler {
 
       // Parse publication date
       let pubDate;
+      let pd;
       try {
         let pd = item.pubDate;
         pubDate = this.parsePubDate(pd);
       } catch (error) {
-        itemLog.error = `Invalid date format '{pd}': ${error.message}`;
+        itemLog.error = `Invalid date format '${pd}': ${error.message}`;
         itemLog.status = 'error';
         return;
       }
@@ -355,7 +367,7 @@ class PackageCrawler {
       itemLog.status = 'Fetched';
 
     } catch (error) {
-      this.log.error(`Exception processing item ${itemLog.guid || index}:`+ error.message);
+      this.log.error(`Exception processing item ${itemLog.guid || index} from ${source}: `+ error.message);
       itemLog.status = 'Exception';
       itemLog.error = error.message;
       if (error.message.includes('RATE_LIMITED')) {
@@ -383,7 +395,7 @@ class PackageCrawler {
 
       if (this.matchesPattern(fixedPackageId, fixedMask)) {
         // This package matches a restriction - check if source is allowed
-        const allowedFeeds = restriction.feeds.map(feed => feed);
+        const allowedFeeds = restriction.feeds.map(feed => fixUrl(feed));
         const feedList = allowedFeeds.join(', ');
 
         for (const allowedFeed of restriction.feeds) {
@@ -500,7 +512,7 @@ class PackageCrawler {
       await this.commit(packageBuffer, npmPackage, date, guid, id, version, canonical, urls);
 
     } catch (error) {
-      console.log(error);
+      debugLog(error);
       this.log.error(`Error storing package ${guid}:`+ error.message);
       throw error;
     }
@@ -562,6 +574,7 @@ class PackageCrawler {
         throw new Error('package.json not found in extracted package');
       }
 
+      const packageJson = JSON.parse(files['package.json']);
       const hasInstallScripts = !!(
         packageJson.scripts && (
           packageJson.scripts.preinstall ||
@@ -570,7 +583,6 @@ class PackageCrawler {
         )
       );
       const hasJavaScript = Object.keys(files).some(f => f.endsWith('.js') || f.endsWith('.mjs') || f.endsWith('.cjs'));
-      const packageJson = JSON.parse(files['package.json']);
 
       // Extract basic NPM fields
       const id = packageJson.name || '';
@@ -919,6 +931,11 @@ class PackageCrawler {
       return id.replace("@", "$$").replace("/", "$");
     } else {
       return id;
+    }
+  }
+  shutdown() {
+    if (this.abortController) {
+      this.abortController.abort();
     }
   }
 }

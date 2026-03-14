@@ -433,7 +433,7 @@ app.get('/', async (req, res) => {
         about
       };
 
-      const html = htmlServer.renderPage('root', escape(config.hostName) || 'FHIRsmith Server', content, stats);
+      const html = htmlServer.renderPage('root', config.hostName ? escape(config.hostName) : 'FHIRsmith Server', content, stats);
       res.setHeader('Content-Type', 'text/html');
       res.send(html);
       return;
@@ -442,8 +442,9 @@ app.get('/', async (req, res) => {
       htmlServer.sendErrorResponse(res, 'root', error);
       return;
     }
+  } else {
+    return serveFhirsmithHome(req, res);
   }
-  return serveFhirsmithHome(req, res);
 });
 
 app.get('/fhirsmith', (req, res) => serveFhirsmithHome(req, res));
@@ -622,7 +623,7 @@ async function serveFhirsmithHome(req, res) {
         processingTime: Date.now() - startTime
       };
 
-      const html = htmlServer.renderPage('root', escape(config.hostName) || 'FHIRsmith Server', content, stats);
+      const html = htmlServer.renderPage('root', config.hostName ? escape(config.hostName) : 'FHIRsmith Server', content, stats);
       res.setHeader('Content-Type', 'text/html');
       res.send(html);
       return;

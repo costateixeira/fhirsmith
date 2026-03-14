@@ -18,6 +18,7 @@ const {CapabilityStatementXML} = require("./xml/capabilitystatement-xml");
 const {TerminologyCapabilitiesXML} = require("./xml/terminologycapabilities-xml");
 const {ParametersXML} = require("./xml/parameters-xml");
 const {OperationOutcomeXML} = require("./xml/operationoutcome-xml");
+const {debugLog} = require("./operation-context");
 
 const txHtmlLog = Logger.getInstance().child({ module: 'tx-html' });
 
@@ -312,7 +313,7 @@ class TxHtmlRenderer {
             return await this.renderValueSet(json, inBundle, _fmt, op, exp);
           }
           case 'ConceptMap':
-            return await this.renderConceptMap(json, inBundle);
+            return await this.renderConceptMap(json, inBundle, _fmt, op);
           case 'CapabilityStatement':
             return await this.renderCapabilityStatement(json, inBundle);
           case 'TerminologyCapabilities':
@@ -327,6 +328,7 @@ class TxHtmlRenderer {
             return await this.renderGeneric(json, inBundle);
         }
       } catch (error) {
+        debugLog(error);
         console.error(error);
         throw error;
       }
@@ -698,8 +700,51 @@ class TxHtmlRenderer {
    * Render ConceptMap resource
    */
   // eslint-disable-next-line no-unused-vars
-  async renderConceptMap(json, inBundle) {
-    return this.renderResourceWithNarrative(json);
+  async renderConceptMap(json, inBundle, _fmt, op) {
+    if (inBundle || op) {
+      return await this.renderResourceWithNarrative(json, await this.renderer.renderConceptMap(json));
+    } else {
+      let html = `<ul class="nav nav-tabs">`;
+      html += this.tab(!_fmt || _fmt == 'html', json.resourceType, json.resourceType, 'html', json.id);
+      html += this.tab(_fmt && _fmt == 'html/json', 'JSON', json.resourceType, 'html/json', json.id);
+      html += this.tab(_fmt && _fmt == 'html/narrative', 'Original Narrative', json.resourceType, 'html/narrative', json.id);
+      html += this.tab(_fmt && _fmt == 'html/ops', 'Translate', json.resourceType, 'html/ops', json.id);
+      html += `</ul>`;
+
+      if (!_fmt || _fmt == 'html') {
+        html += await this.renderResourceWithNarrative(json, await this.renderer.renderConceptMap(json));
+      } else if (_fmt == "html/json") {
+        html += await this.renderResourceJson(json);
+      } else if (_fmt == "html/narrative") {
+        html += await this.renderResourceWithNarrative(json, json.text?.div);
+      } else if (_fmt == "html/ops") {
+        const sourceSet = new Set();
+        const codeSet = new Set();
+        const targetSet = new Set();
+
+        for (const grp of json.group || []) {
+          if (grp.source) sourceSet.add(`<option value="${escape(grp.source)}">${escape(grp.source)}</option>`);
+          if (grp.target) targetSet.add(`<option value="${escape(grp.target)}">${escape(grp.target)}</option>`);
+          for (const elem of grp.element || []) {
+            if (elem.code) codeSet.add(`<option value="${escape(elem.code)}">${escape(elem.code)}</option>`);
+          }
+        }
+        const sources = [...sourceSet];
+        const codes = [...codeSet];
+        const targets = [...targetSet];
+
+        html += await this.liquid.renderFile('conceptmap-operations', {
+          opsId: this.generateResourceId(),
+          cmSystemId: this.generateResourceId(),
+          inferSystemId: this.generateResourceId(),
+          sources: sources,
+          codes: codes,
+          targets: targets,
+          url: escape(json.url || '')
+        });
+      }
+      return html;
+    }
   }
 
   /**

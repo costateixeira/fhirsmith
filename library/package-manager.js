@@ -380,7 +380,6 @@ class PackageManager {
             return cachedPath;
         }
 
-        console.log("Fetch Package "+packageId+"#"+version);
         // Not in cache, fetch from servers
         const packageData = await this.fetchFromServers(packageId, resolvedVersion);
 
@@ -593,7 +592,6 @@ class PackageManager {
      * @returns {Promise<string>} Path to extracted package folder
      */
     async fetchUrl(url) {
-        console.log("Fetch Package from URL: " + url);
         try {
             const client = new CIBuildClient();
             const packageData = await client.fetchFromUrlSpecific(url);

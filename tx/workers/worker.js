@@ -1,4 +1,4 @@
-const { TerminologyError, isDebugging} = require('../operation-context');
+const { TerminologyError} = require('../operation-context');
 const { CodeSystem } = require('../library/codesystem');
 const ValueSet = require('../library/valueset');
 const {VersionUtilities} = require("../../library/version-utilities");
@@ -898,12 +898,6 @@ class TerminologyWorker {
       throw new Issue("error", "business-rule", null, null, `Cannot process ValueSet ${url} due to the presence of a lockedDate on the compose`);
     }
     return true;
-  }
-
-  debugLog(error) {
-    if (isDebugging()) {
-      console.log(error);
-    }
   }
 
   hasSupplement(cs, supplements) {

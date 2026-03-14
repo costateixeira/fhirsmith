@@ -4,6 +4,7 @@ const { AbstractValueSetProvider } = require('./vs-api');
 const { ValueSetDatabase } = require('./vs-database');
 const { VersionUtilities } = require('../../library/version-utilities');
 const folders = require('../../library/folder-setup');
+const {debugLog} = require("../operation-context");
 
 /**
  * VSAC (Value Set Authority Center) ValueSet provider
@@ -178,7 +179,7 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
           await this.processContentAndHistory(q, tracking, this.queue.length);
         } catch (error) {
           this.requeue.push(q)
-          console.log(error);
+          debugLog(error);
           this.stats.task('VSAC Sync', error.message);
         }
         // `running (${totalFetched} fetched, ${totalNew} new)`)
@@ -190,7 +191,7 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
         try {
           await this.processContentAndHistory(q, tracking, this.requeue.length);
         } catch (error) {
-          console.log(error);
+          debugLog(error);
           this.stats.task('VSAC Sync', error.message);
         }
         // `running (${totalFetched} fetched, ${totalNew} new)`)
@@ -201,7 +202,7 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
       await this._reloadMap();
       console.log(`VSAC refresh completed. Total: ${tracking.totalFetched} ValueSets, Deleted: ${tracking.deletedCount}`);
     } catch (error) {
-      console.log(error, 'Error during VSAC refresh:');
+      debugLog(error, 'Error during VSAC refresh:');
       this.stats.task('VSAC Sync', `Error (${error.message})`);
       throw error;
     } finally {

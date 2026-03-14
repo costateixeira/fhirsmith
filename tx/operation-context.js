@@ -19,6 +19,12 @@ function isDebugging() {
   );
 }
 
+function debugLog(error, message) {
+  if (isDebugging()) {
+    console.log(error, message);
+  }
+}
+
 
 class TimeTracker {
   constructor() {
@@ -584,5 +590,6 @@ module.exports = {
   TimeTracker,
   ResourceCache,
   ExpansionCache,
-  isDebugging
+  isDebugging,
+  debugLog
 };

@@ -5,6 +5,7 @@
 //
 
 const { TerminologyWorker } = require('./worker');
+const {debugLog} = require("../operation-context");
 
 class ReadWorker extends TerminologyWorker {
   /**
@@ -46,14 +47,7 @@ class ReadWorker extends TerminologyWorker {
           return await this.handleValueSet(req, res, id);
 
         case 'ConceptMap':
-          return res.status(501).json({
-            resourceType: 'OperationOutcome',
-            issue: [{
-              severity: 'error',
-              code: 'not-supported',
-              diagnostics: 'ConceptMap read not yet implemented'
-            }]
-          });
+          return await this.handleConceptMap(req, res, id);
 
         default:
           return res.status(404).json({
@@ -67,7 +61,7 @@ class ReadWorker extends TerminologyWorker {
       }
     } catch (error) {
       this.log.error(error);
-      this.debugLog(error);
+      debugLog(error);
       req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       return res.status(500).json({
         resourceType: 'OperationOutcome',
@@ -146,6 +140,28 @@ class ReadWorker extends TerminologyWorker {
     for (const vsp of this.provider.valueSetProviders) {
       this.deadCheck('handleValueSet-loop');
       const vs = await vsp.fetchValueSetById(id);
+      if (vs) {
+        return res.json(vs.jsonObj);
+      }
+    }
+
+    return res.status(404).json({
+      resourceType: 'OperationOutcome',
+      issue: [{
+        severity: 'error',
+        code: 'not-found',
+        diagnostics: `ValueSet/${id} not found`
+      }]
+    });
+  }
+  /**
+   * Handle ConceptMap read
+   */
+  async handleConceptMap(req, res, id) {
+    // Iterate through valueSetProviders in order
+    for (const cmsp of this.provider.conceptMapProviders) {
+      this.deadCheck('handleConceptMap-loop');
+      const vs = await cmsp.fetchConceptMapById(id);
       if (vs) {
         return res.json(vs.jsonObj);
       }
