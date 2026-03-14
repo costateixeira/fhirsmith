@@ -288,4 +288,36 @@ describe('OCL CodeSystem integration', () => {
 
     await provider.filterFinish(filterCtx);
   });
+
+
+  test('URLs canônicas de CodeSystem nunca têm múltiplas barras', async () => {
+    nock('https://ocl.cs.test')
+      .get('/orgs/')
+      .query(true)
+      .reply(200, { results: [{ id: 'org-a' }] });
+
+    nock('https://ocl.cs.test')
+      .get('/orgs/org-a/sources/')
+      .query(true)
+      .reply(200, {
+        results: [
+          {
+            id: 'src1',
+            owner: 'org-a',
+            name: 'Source One',
+            canonical_url: 'https://terminologia.saude.gov.br/fhir/CodeSystem/BRCID10',
+            version: 'HEAD',
+            concepts_url: '/orgs/org-a/sources/src1/concepts/',
+            checksums: { standard: 'chk-1' }
+          }
+        ]
+      });
+
+    const { OCLCodeSystemProvider } = require('../../tx/ocl/cs-ocl');
+    const provider = new OCLCodeSystemProvider({ baseUrl: 'https://ocl.cs.test' });
+    const systems = await provider.listCodeSystems('5.0', null);
+    expect(systems).toHaveLength(1);
+    // Nunca deve ter múltiplas barras
+    expect(systems[0].url).toBe('https://terminologia.saude.gov.br/fhir/CodeSystem/BRCID10');
+  });
 });

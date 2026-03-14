@@ -21,13 +21,20 @@ function normalizeCanonicalSystem(system) {
     return system;
   }
 
-  const trimmed = system.trim();
+  let trimmed = system.trim();
   if (!trimmed) {
     return trimmed;
   }
 
-  // Treat canonical URLs with and without trailing slash as equivalent.
-  return trimmed.replace(/\/+$/, '');
+  // Normalize protocol and remove duplicate slashes everywhere
+  // Fix protocol (http:/, https:/, etc)
+  trimmed = trimmed.replace(/^https:[^/]/, 'https://');
+  trimmed = trimmed.replace(/^http:[^/]/, 'http://');
+  // Remove all duplicate slashes except after protocol
+  trimmed = trimmed.replace(/([^:])\/+/g, '$1/');
+  // Remove trailing slashes
+  trimmed = trimmed.replace(/\/+$/, '');
+  return trimmed;
 }
 
 class OCLCodeSystemProvider extends AbstractCodeSystemProvider {
@@ -526,7 +533,15 @@ class OCLCodeSystemProvider extends AbstractCodeSystemProvider {
     if (pathValue.startsWith('http://') || pathValue.startsWith('https://')) {
       return pathValue;
     }
-    return `${this.baseUrl}${pathValue.startsWith('/') ? '' : '/'}${pathValue}`;
+    // Remove extra slashes and normalize full URL
+    let base = this.baseUrl.replace(/\/+$/, '');
+    let path = pathValue.replace(/^\/+/, '');
+    let url = `${base}/${path}`;
+    // Remove all duplicate slashes except after protocol
+    url = url.replace(/([^:])\/+/g, '$1/');
+    // Remove trailing slashes
+    url = url.replace(/\/+$/, '');
+    return url;
   }
 
   async #fetchAllPages(path) {
@@ -537,7 +552,7 @@ class OCLCodeSystemProvider extends AbstractCodeSystemProvider {
         logger: console,
         loggerPrefix: '[OCL]'
       });
-      // Verificação extra: payload deve ser objeto ou array
+      // Extra check: payload must be object or array
       if (!result || (typeof result !== 'object' && !Array.isArray(result))) {
         throw new Error('[OCL] Invalid response format: expected object or array');
       }
