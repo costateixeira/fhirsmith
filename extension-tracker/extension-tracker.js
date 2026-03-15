@@ -40,6 +40,7 @@ class ExtensionTrackerModule {
     router.get(this.urlBase + '/extensions', (req, res) => this.handleExtensions(req, res));
     router.get(this.urlBase + '/profiles', (req, res) => this.handleProfiles(req, res));
     router.get(this.urlBase + '/usage', (req, res) => this.handleUsage(req, res));
+    router.get(this.urlBase + '/usage/packages', (req, res) => this.handleUsageByPackage(req, res));
     router.get(this.urlBase + '/package/:pkg', (req, res) => this.handlePackageDetail(req, res));
 
     app.use('/', router);
@@ -116,6 +117,104 @@ class ExtensionTrackerModule {
         'INSERT INTO usages (package_id, extension_url, location) VALUES (?, ?, ?)'
       )
     };
+  }
+
+  // ---- Client-side column filtering ----
+
+  /**
+   * Build a script block that adds filter inputs to each column header of a table.
+   * Filters combine (AND) and persist in cookies.
+   * @param {string} tableId - the id attribute of the table
+   * @param {Array} columns - array of { type: 'text'|'select', options?: string[] }
+   * @param {string} cookiePrefix - cookie name prefix for persistence
+   */
+  buildColumnFilters(tableId, columns, cookiePrefix) {
+    const colsJson = JSON.stringify(columns.map(c => ({
+      type: c.type || 'text',
+      options: c.options || []
+    })));
+
+    return `
+      <script>
+      (function() {
+        var table = document.getElementById(${JSON.stringify(tableId)});
+        if (!table) return;
+        var cols = ${colsJson};
+        var prefix = ${JSON.stringify(cookiePrefix)};
+        var headerRow = table.querySelector('tr');
+        var filterRow = document.createElement('tr');
+        filterRow.className = 'filter-row';
+        var html = '';
+        for (var i = 0; i < cols.length; i++) {
+          var c = cols[i];
+          if (c.type === 'select') {
+            html += '<th><select data-col="' + i + '" class="col-filter" style="width:100%;box-sizing:border-box;">';
+            html += '<option value="">All</option>';
+            for (var j = 0; j < c.options.length; j++) {
+              var o = c.options[j].replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+              html += '<option value="' + o + '">' + o + '</option>';
+            }
+            html += '</select></th>';
+          } else {
+            html += '<th><input type="text" data-col="' + i + '" class="col-filter" placeholder="filter..." style="width:100%;box-sizing:border-box;"></th>';
+          }
+        }
+        filterRow.innerHTML = html;
+        headerRow.parentNode.insertBefore(filterRow, headerRow.nextSibling);
+
+        function getCookie(name) {
+          var m = document.cookie.match(new RegExp('(^|;)\\\\s*' + name + '=([^;]*)'));
+          return m ? decodeURIComponent(m[2]) : '';
+        }
+        function setCookie(name, val) {
+          document.cookie = name + '=' + encodeURIComponent(val) + ';path=/;max-age=86400;SameSite=Lax';
+        }
+
+        var filters = filterRow.querySelectorAll('.col-filter');
+        var allRows = table.querySelectorAll('tr');
+        var rows = [];
+        for (var r = 2; r < allRows.length; r++) rows.push(allRows[r]);
+
+        function applyFilters() {
+          var visible = 0;
+          for (var ri = 0; ri < rows.length; ri++) {
+            var cells = rows[ri].querySelectorAll('td');
+            var show = true;
+            for (var fi = 0; fi < filters.length; fi++) {
+              var f = filters[fi];
+              var ci = parseInt(f.getAttribute('data-col'));
+              var val = f.value.toLowerCase();
+              if (val && cells[ci]) {
+                var text = cells[ci].textContent.toLowerCase();
+                if (f.tagName === 'SELECT') {
+                  if (text !== val) show = false;
+                } else {
+                  if (text.indexOf(val) === -1) show = false;
+                }
+              }
+            }
+            rows[ri].style.display = show ? '' : 'none';
+            if (show) visible++;
+          }
+          var counter = document.getElementById(${JSON.stringify(tableId)} + '-count');
+          if (counter) counter.textContent = visible + ' of ' + rows.length;
+        }
+
+        for (var fi = 0; fi < filters.length; fi++) {
+          (function(f) {
+            var ci = f.getAttribute('data-col');
+            var saved = getCookie(prefix + '_' + ci);
+            if (saved) f.value = saved;
+            var evt = f.tagName === 'SELECT' ? 'change' : 'input';
+            f.addEventListener(evt, function() {
+              setCookie(prefix + '_' + ci, f.value);
+              applyFilters();
+            });
+          })(filters[fi]);
+        }
+        applyFilters();
+      })();
+      </script>`;
   }
 
   // ---- Template rendering ----
@@ -223,10 +322,10 @@ class ExtensionTrackerModule {
     const startTime = Date.now();
     try {
       const summary = this.db.prepare(`
-        SELECT
-          COUNT(*) as packageCount,
-          COUNT(DISTINCT fhir_version) as fhirVersionCount
-        FROM packages
+          SELECT
+              COUNT(*) as packageCount,
+              COUNT(DISTINCT fhir_version) as fhirVersionCount
+          FROM packages
       `).get();
 
       const extCount = this.db.prepare('SELECT COUNT(*) as count FROM extensions').get().count;
@@ -272,11 +371,11 @@ class ExtensionTrackerModule {
       const filterPkg = req.query.package || null;
 
       let query = `
-        SELECT e.url, e.title, p.package, p.version,
-          GROUP_CONCAT(DISTINCT et.type) as types
-        FROM extensions e
-        JOIN packages p ON p.id = e.package_id
-        LEFT JOIN extension_types et ON et.extension_id = e.id
+          SELECT e.url, e.title, p.package, p.version,
+                 GROUP_CONCAT(DISTINCT et.type) as types
+          FROM extensions e
+                   JOIN packages p ON p.id = e.package_id
+                   LEFT JOIN extension_types et ON et.extension_id = e.id
       `;
       const params = [];
       if (filterPkg) {
@@ -292,8 +391,8 @@ class ExtensionTrackerModule {
         content += `<p>Filtered to package: <b>${escape(filterPkg)}</b> (<a href="${this.urlBase}/extensions">show all</a>)</p>`;
       }
 
-      content += `<p>${rows.length} extensions</p>`;
-      content += '<table class="grid"><tr><th>Extension</th><th>Title</th><th>Types</th><th>Package</th></tr>';
+      content += `<p><span id="ext-table-count">${rows.length}</span> extensions</p>`;
+      content += '<table class="grid" id="ext-table"><tr><th>Extension</th><th>Title</th><th>Types</th><th>Package</th></tr>';
       for (const r of rows) {
         content += '<tr>';
         content += `<td>${escape(r.url)}</td>`;
@@ -303,6 +402,10 @@ class ExtensionTrackerModule {
         content += '</tr>';
       }
       content += '</table>';
+
+      content += this.buildColumnFilters('ext-table', [
+        { type: 'text' }, { type: 'text' }, { type: 'text' }, { type: 'text' }
+      ], 'extf');
 
       this.stats.countRequest('handleExtensions', Date.now() - startTime);
       this.sendHtmlResponse(res, 'Extensions', content, startTime);
@@ -315,52 +418,20 @@ class ExtensionTrackerModule {
   handleProfiles(req, res) {
     const startTime = Date.now();
     try {
-      const filterResource = req.query.resource || null;
-      const filterPkg = req.query.package || null;
-
-      let query = `
+      const rows = this.db.prepare(`
         SELECT pr.resource_type, pr.url, pr.title, p.package, p.version
         FROM profiles pr
         JOIN packages p ON p.id = pr.package_id
-      `;
-      const conditions = [];
-      const params = [];
-      if (filterResource) {
-        conditions.push('pr.resource_type = ?');
-        params.push(filterResource);
-      }
-      if (filterPkg) {
-        conditions.push('p.package = ?');
-        params.push(filterPkg);
-      }
-      if (conditions.length > 0) {
-        query += ' WHERE ' + conditions.join(' AND ');
-      }
-      query += ' ORDER BY pr.resource_type, p.package, pr.url';
+        ORDER BY pr.resource_type, p.package, pr.url
+      `).all();
 
-      const rows = this.db.prepare(query).all(...params);
-
-      // get distinct resource types for filter links
+      // get distinct resource types for the select filter
       const resourceTypes = this.db.prepare(
         'SELECT DISTINCT resource_type FROM profiles ORDER BY resource_type'
-      ).all();
+      ).all().map(r => r.resource_type);
 
-      let content = '<p>Filter by resource: ';
-      content += `<a href="${this.urlBase}/profiles">All</a>`;
-      for (const rt of resourceTypes) {
-        content += ` | <a href="${this.urlBase}/profiles?resource=${encodeURIComponent(rt.resource_type)}">${escape(rt.resource_type)}</a>`;
-      }
-      content += '</p>';
-
-      if (filterResource || filterPkg) {
-        const parts = [];
-        if (filterResource) parts.push(`resource: <b>${escape(filterResource)}</b>`);
-        if (filterPkg) parts.push(`package: <b>${escape(filterPkg)}</b>`);
-        content += `<p>Filtered to ${parts.join(', ')} (<a href="${this.urlBase}/profiles">show all</a>)</p>`;
-      }
-
-      content += `<p>${rows.length} profiles</p>`;
-      content += '<table class="grid"><tr><th>Resource</th><th>Profile</th><th>Title</th><th>Package</th></tr>';
+      let content = `<p><span id="prof-table-count">${rows.length}</span> profiles</p>`;
+      content += '<table class="grid" id="prof-table"><tr><th>Resource</th><th>Profile</th><th>Title</th><th>Package</th></tr>';
       for (const r of rows) {
         content += '<tr>';
         content += `<td>${escape(r.resource_type)}</td>`;
@@ -371,6 +442,13 @@ class ExtensionTrackerModule {
       }
       content += '</table>';
 
+      content += this.buildColumnFilters('prof-table', [
+        { type: 'select', options: resourceTypes },
+        { type: 'text' },
+        { type: 'text' },
+        { type: 'text' }
+      ], 'proff');
+
       this.stats.countRequest('handleProfiles', Date.now() - startTime);
       this.sendHtmlResponse(res, 'Profiles', content, startTime);
     } catch (error) {
@@ -380,6 +458,40 @@ class ExtensionTrackerModule {
   }
 
   handleUsage(req, res) {
+    const startTime = Date.now();
+    try {
+      // Aggregate usages by extension_url + location, counting distinct packages
+      const rows = this.db.prepare(`
+        SELECT u.extension_url, u.location, COUNT(DISTINCT u.package_id) as package_count
+        FROM usages u
+        GROUP BY u.extension_url, u.location
+        ORDER BY u.extension_url, u.location
+      `).all();
+
+      let content = `<p><span id="usage-table-count">${rows.length}</span> usage entries (aggregated across packages)</p>`;
+      content += '<table class="grid" id="usage-table"><tr><th>Extension</th><th>Used on</th><th>Packages</th></tr>';
+      for (const r of rows) {
+        content += '<tr>';
+        content += `<td>${escape(r.extension_url)}</td>`;
+        content += `<td>${escape(r.location)}</td>`;
+        content += `<td><a href="${this.urlBase}/usage/packages?url=${encodeURIComponent(r.extension_url)}&location=${encodeURIComponent(r.location)}">${r.package_count}</a></td>`;
+        content += '</tr>';
+      }
+      content += '</table>';
+
+      content += this.buildColumnFilters('usage-table', [
+        { type: 'text' }, { type: 'text' }, { type: 'text' }
+      ], 'usagef');
+
+      this.stats.countRequest('handleUsage', Date.now() - startTime);
+      this.sendHtmlResponse(res, 'Extension Usage', content, startTime);
+    } catch (error) {
+      console.log('Extension tracker: error rendering usage:', error);
+      htmlServer.sendErrorResponse(res, TEMPLATE_NAME, error);
+    }
+  }
+
+  handleUsageByPackage(req, res) {
     const startTime = Date.now();
     try {
       const filterUrl = req.query.url || null;
@@ -403,33 +515,37 @@ class ExtensionTrackerModule {
       if (conditions.length > 0) {
         query += ' WHERE ' + conditions.join(' AND ');
       }
-      query += ' ORDER BY u.extension_url, u.location, p.package';
+      query += ' ORDER BY p.package, u.extension_url, u.location';
 
       const rows = this.db.prepare(query).all(...params);
 
-      let content = '';
+      let content = '<p><a href="' + this.urlBase + '/usage">&laquo; Back to aggregated usage</a></p>';
       if (filterUrl || filterLocation) {
         const parts = [];
         if (filterUrl) parts.push(`extension: <b>${escape(filterUrl)}</b>`);
         if (filterLocation) parts.push(`location: <b>${escape(filterLocation)}</b>`);
-        content += `<p>Filtered to ${parts.join(', ')} (<a href="${this.urlBase}/usage">show all</a>)</p>`;
+        content += `<p>Filtered to ${parts.join(', ')}</p>`;
       }
 
-      content += `<p>${rows.length} usage entries</p>`;
-      content += '<table class="grid"><tr><th>Extension</th><th>Used on</th><th>Package</th></tr>';
+      content += `<p><span id="usagepkg-table-count">${rows.length}</span> usage entries by package</p>`;
+      content += '<table class="grid" id="usagepkg-table"><tr><th>Extension</th><th>Used on</th><th>Package</th></tr>';
       for (const r of rows) {
         content += '<tr>';
-        content += `<td><a href="${this.urlBase}/usage?url=${encodeURIComponent(r.extension_url)}">${escape(r.extension_url)}</a></td>`;
-        content += `<td><a href="${this.urlBase}/usage?location=${encodeURIComponent(r.location)}">${escape(r.location)}</a></td>`;
+        content += `<td>${escape(r.extension_url)}</td>`;
+        content += `<td>${escape(r.location)}</td>`;
         content += `<td><a href="${this.urlBase}/package/${encodeURIComponent(r.package)}">${escape(r.package)}#${escape(r.version)}</a></td>`;
         content += '</tr>';
       }
       content += '</table>';
 
-      this.stats.countRequest('handleUsage', Date.now() - startTime);
-      this.sendHtmlResponse(res, 'Extension Usage', content, startTime);
+      content += this.buildColumnFilters('usagepkg-table', [
+        { type: 'text' }, { type: 'text' }, { type: 'text' }
+      ], 'usagepkgf');
+
+      this.stats.countRequest('handleUsageByPackage', Date.now() - startTime);
+      this.sendHtmlResponse(res, 'Usage by Package', content, startTime);
     } catch (error) {
-      console.log('Extension tracker: error rendering usage:', error);
+      console.log('Extension tracker: error rendering usage by package:', error);
       htmlServer.sendErrorResponse(res, TEMPLATE_NAME, error);
     }
   }
@@ -444,11 +560,11 @@ class ExtensionTrackerModule {
       }
 
       const extensions = this.db.prepare(`
-        SELECT e.url, e.title, GROUP_CONCAT(DISTINCT et.type) as types
-        FROM extensions e
-        LEFT JOIN extension_types et ON et.extension_id = e.id
-        WHERE e.package_id = ?
-        GROUP BY e.id ORDER BY e.url
+          SELECT e.url, e.title, GROUP_CONCAT(DISTINCT et.type) as types
+          FROM extensions e
+                   LEFT JOIN extension_types et ON et.extension_id = e.id
+          WHERE e.package_id = ?
+          GROUP BY e.id ORDER BY e.url
       `).all(pkg.id);
 
       const profiles = this.db.prepare(
