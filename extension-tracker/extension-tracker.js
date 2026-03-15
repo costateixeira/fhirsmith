@@ -38,6 +38,7 @@ class ExtensionTrackerModule {
     // GET - HTML views
     router.get(this.urlBase, (req, res) => this.handleHome(req, res));
     router.get(this.urlBase + '/extensions', (req, res) => this.handleExtensions(req, res));
+    router.get(this.urlBase + '/extensions/packages', (req, res) => this.handleExtensionsByPackage(req, res));
     router.get(this.urlBase + '/profiles', (req, res) => this.handleProfiles(req, res));
     router.get(this.urlBase + '/usage', (req, res) => this.handleUsage(req, res));
     router.get(this.urlBase + '/usage/packages', (req, res) => this.handleUsageByPackage(req, res));
@@ -161,7 +162,7 @@ class ExtensionTrackerModule {
         }
         filterRow.innerHTML = html;
         headerRow.parentNode.insertBefore(filterRow, headerRow.nextSibling);
-
+ 
         function getCookie(name) {
           var m = document.cookie.match(new RegExp('(^|;)\\\\s*' + name + '=([^;]*)'));
           return m ? decodeURIComponent(m[2]) : '';
@@ -169,12 +170,12 @@ class ExtensionTrackerModule {
         function setCookie(name, val) {
           document.cookie = name + '=' + encodeURIComponent(val) + ';path=/;max-age=86400;SameSite=Lax';
         }
-
+ 
         var filters = filterRow.querySelectorAll('.col-filter');
         var allRows = table.querySelectorAll('tr');
         var rows = [];
         for (var r = 2; r < allRows.length; r++) rows.push(allRows[r]);
-
+ 
         function applyFilters() {
           var visible = 0;
           for (var ri = 0; ri < rows.length; ri++) {
@@ -199,7 +200,7 @@ class ExtensionTrackerModule {
           var counter = document.getElementById(${JSON.stringify(tableId)} + '-count');
           if (counter) counter.textContent = visible + ' of ' + rows.length;
         }
-
+ 
         for (var fi = 0; fi < filters.length; fi++) {
           (function(f) {
             var ci = f.getAttribute('data-col');
@@ -345,7 +346,8 @@ class ExtensionTrackerModule {
       content += '</table>';
 
       content += '<h3>Packages</h3>';
-      content += '<table class="grid"><tr><th>Package</th><th>Version</th><th>FHIR</th><th>Jurisdiction</th><th>Submitted</th></tr>';
+      content += `<p><span id="pkg-table-count">${packages.length}</span> packages</p>`;
+      content += '<table class="grid" id="pkg-table"><tr><th>Package</th><th>Version</th><th>FHIR</th><th>Jurisdiction</th><th>Submitted</th></tr>';
       for (const p of packages) {
         content += '<tr>';
         content += `<td><a href="${this.urlBase}/package/${encodeURIComponent(p.package)}">${escape(p.package)}</a></td>`;
@@ -356,6 +358,10 @@ class ExtensionTrackerModule {
         content += '</tr>';
       }
       content += '</table>';
+
+      content += this.buildColumnFilters('pkg-table', [
+        { type: 'text' }, { type: 'text' }, { type: 'text' }, { type: 'text' }, { type: 'text' }
+      ], 'pkgf');
 
       this.stats.countRequest('handleHome', Date.now() - startTime);
       this.sendHtmlResponse(res, 'Extension Tracker', content, startTime);
@@ -368,37 +374,26 @@ class ExtensionTrackerModule {
   handleExtensions(req, res) {
     const startTime = Date.now();
     try {
-      const filterPkg = req.query.package || null;
+      // Aggregate by extension URL: combine types across all occurrences, count packages
+      const rows = this.db.prepare(`
+        SELECT e.url,
+          MAX(e.title) as title,
+          GROUP_CONCAT(DISTINCT et.type) as types,
+          COUNT(DISTINCT e.package_id) as package_count
+        FROM extensions e
+        LEFT JOIN extension_types et ON et.extension_id = e.id
+        GROUP BY e.url
+        ORDER BY e.url
+      `).all();
 
-      let query = `
-          SELECT e.url, e.title, p.package, p.version,
-                 GROUP_CONCAT(DISTINCT et.type) as types
-          FROM extensions e
-                   JOIN packages p ON p.id = e.package_id
-                   LEFT JOIN extension_types et ON et.extension_id = e.id
-      `;
-      const params = [];
-      if (filterPkg) {
-        query += ' WHERE p.package = ?';
-        params.push(filterPkg);
-      }
-      query += ' GROUP BY e.id ORDER BY p.package, e.url';
-
-      const rows = this.db.prepare(query).all(...params);
-
-      let content = '';
-      if (filterPkg) {
-        content += `<p>Filtered to package: <b>${escape(filterPkg)}</b> (<a href="${this.urlBase}/extensions">show all</a>)</p>`;
-      }
-
-      content += `<p><span id="ext-table-count">${rows.length}</span> extensions</p>`;
-      content += '<table class="grid" id="ext-table"><tr><th>Extension</th><th>Title</th><th>Types</th><th>Package</th></tr>';
+      let content = `<p><span id="ext-table-count">${rows.length}</span> extensions</p>`;
+      content += '<table class="grid" id="ext-table"><tr><th>Extension</th><th>Title</th><th>Types</th><th>Packages</th></tr>';
       for (const r of rows) {
         content += '<tr>';
         content += `<td>${escape(r.url)}</td>`;
         content += `<td>${escape(r.title || '')}</td>`;
         content += `<td>${escape(r.types || '')}</td>`;
-        content += `<td><a href="${this.urlBase}/package/${encodeURIComponent(r.package)}">${escape(r.package)}#${escape(r.version)}</a></td>`;
+        content += `<td><a href="${this.urlBase}/extensions/packages?url=${encodeURIComponent(r.url)}">${r.package_count}</a></td>`;
         content += '</tr>';
       }
       content += '</table>';
@@ -411,6 +406,56 @@ class ExtensionTrackerModule {
       this.sendHtmlResponse(res, 'Extensions', content, startTime);
     } catch (error) {
       console.log('Extension tracker: error rendering extensions:', error);
+      htmlServer.sendErrorResponse(res, TEMPLATE_NAME, error);
+    }
+  }
+
+  handleExtensionsByPackage(req, res) {
+    const startTime = Date.now();
+    try {
+      const filterUrl = req.query.url || null;
+
+      let query = `
+        SELECT e.url, e.title, p.package, p.version,
+          GROUP_CONCAT(DISTINCT et.type) as types
+        FROM extensions e
+        JOIN packages p ON p.id = e.package_id
+        LEFT JOIN extension_types et ON et.extension_id = e.id
+      `;
+      const params = [];
+      if (filterUrl) {
+        query += ' WHERE e.url = ?';
+        params.push(filterUrl);
+      }
+      query += ' GROUP BY e.id ORDER BY p.package, e.url';
+
+      const rows = this.db.prepare(query).all(...params);
+
+      let content = '<p><a href="' + this.urlBase + '/extensions">&laquo; Back to extensions</a></p>';
+      if (filterUrl) {
+        content += `<p>Extension: <b>${escape(filterUrl)}</b></p>`;
+      }
+
+      content += `<p><span id="extpkg-table-count">${rows.length}</span> entries by package</p>`;
+      content += '<table class="grid" id="extpkg-table"><tr><th>Extension</th><th>Title</th><th>Types</th><th>Package</th></tr>';
+      for (const r of rows) {
+        content += '<tr>';
+        content += `<td>${escape(r.url)}</td>`;
+        content += `<td>${escape(r.title || '')}</td>`;
+        content += `<td>${escape(r.types || '')}</td>`;
+        content += `<td><a href="${this.urlBase}/package/${encodeURIComponent(r.package)}">${escape(r.package)}#${escape(r.version)}</a></td>`;
+        content += '</tr>';
+      }
+      content += '</table>';
+
+      content += this.buildColumnFilters('extpkg-table', [
+        { type: 'text' }, { type: 'text' }, { type: 'text' }, { type: 'text' }
+      ], 'extpkgf');
+
+      this.stats.countRequest('handleExtensionsByPackage', Date.now() - startTime);
+      this.sendHtmlResponse(res, 'Extensions by Package', content, startTime);
+    } catch (error) {
+      console.log('Extension tracker: error rendering extensions by package:', error);
       htmlServer.sendErrorResponse(res, TEMPLATE_NAME, error);
     }
   }
@@ -560,11 +605,11 @@ class ExtensionTrackerModule {
       }
 
       const extensions = this.db.prepare(`
-          SELECT e.url, e.title, GROUP_CONCAT(DISTINCT et.type) as types
-          FROM extensions e
-                   LEFT JOIN extension_types et ON et.extension_id = e.id
-          WHERE e.package_id = ?
-          GROUP BY e.id ORDER BY e.url
+        SELECT e.url, e.title, GROUP_CONCAT(DISTINCT et.type) as types
+        FROM extensions e
+        LEFT JOIN extension_types et ON et.extension_id = e.id
+        WHERE e.package_id = ?
+        GROUP BY e.id ORDER BY e.url
       `).all(pkg.id);
 
       const profiles = this.db.prepare(
