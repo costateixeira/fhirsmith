@@ -21,13 +21,12 @@ function normalizeCanonicalSystem(system) {
     return system;
   }
 
-  const trimmed = system.trim();
+  let trimmed = system.trim();
   if (!trimmed) {
     return trimmed;
   }
 
-  // Treat canonical URLs with and without trailing slash as equivalent.
-  return trimmed.replace(/\/+$/, '');
+  return trimmed;
 }
 
 class OCLCodeSystemProvider extends AbstractCodeSystemProvider {
@@ -517,16 +516,14 @@ class OCLCodeSystemProvider extends AbstractCodeSystemProvider {
   }
 
   #normalizePath(pathValue) {
+    // Não normaliza nem remove barras, retorna exatamente o valor fornecido pelo autor
     if (!pathValue) {
       return null;
     }
     if (typeof pathValue !== 'string') {
       return null;
     }
-    if (pathValue.startsWith('http://') || pathValue.startsWith('https://')) {
-      return pathValue;
-    }
-    return `${this.baseUrl}${pathValue.startsWith('/') ? '' : '/'}${pathValue}`;
+    return pathValue;
   }
 
   async #fetchAllPages(path) {
@@ -537,7 +534,7 @@ class OCLCodeSystemProvider extends AbstractCodeSystemProvider {
         logger: console,
         loggerPrefix: '[OCL]'
       });
-      // Verificação extra: payload deve ser objeto ou array
+      // Extra check: payload must be object or array
       if (!result || (typeof result !== 'object' && !Array.isArray(result))) {
         throw new Error('[OCL] Invalid response format: expected object or array');
       }

@@ -262,6 +262,54 @@ describe('Search Worker', () => {
       expect(r4Bundle.entry).toBeUndefined();
     });
 
+    test('should include SUBSETTED tag with _summary=true', async () => {
+      const response = await request(app)
+        .get('/tx/r5/CodeSystem')
+        .query({ _summary: 'true', _count: 5 })
+        .set('Accept', 'application/json');
+
+      expect(response.status).toBe(200);
+
+      if (response.body.entry && response.body.entry.length > 0) {
+        const resource = response.body.entry[0].resource;
+        expect(resource.meta).toBeDefined();
+        expect(resource.meta.tag).toBeDefined();
+        const subsetted = resource.meta.tag.find(t => t.code === 'SUBSETTED');
+        expect(subsetted).toBeDefined();
+        expect(subsetted.system).toBe('http://terminology.hl7.org/CodeSystem/v3-ObservationValue');
+      }
+    });
+
+    test('should include content element in CodeSystem summary', async () => {
+      const response = await request(app)
+        .get('/tx/r5/CodeSystem')
+        .query({ _summary: 'true', url: 'http://hl7.org/fhir/administrative-gender' })
+        .set('Accept', 'application/json');
+
+      expect(response.status).toBe(200);
+
+      if (response.body.entry && response.body.entry.length > 0) {
+        const resource = response.body.entry[0].resource;
+        expect(resource.content).toBeDefined();
+      }
+    });
+
+    test('should include SUBSETTED tag with _elements', async () => {
+      const response = await request(app)
+        .get('/tx/r5/CodeSystem')
+        .query({ _elements: 'url,name', _count: 5 })
+        .set('Accept', 'application/json');
+
+      expect(response.status).toBe(200);
+
+      if (response.body.entry && response.body.entry.length > 0) {
+        const resource = response.body.entry[0].resource;
+        expect(resource.meta).toBeDefined();
+        const subsetted = resource.meta.tag.find(t => t.code === 'SUBSETTED');
+        expect(subsetted).toBeDefined();
+      }
+    });
+
     test('should return full resources with _summary=false', async () => {
       const response = await request(app)
         .get('/tx/r5/CodeSystem')

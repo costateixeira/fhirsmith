@@ -1721,10 +1721,10 @@ class PackagesModule {
             }
 
             const dependency = row.Dependency;
-            const hashIndex = dependency.indexOf('#');
-            if (hashIndex > 0) {
-              const depName = dependency.substring(0, hashIndex);
-              const depVersion = dependency.substring(hashIndex + 1);
+            const atIndex = dependency.indexOf('@');
+            if (atIndex > 0) {
+              const depName = dependency.substring(0, atIndex);
+              const depVersion = dependency.substring(atIndex + 1);
               deps[row.PackageVersionKey][depName] = depVersion;
             }
           }
@@ -2493,10 +2493,10 @@ class PackagesModule {
             }
 
             // Extract dependency name and version
-            const hashIndex = dependency.indexOf('#');
-            if (hashIndex > 0) {
-              const depName = dependency.substring(0, hashIndex);
-              const depVersion = dependency.substring(hashIndex + 1);
+            const atIndex = dependency.indexOf('@');
+            if (atIndex > 0) {
+              const depName = dependency.substring(0, atIndex);
+              const depVersion = dependency.substring(atIndex + 1);
               const depMajorMinor = this.getMajorMinorVersion(depVersion);
               const depRef = `${depName}#${depMajorMinor}`;
 

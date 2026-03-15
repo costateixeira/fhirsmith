@@ -27,22 +27,6 @@ function normalizeCanonicalSystem(system) {
     return trimmed;
   }
 
-  // Normaliza protocolo para evitar falsos positivos no cache
-  // http://, https://, urn:uuid: s├úo tratados como diferentes, mas remove duplicidade de barras
-  // Remove barras finais
-  trimmed = trimmed.replace(/\/+$/, '');
-
-  // Corrige casos de https: sem barras
-  if (/^https:[^/]/.test(trimmed)) {
-    trimmed = trimmed.replace(/^https:/, 'https://');
-  }
-  if (/^http:[^/]/.test(trimmed)) {
-    trimmed = trimmed.replace(/^http:/, 'http://');
-  }
-
-  // Remove m├║ltiplas barras ap├│s protocolo
-  trimmed = trimmed.replace(/^(https?:\/)+/, '$1//');
-
   return trimmed;
 }
 
@@ -499,7 +483,15 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     if (pathValue.startsWith('http://') || pathValue.startsWith('https://')) {
       return pathValue;
     }
-    return `${this.baseUrl}${pathValue.startsWith('/') ? '' : '/'}${pathValue}`;
+    // Remove extra slashes and normalize full URL
+    let base = this.baseUrl.replace(/\/+$/, '');
+    let path = pathValue.replace(/^\/+/, '');
+    let url = `${base}/${path}`;
+    // Remove all duplicate slashes except after protocol
+    url = url.replace(/([^:])\/+/g, '$1/');
+    // Remove trailing slashes
+    url = url.replace(/\/+$/, '');
+    return url;
   }
 
   #buildCollectionConceptsPath(collection) {
