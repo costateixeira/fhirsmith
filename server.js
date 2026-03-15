@@ -225,7 +225,7 @@ async function initializeModules() {
   if (config.modules?.folder?.enabled) {
     try {
       serverLog.info('Initializing module: folder...');
-      modules.folder = new FolderModule();
+      modules.folder = new FolderModule(stats);
       await modules.folder.initialize(config.modules.folder, app);
       // mount the router
     } catch (error) {
@@ -346,15 +346,20 @@ async function buildRootPageContent() {
   }
 
   if (config.modules.folder && config.modules.folder.enabled) {
+    content += '<li class="list-group-item">';
+    content += '<strong>Cache Folder</strong>: ';
+    content += 'Cache Folder for Kindling';
     const folders = config.modules.folder.folders || [];
+    content += '<ul class="mt-2 mb-0">';
     for (const fc of folders) {
       if (fc.enabled === false) continue;
       mc++;
-      content += '<li class="list-group-item">';
+      content += '<li>';
       content += `<a href="${fc.url}" class="text-decoration-none">${fc.name}</a>: `;
       content += 'File folder with write control';
       content += '</li>';
     }
+    content += '</ul>';
   }
 
 

@@ -7,8 +7,9 @@ const SAFE_NAME = /^[a-zA-Z0-9._-]+$/;
 const AUTH_FAIL_DELAY_MS = 5000;
 
 class FolderModule {
-  constructor() {
+  constructor(stats) {
     this.folders = [];
+    this.stats = stats;
   }
 
   initialize(config, app) {
