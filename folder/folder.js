@@ -6,6 +6,15 @@ const MAX_UPLOAD_BYTES = 10 * 1024 * 1024; // 10 MB
 const SAFE_NAME = /^[a-zA-Z0-9._-]+$/;
 const AUTH_FAIL_DELAY_MS = 5000;
 
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 class FolderModule {
   constructor(stats) {
     this.folders = [];
@@ -96,8 +105,9 @@ class FolderModule {
     const dirs = entries.filter(e => e.isDirectory()).sort((a, b) => a.name.localeCompare(b.name));
     const files = entries.filter(e => e.isFile() && e.name !== '.users.json').sort((a, b) => a.name.localeCompare(b.name));
 
-    let html = `<html><head><title>Index of ${requestPath}</title></head><body>`;
-    html += `<h1>Index of ${requestPath}</h1><pre>`;
+    const safeRequestPath = escapeHtml(requestPath);
+    let html = `<html><head><title>Index of ${safeRequestPath}</title></head><body>`;
+    html += `<h1>Index of ${safeRequestPath}</h1><pre>`;
 
     // parent directory link (if not at mount root)
     if (requestPath.split('/').filter(Boolean).length > 1) {
@@ -105,13 +115,15 @@ class FolderModule {
     }
 
     for (const dir of dirs) {
-      html += `<a href="${urlPath}${encodeURIComponent(dir.name)}/">${dir.name}/</a>\n`;
+      const safeDirName = escapeHtml(dir.name);
+      html += `<a href="${urlPath}${encodeURIComponent(dir.name)}/">${safeDirName}/</a>\n`;
     }
 
     for (const file of files) {
       const stat = fs.statSync(path.join(dirPath, file.name));
       const size = this.formatSize(stat.size);
-      html += `<a href="${urlPath}${encodeURIComponent(file.name)}">${file.name}</a>${' '.repeat(Math.max(1, 60 - file.name.length))}${size}\n`;
+      const safeFileName = escapeHtml(file.name);
+      html += `<a href="${urlPath}${encodeURIComponent(file.name)}">${safeFileName}</a>${' '.repeat(Math.max(1, 60 - file.name.length))}${size}\n`;
     }
 
     html += '</pre></body></html>';
