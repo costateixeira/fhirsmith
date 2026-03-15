@@ -410,9 +410,9 @@ class SnomedServices {
 
             if (matchFound) {
               // Calculate priority based on match quality
-              if (term === searchText.toLowerCase()) {
+              if (term === searchText.filter.toLowerCase()) {
                 priority = 100; // Exact match
-              } else if (term.startsWith(searchText.toLowerCase())) {
+              } else if (term.startsWith(searchText.filter.toLowerCase())) {
                 priority = 50; // Prefix match
               } else {
                 priority = 10; // Contains match
@@ -969,7 +969,9 @@ class SnomedProvider extends BaseCSServices {
 
   // Search filter
   async searchFilter(filterContext, filter, sort) {
-    return this.sct.searchFilter(filter, false, sort);
+    let f = this.sct.searchFilter(filter, false, sort);
+    filterContext.filters.push(f);
+    return f;
   }
 
   // Subsumption testing
