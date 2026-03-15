@@ -59,6 +59,8 @@ const TXModule = require('./tx/tx.js');
 const htmlServer = require('./library/html-server');
 const ServerStats = require("./stats");
 const {Liquid} = require("liquidjs");
+const FolderModule = require("./folder/folder");
+const ExtensionTrackerModule = require("./extension-tracker/extension-tracker");
 
 htmlServer.useLog(serverLog);
 
@@ -195,6 +197,17 @@ async function initializeModules() {
     }
   }
 
+
+  if (config.modules?.['ext-tracker']?.enabled) {
+    try {
+      serverLog.info('Initializing module: ext-tracker...');
+      modules.extTracker = new ExtensionTrackerModule(stats);
+      await modules.extTracker.initialize(config.modules['ext-tracker'], app);
+    } catch (error) {
+      serverLog.error('Failed to initialize extension tracker module:', error);
+      throw error;
+    }
+  }
   // Initialize TX module
   // Note: TX module registers its own endpoints directly on the app
   // because it supports multiple endpoints at different paths
@@ -205,6 +218,18 @@ async function initializeModules() {
       await modules.tx.initialize(config.modules.tx, app);
     } catch (error) {
       serverLog.error('Failed to initialize TX module:', error);
+      throw error;
+    }
+  }
+
+  if (config.modules?.folder?.enabled) {
+    try {
+      serverLog.info('Initializing module: folder...');
+      modules.folder = new FolderModule();
+      await modules.folder.initialize(config.modules.folder, app);
+      // mount the router
+    } catch (error) {
+      serverLog.error('Failed to initialize folder module:', error);
       throw error;
     }
   }
@@ -311,6 +336,27 @@ async function buildRootPageContent() {
     content += 'Hot-reloading FHIR server with FHIRPath-based search indexes';
     content += '</li>';
   }
+
+  if (config.modules?.['ext-tracker']?.enabled) {
+    mc++;
+    content += '<li class="list-group-item">';
+    content += '<a href="/ext-tracker" class="text-decoration-none">Extension Tracker</a>: ';
+    content += 'View of Extension Usage';
+    content += '</li>';
+  }
+
+  if (config.modules.folder && config.modules.folder.enabled) {
+    const folders = config.modules.folder.folders || [];
+    for (const fc of folders) {
+      if (fc.enabled === false) continue;
+      mc++;
+      content += '<li class="list-group-item">';
+      content += `<a href="${fc.url}" class="text-decoration-none">${fc.name}</a>: `;
+      content += 'File folder with write control';
+      content += '</li>';
+    }
+  }
+
 
   if (config.modules.tx && config.modules.tx.enabled) {
     content += '<li class="list-group-item">';
