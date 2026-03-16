@@ -50,8 +50,8 @@ class FolderModule {
         this.handleGet(req, res, rootDir, urlBase);
       });
 
-      // PUT - upload with basic auth
-      router.put(urlBase + '/{*subpath}', (req, res) => {
+      // PUT - upload with basic auth (express.raw captures body before any global JSON parser)
+      router.put(urlBase + '/{*subpath}', express.raw({ type: '*/*', limit: MAX_UPLOAD_BYTES }), (req, res) => {
         this.handlePut(req, res, rootDir, urlBase);
       });
 
@@ -154,7 +154,8 @@ class FolderModule {
     }
 
     // validate every path segment: alphanumeric, dots, dashes, underscores only
-    const segments = safePath.split('/').filter(Boolean);
+    // split on both / and \ since path.normalize uses \ on Windows
+    const segments = safePath.split(/[/\\]/).filter(Boolean);
     for (const seg of segments) {
       if (!SAFE_NAME.test(seg)) {
         return res.status(400).send('Invalid path: names may only contain letters, numbers, dots, dashes and underscores');
