@@ -5,6 +5,27 @@ All notable changes to the Health Intersections Node Server will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.7.2] - 2026-03-16
+
+### Added
+- Folders module to support kindling 
+- Extension Tracker to support IG Usage Stats
+
+### Changed
+- Return valueset-unclosed as valueString instead of valueBoolean
+
+### Fixed
+- Imported include excludes were ignored
+- expansion.total inconsistent fixed
+- $expand filter for SNOMED
+- high-severity npm audit vulnerabilities (flatted, liquidjs, minimatch, underscore, fast-xml-parser)
+- Showing hostname in all circumstances
+- OCL issue: robust hash-based cold cache loading for ValueSet expansions. Ensure cacheKey and fingerprint are used for reliable retrieval and integrity.
+
+### Tx Conformance Statement
+
+FHIRsmith passed all 1452 HL7 terminology service tests (modes tx.fhir.org+omop+general+snomed, tests v1.9.1-SNAPSHOT, runner v6.8.2)
+
 ## [v0.7.1] - 2026-03-14
 
 ### Added
@@ -15,8 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Fix handling of markdown in release process
-- OCL cache fixes 
-- 
+- OCL cache fixes
+-
 ### Tx Conformance Statement
 
 FHIRsmith passed all 1452 HL7 terminology service tests (modes tx.fhir.org+omop+general+snomed, tests v1.9.1-SNAPSHOT, runner v6.8.2)
