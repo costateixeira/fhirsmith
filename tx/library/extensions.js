@@ -110,14 +110,18 @@ const Extensions = {
     if (!exp.extension) {
       exp.extension = [];
     }
-    exp.extension.push({ url : url, valueBoolean : b });
+    let ext = { url : url, valueBoolean : b };
+    exp.extension.push(ext);
+    return ext;
   },
 
   addString(exp, url, s) {
     if (!exp.extension) {
       exp.extension = [];
     }
-    exp.extension.push({ url : url, valueString : s });
+    let ext = { url : url, valueString : s };
+    exp.extension.push(ext);
+    return ext;
   }
 }
 

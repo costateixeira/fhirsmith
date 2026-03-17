@@ -139,6 +139,22 @@
           "context": null
         }
       ]
+    },
+    "folder" : {
+      "enabled": false,
+      "folders": [
+        {
+          "name": "folder",
+          "folder": "/tmp/folder",
+          "url": "/folder",
+          "enabled": true
+        }
+      ]
+    },
+    "ext-tracker": {
+      "enabled": true,
+      "database": "/var/fhir/data/extension-tracker.db",
+      "url": "/ext-tracker"
     }
   }
 }

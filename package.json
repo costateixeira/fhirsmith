@@ -1,6 +1,6 @@
 {
   "name": "fhirsmith",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "A Node.js server that provides a collection of tools to serve the FHIR ecosystem",
   "main": "server.js",
   "engines": {
@@ -32,6 +32,7 @@
     "axios": "^1.13.4",
     "base45": "^3.0.0",
     "bcrypt": "^6.0.0",
+    "better-sqlite3": "^12.8.0",
     "cbor": "^9.0.1",
     "chalk": "^4.1.2",
     "chokidar": "^4.0.3",
@@ -47,6 +48,7 @@
     "fhir-validator-wrapper": "1.2.2",
     "fhirpath": "^4.8.3",
     "fs-extra": "^11.3.3",
+    "ini": "^6.0.0",
     "inquirer": "^8.2.5",
     "liquidjs": "^10.24.0",
     "lusca": "^1.7.0",

@@ -549,6 +549,7 @@ class ValueSetExpander {
   }
 
   async importValueSet(vs, expansion, imports, offset) {
+    let count = 0;
     this.canBeHierarchy = false;
     for (let p of vs.expansion.parameter || []) {
       let vn = getValueName(p);
@@ -559,14 +560,17 @@ class ValueSetExpander {
 
     for (const c of vs.expansion.contains || []) {
       this.worker.deadCheck('importValueSet');
-      await this.importValueSetItem(null, c, imports, offset);
+      count += await this.importValueSetItem(null, c, imports, offset);
     }
+    return count;
   }
 
   async importValueSetItem(p, c, imports, offset) {
+    let count = 0;
     this.worker.deadCheck('importValueSetItem');
     const s = this.keyC(c);
-    if (this.passesImports(imports, c.system, c.code, offset) && !this.map.has(s)) {
+    if (this.passesImports(imports, c.system, c.code, offset) && !this.map.has(s) && !this.isExcluded(c.system, c.version, c.code)) {
+      count++;
       this.fullList.push(c);
       if (p != null) {
         if (!p.contains) {p.contains = [] }
@@ -578,8 +582,9 @@ class ValueSetExpander {
     }
     for (const cc of c.contains || []) {
       this.worker.deadCheck('importValueSetItem');
-      await this.importValueSetItem(c, cc, imports, offset);
+      count += await this.importValueSetItem(c, cc, imports, offset);
     }
+    return count;
   }
 
   excludeValueSet(vs, expansion, imports, offset) {
@@ -636,8 +641,8 @@ class ValueSetExpander {
             throw new Issue('error', 'business-rule', null, null, 'The code system definition for ' + cset.system + ' defines a supplement, so this expansion cannot be performed', 'invalid');
           } else {
             this.addParamUri(exp, cs.contentMode(), cs.system() + '|' + cs.version());
-            Extensions.addString(exp, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed",
-              "This extension is based on a fragment of the code system " + cset.system);
+            Extensions.addBoolean(exp, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", true);
+            Extensions.addString(exp, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed-reason","This extension is based on a fragment of the code system " + cset.system);
           }
         }
 
@@ -647,7 +652,8 @@ class ValueSetExpander {
           } else if (filter.isNull) {
             if (cs.isNotClosed()) {
               if (cs.specialEnumeration()) {
-                Extensions.addString(exp, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
+                Extensions.addBoolean(exp, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", true);
+                Extensions.addString(exp, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed-reason", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
               } else {
                 throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly', null, 422).withDiagnostics(this.worker.opContext.diagnostics());
               }
@@ -692,7 +698,7 @@ class ValueSetExpander {
         this.addParamUri(expansion, 'used-valueset', this.worker.makeVurl(ivs.valueSet));
         valueSets.push(ivs);
       }
-      await this.importValueSet(valueSets[0].valueSet, expansion, valueSets, 1);
+      this.addToTotal(await this.importValueSet(valueSets[0].valueSet, expansion, valueSets, 1));
     } else {
       const filters = [];
       const prep = null;
@@ -721,14 +727,16 @@ class ValueSetExpander {
           if (cs.specialEnumeration() && filters.length === 0) {
             this.worker.opContext.log('import special value set ' + cs.specialEnumeration());
             const base = await this.expandValueSet(cs.specialEnumeration(), '', filter, notClosed);
-            Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
+            Extensions.addBoolean(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", true);
+            Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed-reason", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
             await this.importValueSet(base, expansion, valueSets, 0);
             notClosed.value = true;
           } else if (filter.isNull) {
             this.worker.opContext.log('add whole code system');
             if (cs.isNotClosed()) {
               if (cs.specialEnumeration()) {
-                Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
+                Extensions.addBoolean(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", true);
+                Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed-reason", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
               } else {
                 throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly', null, 422).withDiagnostics(this.worker.opContext.diagnostics());
               }
@@ -815,7 +823,8 @@ class ValueSetExpander {
           }
 
           if (cs.specialEnumeration()) {
-            Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
+            Extensions.addBoolean(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", true);
+            Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed-reason", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
             notClosed.value = true;
           }
 
@@ -942,7 +951,8 @@ class ValueSetExpander {
         } else {
           if (cs.isNotClosed(filter)) {
             if (cs.specialEnumeration()) {
-              Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
+              Extensions.addBoolean(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", true);
+              Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed-reason", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
             } else {
               throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly', null, 422).withDiagnostics(this.worker.opContext.diagnostics());
             }
@@ -991,7 +1001,8 @@ class ValueSetExpander {
 
         if (cs.specialEnumeration()) {
           await cs.specialFilter(prep, true);
-          Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
+          Extensions.addBoolean(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", true);
+          Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed-reason", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
         }
 
         for (let fc of cset.filter) {
