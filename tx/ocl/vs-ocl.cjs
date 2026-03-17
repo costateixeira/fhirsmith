@@ -15,7 +15,7 @@ const { computeValueSetExpansionFingerprint } = require('./fingerprint/fingerpri
 const { ensureTxParametersHashIncludesFilter, patchValueSetExpandWholeSystemForOcl } = require('./shared/patches');
 
 ensureTxParametersHashIncludesFilter(TxParameters);
-patchValueSetExpandWholeSystemForOcl();
+//patchValueSetExpandWholeSystemForOcl();
 
 function normalizeCanonicalSystem(system) {
   if (typeof system !== 'string') {
@@ -93,10 +93,42 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
             dependencyChecksums: cached.dependencyChecksums || {},
             createdAt: Number.isFinite(createdAt) ? createdAt : null
           });
-
+          // Instancia ValueSet para garantir jsonObj
+          // Reconstrói compose.include se não existir
+          let compose = cached.expansion?.compose;
+          if (!compose || !Array.isArray(compose.include)) {
+            // Reconstrói a partir dos sistemas/códigos em expansion.contains
+            const systemConcepts = new Map();
+            if (Array.isArray(cached.expansion?.contains)) {
+              for (const entry of cached.expansion.contains) {
+                if (!entry.system || !entry.code) continue;
+                if (!systemConcepts.has(entry.system)) {
+                  systemConcepts.set(entry.system, []);
+                }
+                systemConcepts.get(entry.system).push({ code: entry.code });
+              }
+            }
+            compose = { include: Array.from(systemConcepts.entries()).map(([system, concepts]) => ({ system, concept: concepts })) };
+          }
+          const valueSetObj = new ValueSet({
+            resourceType: 'ValueSet',
+            url: cached.canonicalUrl,
+            version: cached.version || null,
+            expansion: cached.expansion,
+            compose,
+            id: cached.canonicalUrl // ou outro identificador se necessário
+          }, 'R5');
+          this.#applyCachedExpansion(valueSetObj, paramsKey);
+          // Indexa o ValueSet restaurado para torná-lo disponível via fetchValueSet
+          this.valueSetMap.set(valueSetObj.url, valueSetObj);
+          if (valueSetObj.version) {
+            this.valueSetMap.set(`${valueSetObj.url}|${valueSetObj.version}`, valueSetObj);
+          }
+          this.valueSetMap.set(valueSetObj.id, valueSetObj);
+          this._idMap.set(valueSetObj.id, valueSetObj);
           this.valueSetFingerprints.set(cacheKey, cached.fingerprint || null);
           loadedCount++;
-          console.log(`[OCL-ValueSet] Loaded ValueSet from cold cache: ${cached.canonicalUrl}`);
+          console.log(`[OCL-ValueSet] Loaded ValueSet from cold cache into memory: ${cached.canonicalUrl}`);
         } catch (error) {
           console.error(`[OCL-ValueSet] Failed to load cold cache file ${file}:`, error.message);
         }
@@ -220,9 +252,10 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     let key = `${url}|${version}`;
     if (this.valueSetMap.has(key)) {
       const vs = this.valueSetMap.get(key);
-      await this.#ensureComposeIncludes(vs);
+      // await this.#ensureComposeIncludes(vs);
       this.#clearInlineExpansion(vs);
-      this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset' });
+      console.log(`[OCL-ValueSet] fetchValueSet cache hit for ${url} (version: ${version || 'none'})`);
+      this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset', userRequested: true });
       return vs;
     }
 
@@ -232,7 +265,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
         key = `${url}|${majorMinor}`;
         if (this.valueSetMap.has(key)) {
           const vs = this.valueSetMap.get(key);
-          await this.#ensureComposeIncludes(vs);
+          // await this.#ensureComposeIncludes(vs);
           this.#clearInlineExpansion(vs);
           this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset-mm' });
           return vs;
@@ -242,7 +275,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
 
     if (this.valueSetMap.has(url)) {
       const vs = this.valueSetMap.get(url);
-      await this.#ensureComposeIncludes(vs);
+      // await this.#ensureComposeIncludes(vs);
       this.#clearInlineExpansion(vs);
       this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset-url' });
       return vs;
@@ -250,7 +283,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
 
     const resolved = await this.#resolveValueSetByCanonical(url, version);
     if (resolved) {
-      await this.#ensureComposeIncludes(resolved);
+      // await this.#ensureComposeIncludes(resolved);
       this.#clearInlineExpansion(resolved);
       this.#scheduleBackgroundExpansion(resolved, { reason: 'fetch-valueset-resolved' });
       return resolved;
@@ -261,7 +294,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     key = `${url}|${version}`;
     if (this.valueSetMap.has(key)) {
       const vs = this.valueSetMap.get(key);
-      await this.#ensureComposeIncludes(vs);
+      // await this.#ensureComposeIncludes(vs);
       this.#clearInlineExpansion(vs);
       this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset-init' });
       return vs;
@@ -273,7 +306,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
         key = `${url}|${majorMinor}`;
         if (this.valueSetMap.has(key)) {
           const vs = this.valueSetMap.get(key);
-          await this.#ensureComposeIncludes(vs);
+          // await this.#ensureComposeIncludes(vs);
           this.#clearInlineExpansion(vs);
           this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset-init-mm' });
           return vs;
@@ -283,7 +316,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
 
     if (this.valueSetMap.has(url)) {
       const vs = this.valueSetMap.get(url);
-      await this.#ensureComposeIncludes(vs);
+      // await this.#ensureComposeIncludes(vs);
       this.#clearInlineExpansion(vs);
       this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset-init-url' });
       return vs;
@@ -295,7 +328,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
   async fetchValueSetById(id) {
     const local = this.#getLocalValueSetById(id);
     if (local) {
-      await this.#ensureComposeIncludes(local);
+      // await this.#ensureComposeIncludes(local);
       this.#clearInlineExpansion(local);
       this.#scheduleBackgroundExpansion(local, { reason: 'fetch-valueset-by-id' });
       return local;
@@ -304,7 +337,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     await this.initialize();
 
     const vs = this.#getLocalValueSetById(id);
-    await this.#ensureComposeIncludes(vs);
+    // await this.#ensureComposeIncludes(vs);
     this.#clearInlineExpansion(vs);
     this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset-by-id-init' });
     return vs;
@@ -369,17 +402,15 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
       || this._idMap.get(vs.id)
       || null;
 
-    // Preserve hydrated cold-cache expansions on first index; invalidate only on replacement.
-    if (existing && existing !== vs) {
-      this.#invalidateExpansionCache(vs);
+    // Só indexa se não existe ou se for o mesmo objeto
+    if (!existing || existing === vs) {
+      this.valueSetMap.set(vs.url, vs);
+      if (vs.version) {
+        this.valueSetMap.set(`${vs.url}|${vs.version}`, vs);
+      }
+      this.valueSetMap.set(vs.id, vs);
+      this._idMap.set(vs.id, vs);
     }
-
-    this.valueSetMap.set(vs.url, vs);
-    if (vs.version) {
-      this.valueSetMap.set(`${vs.url}|${vs.version}`, vs);
-    }
-    this.valueSetMap.set(vs.id, vs);
-    this._idMap.set(vs.id, vs);
   }
 
   #toValueSet(collection) {
@@ -414,11 +445,11 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
       json.meta = { lastUpdated };
     }
 
-    if (preferredSource) {
-      json.compose = {
-        include: [{ system: preferredSource }]
-      };
-    }
+    // if (preferredSource) {
+    //   json.compose = {
+    //     include: [{ system: preferredSource }]
+    //   };
+    // }
 
     const conceptsUrl = this.#normalizePath(
       collection.concepts_url || collection.conceptsUrl || this.#buildCollectionConceptsPath(collection)
@@ -995,7 +1026,8 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
           const meta = this.#getCollectionMeta(vs);
           queuedJobSize = await this.#fetchConceptCountFromHeaders(meta?.conceptsUrl || null);
           return queuedJobSize;
-        }
+        },
+        userRequested: !!options.userRequested
       }
     );
   }
@@ -1080,10 +1112,10 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     }
 
     const contains = [];
-    let offset = 0;
-
-    // Pull all concepts in fixed-size pages until exhausted.
-    // eslint-disable-next-line no-constant-condition
+    let offset = 0; // Moved this line up
+    // Agrupa conceitos por system
+    const systemConcepts = new Map();
+    // Removed duplicate offset declaration
     while (true) {
       const batch = await this.#fetchCollectionConcepts(meta, {
         count: CONCEPT_PAGE_SIZE,
@@ -1092,17 +1124,14 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
         filter: null,
         languageCodes: []
       });
-
       const entries = Array.isArray(batch?.contains) ? batch.contains : [];
       if (entries.length === 0) {
         break;
       }
-
       for (const entry of entries) {
         if (!entry?.system || !entry?.code) {
           continue;
         }
-
         const out = {
           system: entry.system,
           code: entry.code
@@ -1125,18 +1154,28 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
             }));
         }
         contains.push(out);
+        // Agrupa por system
+        if (!systemConcepts.has(entry.system)) {
+          systemConcepts.set(entry.system, []);
+        }
+        systemConcepts.get(entry.system).push(entry.code);
       }
-
       if (progressState) {
         progressState.processed = contains.length;
       }
-
       if (entries.length < CONCEPT_PAGE_SIZE) {
         break;
       }
       offset += entries.length;
     }
-
+    // Popular compose.include para cada system
+    if (!vs.jsonObj.compose) {
+      vs.jsonObj.compose = { include: [] };
+    }
+    vs.jsonObj.compose.include = Array.from(systemConcepts.entries()).map(([system, codes]) => ({
+      system,
+      concept: codes.map(code => ({ code }))
+    }));
     return {
       timestamp: new Date().toISOString(),
       identifier: `urn:uuid:${crypto.randomUUID()}`,

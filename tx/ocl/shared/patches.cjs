@@ -178,6 +178,43 @@ function patchValueSetExpandWholeSystemForOcl() {
 
   const originalIncludeCodes = proto.includeCodes;
   proto.includeCodes = async function patchedIncludeCodes(cset, path, vsSrc, compose, filter, expansion, excludeInactive, notClosed) {
+    // ...existing code...
+    // PATCH: Para OCL ValueSet, só expandir códigos explicitamente listados em compose.include.code
+    if (Array.isArray(compose?.include)) {
+      const explicitCodes = [];
+      for (const include of compose.include) {
+        // Normaliza o system para URL canônico
+        const canonicalSystem = typeof include.system === 'string' ? include.system.trim() : include.system;
+        if (Array.isArray(include.code)) {
+          for (const code of include.code) {
+            explicitCodes.push({ system: canonicalSystem, code });
+          }
+        }
+        // Também verifica se há conceitos explícitos em include.concept
+        if (Array.isArray(include.concept)) {
+          for (const concept of include.concept) {
+            if (concept && concept.code) {
+              explicitCodes.push({ system: canonicalSystem, code: concept.code });
+            }
+          }
+        }
+      }
+      if (explicitCodes.length > 0) {
+        // Filtra expansão para só retornar os códigos explicitamente referenciados
+        const filtered = [];
+        for (const { system, code } of explicitCodes) {
+          // Busca conceito no CodeSystem
+          const resources = await originalIncludeCodes.call(this, { system, code }, path, vsSrc, compose, filter, expansion, excludeInactive, notClosed);
+          if (Array.isArray(resources)) {
+            filtered.push(...resources);
+          } else if (resources) {
+            filtered.push(resources);
+          }
+        }
+        return filtered;
+      }
+    }
+    // Fallback para comportamento original
     try {
       return await originalIncludeCodes.call(this, cset, path, vsSrc, compose, filter, expansion, excludeInactive, notClosed);
     } catch (error) {
