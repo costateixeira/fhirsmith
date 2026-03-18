@@ -198,6 +198,24 @@ class PublisherModule {
         });
       });
     }
+    const websiteColumns = await new Promise((resolve, reject) => {
+      this.db.all("PRAGMA table_info(websites)", (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+    const websiteColumnNames = websiteColumns.map(c => c.name);
+    if (!websiteColumnNames.includes('git_root')) {
+      await new Promise((resolve, reject) => {
+        this.db.run('ALTER TABLE websites ADD COLUMN git_root TEXT', (err) => {
+          if (err) reject(err);
+          else {
+            this.logger.info('Migration: added git_root column to websites table');
+            resolve();
+          }
+        });
+      });
+    }
   }
 
   async createDefaultAdmin() {
@@ -700,7 +718,7 @@ class PublisherModule {
     }
 
     // Step 3: Pull latest web folder before publishing into it
-    await this.runCommand('git', ['pull'], { cwd: website.local_folder }, task.id, 'Pulling latest web folder');
+    await this.runCommand('git', ['pull'], { cwd: website.git_root }, task.id, 'Pulling latest web folder');
 
     // Step 4: Run the IG publisher in go-publish mode
     await this.runPublisherGoPublish(task.id, publisherJar, draftDir, website.local_folder,
@@ -718,9 +736,9 @@ class PublisherModule {
     await this.logTaskMessage(task.id, 'info', 'Committing changes to web folder...');
     const gitUrl = 'https://github.com/' + task.github_org + '/' + task.github_repo + '.git';
     const commitMsg = 'publish ' + task.npm_package_id + '#' + task.version + ' from ' + gitUrl + ' ' + task.git_branch;
-    await this.runCommand('git', ['add', '.'], { cwd: website.local_folder }, task.id, 'Staging web folder changes');
-    await this.runCommand('git', ['commit', '-m', commitMsg], { cwd: website.local_folder }, task.id, 'Committing web folder changes');
-    await this.runCommand('git', ['push'], { cwd: website.local_folder }, task.id, 'Pushing web folder changes');
+    await this.runCommand('git', ['add', '.'], { cwd: website.git_root }, task.id, 'Staging web folder changes');
+    await this.runCommand('git', ['commit', '-m', commitMsg], { cwd: website.git_root }, task.id, 'Committing web folder changes');
+    await this.runCommand('git', ['push'], { cwd: website.git_root }, task.id, 'Pushing web folder changes');
 
     // Step 7: Commit and push the ig-registry
     await this.logTaskMessage(task.id, 'info', 'Committing changes to ig-registry...');
@@ -1597,6 +1615,8 @@ class PublisherModule {
       content += '<div class="col-md-4"><label class="form-label">Website Name</label>';
       content += '<input type="text" class="form-control" name="name" value="' + escape(website.name) + '" required></div>';
       content += '<div class="col-md-4"><label class="form-label">Local Folder</label>';
+      content += '<div class="col-md-4"><label class="form-label">Git Root (repo root for git operations)</label>';
+      content += '<input type="text" class="form-control" name="git_root" value="' + escape(website.git_root || '') + '"></div>';
       content += '<input type="text" class="form-control" name="local_folder" value="' + escape(website.local_folder) + '" required></div>';
       content += '<div class="col-md-4"><label class="form-label">History Templates</label>';
       content += '<input type="text" class="form-control" name="history_templates" value="' + escape(website.history_templates) + '" required></div>';
@@ -1626,13 +1646,13 @@ class PublisherModule {
   async updateWebsite(req, res) {
     const start = Date.now();
     try {
-      const { name, local_folder, history_templates, web_templates, server_update_script, is_active } = req.body;
+      const { name, local_folder,  git_root, history_templates, web_templates, server_update_script, is_active } = req.body;
       const websiteId = req.params.id;
 
       await new Promise((resolve, reject) => {
         this.db.run(
-          'UPDATE websites SET name=?, local_folder=?, history_templates=?, web_templates=?, server_update_script=?, is_active=? WHERE id=?',
-          [name, local_folder, history_templates, web_templates, server_update_script, is_active === '1' ? 1 : 0, websiteId],
+          'UPDATE websites SET name=?, local_folder=?,  git_root = ?, history_templates=?, web_templates=?, server_update_script=?, is_active=? WHERE id=?',
+          [name, local_folder,  git_root, history_templates, web_templates, server_update_script, is_active === '1' ? 1 : 0, websiteId],
           (err) => err ? reject(err) : resolve()
         );
       });
@@ -1671,6 +1691,8 @@ class PublisherModule {
         content += '<label for="local_folder" class="form-label">Local Folder</label>';
         content += '<input type="text" class="form-control" id="local_folder" name="local_folder" required>';
         content += '</div>';
+        content += '<div class="col-md-4"><label class="form-label">Git Root (repo root for git operations)</label>';
+        content += '<input type="text" class="form-control" name="git_root" required></div>';
         content += '<div class="col-md-4">';
         content += '<label for="history_templates" class="form-label">History Templates</label>';
         content += '<input type="text" class="form-control" id="history_templates" name="history_templates" required>';
@@ -1699,16 +1721,17 @@ class PublisherModule {
         } else {
           content += '<div class="table-responsive">';
           content += '<table class="table table-striped">';
-          content += '<thead><tr><th>Name</th><th>Local Folder</th><th>Update Script</th><th>Active</th><th>Created</th><th>Actions</th></tr></thead>';
+          content += '<thead><tr><th>Name</th><th>Local Folder</th><th>Git Root</th><th>Update Script</th><th>Active</th><th>Created</th><th>Actions</th></tr></thead>';
           content += '<tbody>';
 
           websites.forEach(website => {
             content += '<tr>';
             content += '<td>' + website.name + '</td>';
-            content += '<td><code>' + website.local_folder + '</code></td>';
-            content += '<td><code>' + website.history_templates + '</code></td>';
-            content += '<td><code>' + website.web_templates + '</code></td>';
-            content += '<td><code>' + website.server_update_script + '</code></td>';
+            content += '<td><code>' + escape(website.local_folder) + '</code></td>';
+            content += '<td><code>' + escape(website.git_root || '') + '</code></td>';
+            content += '<td><code>' + escape(website.history_templates) + '</code></td>';
+            content += '<td><code>' + escape(website.web_templates) + '</code></td>';
+            content += '<td><code>' + escape(website.server_update_script) + '</code></td>';
             content += '<td>' + (website.is_active ? '✓' : '✗') + '</td>';
             content += '<td>' + new Date(website.created_at).toLocaleString() + '</td>';
             content += '<td><a href="/publisher/admin/websites/' + website.id + '/edit" class="btn btn-sm btn-outline-primary">Edit</a></td>';
@@ -1743,12 +1766,12 @@ class PublisherModule {
     const start = Date.now();
     try {
       try {
-        const {name, local_folder, history_templates, web_templates, server_update_script} = req.body;
+        const {name, local_folder,  git_root, history_templates, web_templates, server_update_script} = req.body;
 
         await new Promise((resolve, reject) => {
           this.db.run(
-            'INSERT INTO websites (name, local_folder, history_templates, web_templates, server_update_script) VALUES (?, ?, ?, ?, ?)',
-            [name, local_folder, history_templates, web_templates, server_update_script],
+            'INSERT INTO websites (name, local_folder,  git_root, history_templates, web_templates, server_update_script) VALUES (?, ?, ?, ?, ?, ?)',
+            [name, local_folder, git_root, history_templates, web_templates, server_update_script],
             function (err) {
               if (err) reject(err);
               else resolve();
