@@ -20,7 +20,6 @@ tx/fixtures/
 
 # Data and runtime files
 data/
-tx/data/
 logs/
 *.log
 *.sqlite
