@@ -268,6 +268,8 @@ class PublisherModule {
     // Admin routes
     this.router.get('/admin/websites', this.requireAdmin.bind(this), this.renderWebsites.bind(this));
     this.router.post('/admin/websites', this.requireAdmin.bind(this), this.createWebsite.bind(this));
+    this.router.get('/admin/websites/:id/edit', this.requireAdmin.bind(this), this.renderEditWebsite.bind(this));
+    this.router.post('/admin/websites/:id/edit', this.requireAdmin.bind(this), this.updateWebsite.bind(this));
     this.router.get('/admin/users', this.requireAdmin.bind(this), this.renderUsers.bind(this));
     this.router.post('/admin/users', this.requireAdmin.bind(this), this.createUser.bind(this));
     this.router.post('/admin/permissions', this.requireAdmin.bind(this), this.updatePermissions.bind(this));
@@ -1583,6 +1585,69 @@ class PublisherModule {
     }
   }
 
+  async renderEditWebsite(req, res) {
+    const start = Date.now();
+    try {
+      const htmlServer = require('../library/html-server');
+      const website = await this.getWebsite(req.params.id);
+      if (!website) return res.status(404).send('Website not found');
+
+      let content = '<h3>Edit Website</h3>';
+      content += '<form method="post" action="/publisher/admin/websites/' + website.id + '/edit" class="row g-3">';
+      content += '<div class="col-md-4"><label class="form-label">Website Name</label>';
+      content += '<input type="text" class="form-control" name="name" value="' + escape(website.name) + '" required></div>';
+      content += '<div class="col-md-4"><label class="form-label">Local Folder</label>';
+      content += '<input type="text" class="form-control" name="local_folder" value="' + escape(website.local_folder) + '" required></div>';
+      content += '<div class="col-md-4"><label class="form-label">History Templates</label>';
+      content += '<input type="text" class="form-control" name="history_templates" value="' + escape(website.history_templates) + '" required></div>';
+      content += '<div class="col-md-4"><label class="form-label">Web Templates</label>';
+      content += '<input type="text" class="form-control" name="web_templates" value="' + escape(website.web_templates) + '" required></div>';
+      content += '<div class="col-md-4"><label class="form-label">Update Script</label>';
+      content += '<input type="text" class="form-control" name="server_update_script" value="' + escape(website.server_update_script) + '" required></div>';
+      content += '<div class="col-md-4"><label class="form-label">Active</label>';
+      content += '<select class="form-control" name="is_active"><option value="1"' + (website.is_active ? ' selected' : '') + '>Yes</option><option value="0"' + (!website.is_active ? ' selected' : '') + '>No</option></select></div>';
+      content += '<div class="col-12"><button type="submit" class="btn btn-primary">Save Changes</button> ';
+      content += '<a href="/publisher/admin/websites" class="btn btn-secondary">Cancel</a></div>';
+      content += '</form>';
+
+      const html = htmlServer.renderPage('publisher', 'Edit Website - FHIR Publisher', content, {
+        templateVars: { loginTitle: 'Logout', loginPath: 'logout', loginAction: 'POST' }
+      });
+      res.setHeader('Content-Type', 'text/html');
+      res.send(html);
+    } catch (error) {
+      this.logger.error('Error rendering edit website:', error);
+      res.status(500).send('Internal server error');
+    } finally {
+      this.stats.countRequest('websites-edit', Date.now() - start);
+    }
+  }
+
+  async updateWebsite(req, res) {
+    const start = Date.now();
+    try {
+      const { name, local_folder, history_templates, web_templates, server_update_script, is_active } = req.body;
+      const websiteId = req.params.id;
+
+      await new Promise((resolve, reject) => {
+        this.db.run(
+          'UPDATE websites SET name=?, local_folder=?, history_templates=?, web_templates=?, server_update_script=?, is_active=? WHERE id=?',
+          [name, local_folder, history_templates, web_templates, server_update_script, is_active === '1' ? 1 : 0, websiteId],
+          (err) => err ? reject(err) : resolve()
+        );
+      });
+
+      this.logUserAction(req.session.userId, 'update_website', websiteId, req.ip);
+      this.logger.info('Website updated: ' + websiteId + ' by user ' + req.session.userId);
+      res.redirect('/publisher/admin/websites');
+    } catch (error) {
+      this.logger.error('Error updating website:', error);
+      res.status(500).send('Failed to update website');
+    } finally {
+      this.stats.countRequest('websites-update', Date.now() - start);
+    }
+  }
+
   async renderWebsites(req, res) {
     const start = Date.now();
     try {
@@ -1634,7 +1699,7 @@ class PublisherModule {
         } else {
           content += '<div class="table-responsive">';
           content += '<table class="table table-striped">';
-          content += '<thead><tr><th>Name</th><th>Local Folder</th><th>Update Script</th><th>Active</th><th>Created</th></tr></thead>';
+          content += '<thead><tr><th>Name</th><th>Local Folder</th><th>Update Script</th><th>Active</th><th>Created</th><th>Actions</th></tr></thead>';
           content += '<tbody>';
 
           websites.forEach(website => {
@@ -1646,6 +1711,7 @@ class PublisherModule {
             content += '<td><code>' + website.server_update_script + '</code></td>';
             content += '<td>' + (website.is_active ? '✓' : '✗') + '</td>';
             content += '<td>' + new Date(website.created_at).toLocaleString() + '</td>';
+            content += '<td><a href="/publisher/admin/websites/' + website.id + '/edit" class="btn btn-sm btn-outline-primary">Edit</a></td>';
             content += '</tr>';
           });
 
