@@ -615,10 +615,14 @@ class SnomedProvider extends BaseCSServices {
   getLanguageCode(langIndex) {
     const languageMap = {
       1: 'en',
-      2: 'en-GB',
-      3: 'es',
-      4: 'fr',
-      5: 'de'
+      2: 'fr',
+      3: 'nl',
+      4: 'es',
+      5: 'sv',
+      6: 'da',
+      7: 'de',
+      8: 'it',
+      9: 'cs'
     };
     return languageMap[langIndex] || 'en';
   }
