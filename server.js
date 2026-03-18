@@ -401,12 +401,14 @@ async function buildRootPageContent() {
   const heapUsedMB = (memUsage.heapUsed / 1024 / 1024).toFixed(2);
   const heapTotalMB = (memUsage.heapTotal / 1024 / 1024).toFixed(2);
   const rssMB = (memUsage.rss / 1024 / 1024).toFixed(2);
+  const freeMemMB = (os.freemem() / 1024 / 1024).toFixed(0);
+  const totalMemMB = (os.totalmem() / 1024 / 1024).toFixed(0);
 
   content += '<table class="grid">';
   content += '<tr>';
-  content += `<td><strong>Module Count:</strong> ${mc}</td>`;
   content += `<td><strong>Uptime:</strong> ${escape(uptimeStr)}</td>`;
   content += `<td><strong>Request Count:</strong> ${stats.requestCount}</td>`;
+  content += `<td><strong>Free Memory:</strong> ${freeMemMB} MB of ${totalMemMB} MB</td>`;
   content += '</tr>';
   content += '<tr>';
   content += `<td><strong>Heap Used:</strong> ${heapUsedMB} MB</td>`;
