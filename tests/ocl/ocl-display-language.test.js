@@ -19,18 +19,34 @@ const { LanguageDefinitions, Languages } = require('../../library/languages');
 // Helpers
 // ---------------------------------------------------------------------------
 
+let _langDefs = null;
+
+/** Load language definitions once (synchronous after first call). */
+function getLangDefs() {
+  if (!_langDefs) {
+    const path = require('path');
+    const langDir = path.join(__dirname, '..', '..', 'tx', 'data');
+    // fromFiles is async but internally uses readFileSync — safe to resolve here
+    _langDefs = new LanguageDefinitions();
+    const fs = require('fs');
+    const content = fs.readFileSync(path.join(langDir, 'lang.dat'), 'utf8');
+    _langDefs._load(content);
+  }
+  return _langDefs;
+}
+
 /** Build a Languages preference list from a BCP-47 code string, e.g. 'en' or 'pt'. */
 function makeLangs(code) {
-  const defs = new LanguageDefinitions();
+  const defs = getLangDefs();
   if (!code) {
     return new Languages(defs);
   }
   return Languages.fromAcceptLanguage(code, defs, false);
 }
 
-/** Build a fresh Designations collection backed by an empty LanguageDefinitions. */
+/** Build a fresh Designations collection backed by loaded LanguageDefinitions. */
 function makeDesignations() {
-  return new Designations(new LanguageDefinitions());
+  return new Designations(getLangDefs());
 }
 
 // ---------------------------------------------------------------------------
@@ -275,9 +291,8 @@ describe('displayLanguage – designation selection (Designations.preferredDesig
 
 describe('displayLanguage – end-to-end: extractDesignations → preferredDesignation', () => {
   function selectDisplay(concept, langCode) {
-    const defs = new LanguageDefinitions();
     const langs = makeLangs(langCode);
-    const displays = new Designations(defs);
+    const displays = makeDesignations();
 
     const designations = extractDesignations(concept);
     let hasNoLang = false;

@@ -59,15 +59,19 @@ class OCLConceptMapProvider extends AbstractConceptMapProvider {
       return await this.fetchConceptMapById(mappingId);
     }
 
-    const mappings = await this.#searchMappings({ from_source_url: url }, this.maxSearchPages);
-    for (const mapping of mappings) {
-      const cm = this.#toConceptMap(mapping);
-      if (cm) {
-        this.#indexConceptMap(cm);
-        if (cm.url === url && (!version || cm.version === version)) {
-          return cm;
+    try {
+      const mappings = await this.#searchMappings({ from_source_url: url }, this.maxSearchPages);
+      for (const mapping of mappings) {
+        const cm = this.#toConceptMap(mapping);
+        if (cm) {
+          this.#indexConceptMap(cm);
+          if (cm.url === url && (!version || cm.version === version)) {
+            return cm;
+          }
         }
       }
+    } catch (_err) {
+      // OCL API unreachable or returned error — treat as not found
     }
 
     return null;
@@ -87,23 +91,194 @@ class OCLConceptMapProvider extends AbstractConceptMapProvider {
       return this._idMap.get(rawId);
     }
 
-    const response = await this.httpClient.get(`/mappings/${encodeURIComponent(rawId)}/`);
-    const cm = this.#toConceptMap(response.data);
-    if (!cm) {
+    try {
+      const response = await this.httpClient.get(`/mappings/${encodeURIComponent(rawId)}/`);
+      const cm = this.#toConceptMap(response.data);
+      if (!cm) {
+        return null;
+      }
+      this.#indexConceptMap(cm);
+      return cm;
+    } catch (_err) {
       return null;
     }
-    this.#indexConceptMap(cm);
-    return cm;
   }
 
-  // eslint-disable-next-line no-unused-vars
-  async searchConceptMaps(_searchParams, _elements) {
-    // OCL does not have ConceptMap resources; it exposes individual mappings
-    // between concepts. Searching is not feasible — use $translate instead.
-    return [];
+  async searchConceptMaps(searchParams, _elements) {
+    this._validateSearchParams(searchParams);
+
+    const params = Object.fromEntries(
+      searchParams.map(({ name, value }) => [name, String(value).toLowerCase()])
+    );
+    const sourceSystem = params['source-system'] || params.source || null;
+    const targetSystem = params['target-system'] || params.target || null;
+
+    // Without a source or target filter the search would have to fetch every
+    // mapping in the organisation — too expensive.  Return empty so the
+    // Package providers can still answer generic ConceptMap listings.
+    if (!sourceSystem && !targetSystem) {
+      return [];
+    }
+
+    try {
+      const allMappings = await this.#collectMappingsForSearch(sourceSystem, targetSystem);
+      return this.#aggregateMappingsToConceptMaps(allMappings);
+    } catch (_err) {
+      return [];
+    }
+  }
+
+  async #collectMappingsForSearch(sourceSystem, targetSystem) {
+    const systemUrl = sourceSystem || targetSystem;
+    const candidates = await this.#candidateSourceUrls(systemUrl);
+    const sourcePaths = candidates.filter(s => String(s || '').startsWith('/orgs/'));
+
+    if (sourcePaths.length === 0) {
+      return [];
+    }
+
+    const allMappings = [];
+    for (const sourcePath of sourcePaths) {
+      const normalizedPath = this.#normalizeSourcePath(sourcePath);
+      let concepts;
+      try {
+        concepts = await this.#fetchAllPages(
+          `${normalizedPath}concepts/`, { limit: PAGE_SIZE }, this.maxSearchPages
+        );
+      } catch (_err) {
+        continue;
+      }
+
+      for (const concept of concepts) {
+        const code = concept.id || concept.mnemonic;
+        if (!code) {
+          continue;
+        }
+        try {
+          const mappings = await this.#fetchAllPages(
+            `${normalizedPath}concepts/${encodeURIComponent(code)}/mappings/`,
+            { limit: PAGE_SIZE }, 2
+          );
+          allMappings.push(...mappings);
+        } catch (_err) {
+          // concept has no mappings or endpoint inaccessible — skip
+        }
+      }
+    }
+
+    const sourceUrlsToResolve = new Set();
+    for (const m of allMappings) {
+      const from = m?.from_source_url || m?.fromSourceUrl;
+      const to = m?.to_source_url || m?.toSourceUrl;
+      if (from) sourceUrlsToResolve.add(from);
+      if (to) sourceUrlsToResolve.add(to);
+    }
+    await this.#ensureCanonicalForSourceUrls(sourceUrlsToResolve);
+
+    return allMappings;
+  }
+
+  #aggregateMappingsToConceptMaps(mappings) {
+    const groups = new Map();
+
+    for (const mapping of mappings) {
+      const fromSource = mapping.from_source_url || mapping.fromSourceUrl || null;
+      const toSource = mapping.to_source_url || mapping.toSourceUrl || null;
+      const sourceCode = mapping.from_concept_code || mapping.fromConceptCode;
+      const targetCode = mapping.to_concept_code || mapping.toConceptCode;
+
+      if (!fromSource || !toSource || !sourceCode || !targetCode) {
+        continue;
+      }
+
+      const sourceCanonical = this.#canonicalForSourceUrl(fromSource) || fromSource;
+      const targetCanonical = this.#canonicalForSourceUrl(toSource) || toSource;
+      const groupKey = `${this.#norm(sourceCanonical)}|${this.#norm(targetCanonical)}`;
+
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, {
+          sourceCanonical, targetCanonical, elements: new Map(), lastUpdated: null
+        });
+      }
+
+      const group = groups.get(groupKey);
+      const ts = this.#toIsoDate(
+        mapping.updated_on || mapping.updatedOn || mapping.updated_at || mapping.updatedAt
+      );
+      if (ts && (!group.lastUpdated || ts > group.lastUpdated)) {
+        group.lastUpdated = ts;
+      }
+
+      if (!group.elements.has(sourceCode)) {
+        group.elements.set(sourceCode, {
+          code: sourceCode,
+          display: mapping.from_concept_name_resolved || mapping.fromConceptNameResolved
+                || mapping.from_concept_name || mapping.fromConceptName || null,
+          targets: []
+        });
+      }
+
+      group.elements.get(sourceCode).targets.push({
+        code: targetCode,
+        display: mapping.to_concept_name_resolved || mapping.toConceptNameResolved
+              || mapping.to_concept_name || mapping.toConceptName || null,
+        relationship: this.#toRelationship(mapping.map_type || mapping.mapType),
+        comment: mapping.comment || null
+      });
+    }
+
+    const results = [];
+    for (const [, group] of groups) {
+      const sourceId = this.#lastSegment(group.sourceCanonical);
+      const targetId = this.#lastSegment(group.targetCanonical);
+      const id = `${sourceId}-to-${targetId}`;
+
+      const elements = [];
+      for (const [, el] of group.elements) {
+        elements.push({ code: el.code, display: el.display, target: el.targets });
+      }
+
+      const json = {
+        resourceType: 'ConceptMap',
+        id,
+        url: `${this.baseUrl}/ConceptMap/${id}`,
+        name: id,
+        title: `${sourceId} to ${targetId}`,
+        status: 'active',
+        sourceScopeUri: group.sourceCanonical,
+        targetScopeUri: group.targetCanonical,
+        group: [{
+          source: group.sourceCanonical,
+          target: group.targetCanonical,
+          element: elements
+        }]
+      };
+      if (group.lastUpdated) {
+        json.meta = { lastUpdated: group.lastUpdated };
+      }
+
+      const cm = new ConceptMap(json, 'R5');
+      this.#indexConceptMap(cm);
+      results.push(cm);
+    }
+    return results;
+  }
+
+  #lastSegment(canonical) {
+    const raw = String(canonical || '').trim().replace(/\/+$/, '');
+    const slash = raw.lastIndexOf('/');
+    return slash >= 0 && slash < raw.length - 1 ? raw.substring(slash + 1) : raw;
   }
 
   async findConceptMapForTranslation(opContext, conceptMaps, sourceSystem, sourceScope, targetScope, targetSystem, sourceCode = null) {
+    try {
+      await this.#doFindConceptMapForTranslation(opContext, conceptMaps, sourceSystem, sourceScope, targetScope, targetSystem, sourceCode);
+    } catch (_err) {
+      // OCL API errors must not break $translate for other providers
+    }
+  }
+
+  async #doFindConceptMapForTranslation(opContext, conceptMaps, sourceSystem, sourceScope, targetScope, targetSystem, sourceCode) {
     const sourceCandidates = await this.#candidateSourceUrls(sourceSystem);
     const targetCandidates = await this.#candidateSourceUrls(targetSystem);
 
@@ -113,8 +288,12 @@ class OCLConceptMapProvider extends AbstractConceptMapProvider {
     if (sourceCode && sourcePaths.length > 0) {
       for (const sourcePath of sourcePaths) {
         const conceptPath = `${this.#normalizeSourcePath(sourcePath)}concepts/${encodeURIComponent(sourceCode)}/mappings/`;
-        const found = await this.#fetchAllPages(conceptPath, { limit: PAGE_SIZE }, Math.min(2, this.maxSearchPages));
-        mappings.push(...found);
+        try {
+          const found = await this.#fetchAllPages(conceptPath, { limit: PAGE_SIZE }, Math.min(2, this.maxSearchPages));
+          mappings.push(...found);
+        } catch (_err) {
+          // concept not found or mappings endpoint unavailable
+        }
       }
     }
 
