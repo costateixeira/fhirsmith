@@ -702,7 +702,7 @@ class PublisherModule {
     const historyDir = path.join(taskDir, 'fhir-ig-history-template');
     const templatesDir = path.join(taskDir, 'fhir-web-templates');
 
-    await this.runCommand('git', ['clone', 'https://github.com/FHIR/ig-registry.git', registryDir],
+    await this.runCommand('git', ['clone', 'git@github.com:FHIR/ig-registry.git', registryDir],
       {}, task.id, 'Cloning ig-registry');
 
     await this.runCommand('git', ['clone', 'https://github.com/HL7/fhir-ig-history-template.git', historyDir],
@@ -1615,9 +1615,9 @@ class PublisherModule {
       content += '<div class="col-md-4"><label class="form-label">Website Name</label>';
       content += '<input type="text" class="form-control" name="name" value="' + escape(website.name) + '" required></div>';
       content += '<div class="col-md-4"><label class="form-label">Local Folder</label>';
+      content += '<input type="text" class="form-control" name="local_folder" value="' + escape(website.local_folder) + '" required></div>';
       content += '<div class="col-md-4"><label class="form-label">Git Root (repo root for git operations)</label>';
       content += '<input type="text" class="form-control" name="git_root" value="' + escape(website.git_root || '') + '"></div>';
-      content += '<input type="text" class="form-control" name="local_folder" value="' + escape(website.local_folder) + '" required></div>';
       content += '<div class="col-md-4"><label class="form-label">History Templates</label>';
       content += '<input type="text" class="form-control" name="history_templates" value="' + escape(website.history_templates) + '" required></div>';
       content += '<div class="col-md-4"><label class="form-label">Web Templates</label>';
@@ -1691,8 +1691,10 @@ class PublisherModule {
         content += '<label for="local_folder" class="form-label">Local Folder</label>';
         content += '<input type="text" class="form-control" id="local_folder" name="local_folder" required>';
         content += '</div>';
-        content += '<div class="col-md-4"><label class="form-label">Git Root (repo root for git operations)</label>';
-        content += '<input type="text" class="form-control" name="git_root" required></div>';
+        content += '<div class="col-md-4">';
+        content += '<label class="form-label">Git Root (repo root for git operations)</label>';
+        content += '<input type="text" class="form-control" name="git_root" required>';
+        content += '</div>';
         content += '<div class="col-md-4">';
         content += '<label for="history_templates" class="form-label">History Templates</label>';
         content += '<input type="text" class="form-control" id="history_templates" name="history_templates" required>';
