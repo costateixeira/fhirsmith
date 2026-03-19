@@ -21,7 +21,7 @@ class UriServices extends CodeSystemProvider {
   }
 
   version() {
-    return 'n/a';
+    return null;
   }
 
   description() {
@@ -182,7 +182,7 @@ class UriServicesFactory extends CodeSystemFactoryProvider {
   }
 
   defaultVersion() {
-    return 'n/a';
+    return null;
   }
 
   system() {
@@ -190,7 +190,7 @@ class UriServicesFactory extends CodeSystemFactoryProvider {
   }
 
   version() {
-    return 'n/a';
+    return null;
   }
 
   // eslint-disable-next-line no-unused-vars

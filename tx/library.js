@@ -34,6 +34,7 @@ const {VSACValueSetProvider} = require("./vs/vs-vsac");
 const { OCLCodeSystemProvider, OCLSourceCodeSystemFactory } = require('./ocl/cs-ocl');
 const { OCLValueSetProvider } = require('./ocl/vs-ocl');
 const { OCLConceptMapProvider } = require('./ocl/cm-ocl');
+const {UriServicesFactory} = require("./cs/cs-uri");
 
 /**
  * This class holds all the loaded content ready for processing
@@ -452,6 +453,12 @@ class Library {
         const hgvs = new HGVSServicesFactory(this.i18n);
         await hgvs.load();
         this.registerProvider('internal', hgvs);
+        break;
+      }
+      case "urls" : {
+        const urls = new UriServicesFactory(this.i18n);
+        await urls.load();
+        this.registerProvider('internal', urls);
         break;
       }
       case "vsac" : {

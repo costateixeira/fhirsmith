@@ -1241,13 +1241,14 @@ function buildAdditionalForm(queryParams) {
     }
   }
 
+
   // Add text search field and package filter field
   html += `Text: <input type="text" name="text" value="${escape(text || '')}" class="" style="width: 200px;"/> `;
   html += `Package: <input type="text" name="pkg" value="${escape(pkg || '')}" placeholder="e.g. hl7.fhir.us" class="" style="width: 200px;"/> `;
 
   // Add submit button with 'only used' checkbox immediately before it
   const onlyUsedChecked = onlyUsed === 'true' ? ' checked' : '';
-  html += `<input type="checkbox" name="onlyUsed" value="true"${onlyUsedChecked}/> Only Used `;
+  html += `<input type="checkbox" name="onlyUsed" value="true"${onlyUsedChecked}/> Only Show Used `;
   html += '<input type="submit" value="Search" style="color:rgb(89, 137, 241)"/>';
 
   html += '</form>';
@@ -2747,10 +2748,13 @@ function buildDependencyTable(dependencies) {
       }
       currentType = dep.ResourceType;
       html += '<table class="table table-bordered">';
-      html += `<tr style="background-color: #eeeeee"><td colspan="2"><strong>${escape(currentType)}</strong></td></tr>`;
+      html += `<tr style="background-color: #eeeeee"><td colspan="3"><strong>${escape(currentType)}</strong></td></tr>`;
     }
 
     html += '<tr>';
+
+    // Package column
+    html += `<td>${escape(dep.PID || '')}</td>`;
 
     // Build the link to the resource detail page
     const packagePid = dep.PID.replace(/#/g, '|'); // Convert # to | for URL

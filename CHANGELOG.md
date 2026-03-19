@@ -5,6 +5,21 @@ All notable changes to the Health Intersections Node Server will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.7.4] - 2026-03-19
+
+### Changed
+
+- XIG: show using resource package explicitly
+- TX: Check conformance statement production at start up
+
+### Fixed
+- TX: Load URI provider on tx.fhir.org
+- TX: fix error getting SCT version for html format
+
+### Tx Conformance Statement
+
+FHIRsmith passed all 1452 HL7 terminology service tests (modes tx.fhir.org+omop+general+snomed, tests v1.9.1-SNAPSHOT, runner v6.9.0)
+
 ## [v0.7.3] - 2026-03-19
 
 ### Changed
