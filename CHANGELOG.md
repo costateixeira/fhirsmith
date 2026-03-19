@@ -5,6 +5,25 @@ All notable changes to the Health Intersections Node Server will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.7.3] - 2026-03-19
+
+### Changed
+
+- Show total memory on home page
+- OCL improvements
+- Publisher: Allow editing websites
+- Publisher: separate out target folder and git folder
+- Publisher: use trusted git repo for ig_registry
+- Extend XIG for phinvads analysis
+
+### Fixed
+- Don't exempt tx/data from npm project
+- SNOMED CT fix: align getLanguageCode with mapLanguageCode byte mapping
+
+### Tx Conformance Statement
+
+FHIRsmith passed all 1452 HL7 terminology service tests (modes tx.fhir.org+omop+general+snomed, tests v1.9.1-SNAPSHOT, runner v6.9.0)
+
 ## [v0.7.2] - 2026-03-16
 
 ### Added
