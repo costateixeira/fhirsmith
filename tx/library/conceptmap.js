@@ -132,7 +132,9 @@ class ConceptMap extends CanonicalResource {
 
     let all = this.canonicalMatches(targetScope, this.targetScope);
     for (const g of this.jsonObj.group || []) {
-      if (all || (this.canonicalMatches(vurl, g.source) && this.canonicalMatches(targetSystem, g.target) )) {
+      const sourceOk = this.canonicalMatches(vurl, g.source);
+      const targetOk = !targetSystem || this.canonicalMatches(targetSystem, g.target);
+      if (all || (sourceOk && targetOk)) {
         for (const em of g.element || []) {
           if (em.code === coding.code) {
             let match = {

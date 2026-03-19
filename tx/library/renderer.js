@@ -1800,12 +1800,12 @@ class Renderer {
       if (elem.noMap) {
         const nomapComment = Extensions.readString(elem, 'http://hl7.org/fhir/StructureDefinition/conceptmap-nomap-comment');
         if (!hasComment) {
-          tr.td().colspan("2").style("background-color: #efefef").tx("(not mapped)");
+          tr.td().setAttribute('colspan',"2").style("background-color: #efefef").tx("(not mapped)");
         } else if (nomapComment) {
-          tr.td().colspan("2").style("background-color: #efefef").tx("(not mapped)");
+          tr.td().setAttribute('colspan',"2").style("background-color: #efefef").tx("(not mapped)");
           tr.td().style("background-color: #efefef").tx(nomapComment);
         } else {
-          tr.td().colspan("3").style("background-color: #efefef").tx("(not mapped)");
+          tr.td().setAttribute('colspan',"3").style("background-color: #efefef").tx("(not mapped)");
         }
       } else {
         let first = true;
@@ -1858,16 +1858,16 @@ class Renderer {
     let tr = tbl.tr();
     const sourceColCount = 1 + Object.keys(sources).length - 1; // code + dependsOn attributes
     const targetColCount = 1 + Object.keys(targets).length - 1; // code + product attributes
-    tr.td().colspan(String(sourceColCount + 1)).b().tx(this.translate('CONC_MAP_SRC_DET'));
+    tr.td().setAttribute('colspan', String(sourceColCount + 1)).b().tx(this.translate('CONC_MAP_SRC_DET'));
     if (hasRelationships) {
       tr.td().b().tx(this.translate('CONC_MAP_REL'));
     }
-    tr.td().colspan(String(targetColCount + 1)).b().tx(this.translate('CONC_MAP_TRGT_DET'));
+    tr.td().setAttribute('colspan', String(targetColCount + 1)).b().tx(this.translate('CONC_MAP_TRGT_DET'));
     if (hasComment) {
       tr.td().b().tx(this.translate('GENERAL_COMMENT'));
     }
     if (hasProperties) {
-      tr.td().colspan(String(Object.keys(props).length)).b().tx(this.translate('GENERAL_PROPS'));
+      tr.td().setAttribute('colspan', String(Object.keys(props).length)).b().tx(this.translate('GENERAL_PROPS'));
     }
 
     // Second header row: actual column headers
@@ -1944,10 +1944,10 @@ class Renderer {
 
         const nomapComment = Extensions.readString(elem, 'http://hl7.org/fhir/StructureDefinition/conceptmap-nomap-comment');
         if (nomapComment) {
-          tr.td().colspan("3").style("background-color: #efefef").tx("(not mapped)");
+          tr.td().setAttribute('colspan',"3").style("background-color: #efefef").tx("(not mapped)");
           tr.td().style("background-color: #efefef").tx(nomapComment);
         } else {
-          tr.td().colspan("4").style("background-color: #efefef").tx("(not mapped)");
+          tr.td().setAttribute('colspan',"4").style("background-color: #efefef").tx("(not mapped)");
         }
       } else {
         let first = true;
@@ -2072,7 +2072,7 @@ class Renderer {
   async renderCSDetailsLink(tr, url, span2) {
     const td = tr.td();
     if (span2) {
-      td.colspan("2");
+      td.setAttribute('colspan',"2");
     }
     td.b().tx(this.translate('CONC_MAP_CODES'));
     td.tx(" " + this.translate('CONC_MAP_FRM') + " ");

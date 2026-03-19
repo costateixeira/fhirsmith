@@ -49,7 +49,7 @@ describe('Translate Worker', () => {
       expect(response.status).toBe(400);
       expect(response.body.resourceType).toBe('OperationOutcome');
       expect(response.body.issue[0].code).toBe('invalid');
-      expect(response.body.issue[0].details.text).toContain('sourceSystem');
+      expect(response.body.issue[0].details.text).toContain('system parameter is required');
     });
 
     test('should return 400 when no source code/coding provided', async () => {
