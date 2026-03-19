@@ -99,14 +99,15 @@ function validateExternalUrl(url) {
 
 // Secure SQL query building with parameterized queries
 function buildSecureResourceQuery(queryParams, offset = 0, limit = 50) {
-  const { realm, auth, ver, type, rt, text } = queryParams;
+  const { realm, auth, ver, type, rt, text, pkg, onlyUsed } = queryParams;
 
   let baseQuery = `
       SELECT
           ResourceKey, ResourceType, Type, Kind, Description, PackageKey,
           Realm, Authority, R2, R2B, R3, R4, R4B, R5, R6,
           Id, Url, Version, Status, Date, Name, Title, Content,
-          Supplements, Details, FMM, WG, StandardsStatus, Web
+          Supplements, Details, FMM, WG, StandardsStatus, Web,
+          (SELECT COUNT(*) FROM DependencyList WHERE TargetKey = Resources.ResourceKey) AS UsageCount
       FROM Resources
       WHERE 1=1
   `;
@@ -225,6 +226,17 @@ function buildSecureResourceQuery(queryParams, offset = 0, limit = 50) {
     }
   }
 
+  // Package filter - matches packageId#version containing the search string
+  if (pkg && pkg !== '') {
+    conditions.push('AND PackageKey IN (SELECT PackageKey FROM Packages WHERE (Id || \'#\' || Version) LIKE ?)');
+    params.push(`%${pkg}%`);
+  }
+
+  // Only used filter
+  if (onlyUsed === 'true') {
+    conditions.push('AND EXISTS (SELECT 1 FROM DependencyList WHERE TargetKey = Resources.ResourceKey)');
+  }
+
   // Build final query
   const fullQuery = baseQuery + ' ' + conditions.join(' ') + ' ORDER BY ResourceType, Type, Description LIMIT ? OFFSET ?';
   params.push(limit, offset);
@@ -233,7 +245,7 @@ function buildSecureResourceQuery(queryParams, offset = 0, limit = 50) {
 }
 
 function buildSecureResourceCountQuery(queryParams) {
-  const { realm, auth, ver, type, rt, text } = queryParams;
+  const { realm, auth, ver, type, rt, text, pkg, onlyUsed } = queryParams;
 
   let baseQuery = 'SELECT COUNT(*) as total FROM Resources WHERE 1=1';
   const conditions = [];
@@ -322,6 +334,17 @@ function buildSecureResourceCountQuery(queryParams) {
       conditions.push('AND ResourceKey IN (SELECT ResourceKey FROM ResourceFTS WHERE ResourceFTS MATCH ?)');
       params.push(`{Description Narrative} : "${ftsText}"`);
     }
+  }
+
+  // Package filter - matches packageId#version containing the search string
+  if (pkg && pkg !== '') {
+    conditions.push('AND PackageKey IN (SELECT PackageKey FROM Packages WHERE (Id || \'#\' || Version) LIKE ?)');
+    params.push(`%${pkg}%`);
+  }
+
+  // Only used filter
+  if (onlyUsed === 'true') {
+    conditions.push('AND EXISTS (SELECT 1 FROM DependencyList WHERE TargetKey = Resources.ResourceKey)');
   }
 
   const fullQuery = baseQuery + ' ' + conditions.join(' ');
@@ -449,7 +472,7 @@ function sqlEscapeString(str) {
 }
 
 function buildSqlFilter(queryParams) {
-  const { realm, auth, ver, type, rt, text } = queryParams;
+  const { realm, auth, ver, type, rt, text, pkg, onlyUsed } = queryParams;
   let filter = '';
 
   // Realm filter
@@ -555,6 +578,17 @@ function buildSqlFilter(queryParams) {
     }
   }
 
+  // Package filter - matches packageId#version containing the search string
+  if (pkg && pkg !== '') {
+    const escapedPkg = sqlEscapeString(pkg);
+    filter += ` and PackageKey in (select PackageKey from Packages where (Id || '#' || Version) like '%${escapedPkg}%')`;
+  }
+
+  // Only used filter
+  if (onlyUsed === 'true') {
+    filter += ` and exists (select 1 from DependencyList where TargetKey = Resources.ResourceKey)`;
+  }
+
   // Convert to proper WHERE clause
   if (filter !== '') {
     // Remove the first " and " and prepend "WHERE "
@@ -600,7 +634,8 @@ function buildResourceListQuery(queryParams, offset = 0, limit = 50) {
           FMM,
           WG,
           StandardsStatus,
-          Web
+          Web,
+          (SELECT COUNT(*) FROM DependencyList WHERE TargetKey = Resources.ResourceKey) AS UsageCount
       FROM Resources
           ${whereClause}
       ORDER BY ResourceType, Type, Description
@@ -784,6 +819,7 @@ async function buildResourceTable(queryParams, resourceCount, offset = 0) {
         break;
     }
 
+    parts.push('<th>Usage #</th>');
     parts.push('</tr>');
 
     const resourceRows = await new Promise((resolve, reject) => {
@@ -911,6 +947,10 @@ async function buildResourceTable(queryParams, resourceCount, offset = 0) {
           break;
         }
       }
+
+      // Usage count column
+      const usageCount = row.UsageCount || 0;
+      parts.push(`<td>${usageCount > 0 ? usageCount.toLocaleString() : ''}</td>`);
 
       parts.push('</tr>');
     }
@@ -1116,7 +1156,7 @@ function makeSelect(selectedValue, optionsList, name = 'rt') {
 }
 
 function buildAdditionalForm(queryParams) {
-  const { ver, realm, auth, type, rt, text } = queryParams;
+  const { ver, realm, auth, type, rt, text, pkg, onlyUsed } = queryParams;
 
   let html = '<form method="GET" action="" style="background-color: #eeeeee; border: 1px black solid; padding: 6px; font-size: 12px; font-family: verdana;">';
 
@@ -1142,6 +1182,7 @@ function buildAdditionalForm(queryParams) {
       const profileResources = getCachedSet('profileResources');
       if (profileResources.length > 0) {
         html += 'Type: ' + makeSelect(rt, profileResources) + ' ';
+        html += '<br/>';
       }
       break;
     }
@@ -1150,6 +1191,7 @@ function buildAdditionalForm(queryParams) {
       const profileTypes = getCachedSet('profileTypes');
       if (profileTypes.length > 0) {
         html += 'Type: ' + makeSelect(rt, profileTypes) + ' ';
+        html += '<br/>';
       }
       break;
     }
@@ -1162,6 +1204,7 @@ function buildAdditionalForm(queryParams) {
       const extensionContexts = getCachedSet('extensionContexts');
       if (extensionContexts.length > 0) {
         html += 'Context: ' + makeSelect(rt, extensionContexts) + ' ';
+        html += '<br/>';
       }
       break;
     }
@@ -1172,6 +1215,7 @@ function buildAdditionalForm(queryParams) {
         // Convert txSources map to "code=display" format
         const sourceOptions = Object.keys(txSources).map(code => `${code}=${txSources[code]}`);
         html += 'Source: ' + makeSelect(rt, sourceOptions) + ' ';
+        html += '<br/>';
       }
       break;
     }
@@ -1182,6 +1226,7 @@ function buildAdditionalForm(queryParams) {
         // Convert txSources map to "code=display" format
         const sourceOptionsCM = Object.keys(txSourcesCM).map(code => `${code}=${txSourcesCM[code]}`);
         html += 'Source: ' + makeSelect(rt, sourceOptionsCM) + ' ';
+        html += '<br/>';
       }
       break;
     }
@@ -1190,15 +1235,19 @@ function buildAdditionalForm(queryParams) {
       const resourceTypes = getCachedSet('resourceTypes');
       if (resourceTypes.length > 0) {
         html += 'Type: ' + makeSelect(rt, resourceTypes);
+        html += '<br/>';
       }
       break;
     }
   }
 
-  // Add text search field
+  // Add text search field and package filter field
   html += `Text: <input type="text" name="text" value="${escape(text || '')}" class="" style="width: 200px;"/> `;
+  html += `Package: <input type="text" name="pkg" value="${escape(pkg || '')}" placeholder="e.g. hl7.fhir.us" class="" style="width: 200px;"/> `;
 
-  // Add submit button
+  // Add submit button with 'only used' checkbox immediately before it
+  const onlyUsedChecked = onlyUsed === 'true' ? ' checked' : '';
+  html += `<input type="checkbox" name="onlyUsed" value="true"${onlyUsedChecked}/> Only Used `;
   html += '<input type="submit" value="Search" style="color:rgb(89, 137, 241)"/>';
 
   html += '</form>';
@@ -2252,6 +2301,8 @@ router.get('/', async (req, res) => {
         type: req.query.type || '',
         rt: req.query.rt || '',
         text: req.query.text || '',
+        pkg: req.query.pkg || '',
+        onlyUsed: req.query.onlyUsed || '',
         offset: req.query.offset || '0'
       };
 
