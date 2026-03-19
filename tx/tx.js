@@ -985,6 +985,7 @@ class TXModule {
           method: 'GET',
           query: { mode },
           headers: {},
+          // eslint-disable-next-line no-unused-vars
           get: (name) => null,
           txEndpoint: endpointInfo,
           txProvider: endpointInfo.provider,
