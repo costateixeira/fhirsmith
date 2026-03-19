@@ -196,6 +196,9 @@ class TXModule {
     }
 
     this.log.info(`TX module initialized with ${config.endpoints.length} endpoint(s)`);
+
+    // Self-test: verify metadata generation works for each endpoint before accepting traffic
+    await this.selfTest();
   }
 
   /**
@@ -388,8 +391,8 @@ class TXModule {
       }
 
       if (contentType.includes('application/json') ||
-          contentType.includes('application/fhir+json') ||
-          contentType.includes('application/json+fhir')) {
+        contentType.includes('application/fhir+json') ||
+        contentType.includes('application/json+fhir')) {
 
         // If body is a Buffer, parse it
         if (Buffer.isBuffer(req.body)) {
@@ -731,11 +734,11 @@ class TXModule {
     router.get('/CodeSystem/:id/\\$validate-code', async (req, res) => {
       const start = Date.now();
       try {
-      let worker = new ValidateWorker(req.txOpContext, this.log, req.txProvider, this.languages, this.i18n);
+        let worker = new ValidateWorker(req.txOpContext, this.log, req.txProvider, this.languages, this.i18n);
         await worker.handleCodeSystemInstance(req, res, this.log);
-    } finally {
-      this.countRequest('$validate', Date.now() - start);
-    }
+      } finally {
+        this.countRequest('$validate', Date.now() - start);
+      }
     });
     router.post('/CodeSystem/:id/\\$validate-code', async (req, res) => {
       const start = Date.now();
@@ -745,7 +748,7 @@ class TXModule {
       } finally {
         this.countRequest('$validate', Date.now() - start);
       }
-      
+
     });
 
     // ValueSet/[id]/$validate-code
@@ -965,6 +968,78 @@ class TXModule {
   }
 
   /**
+   * Self-test: exercise CapabilityStatement and TerminologyCapabilities generation
+   * for each endpoint immediately after startup, throwing on any failure.
+   */
+  async selfTest() {
+    this.log.info('Running startup self-test for metadata endpoints...');
+
+    for (const endpointInfo of this.endpoints) {
+      const label = `${endpointInfo.path} (FHIR v${endpointInfo.fhirVersion})`;
+
+      // Build a minimal mock req/res that captures what metadataHandler.handle() produces
+      const makeMockReqRes = (mode) => {
+        const captured = { data: null, status: 200 };
+
+        const req = {
+          method: 'GET',
+          query: { mode },
+          headers: {},
+          get: (name) => null,
+          txEndpoint: endpointInfo,
+          txProvider: endpointInfo.provider,
+        };
+
+        const res = {
+          statusCode: 200,
+          status(code) { captured.status = code; return this; },
+          setHeader() { return this; },
+          json(data) { captured.data = data; return this; },
+          send(data) { captured.data = data; return this; },
+        };
+
+        return { req, res, captured };
+      };
+
+      // Test 1: CapabilityStatement  (/metadata with no mode, or mode=full)
+      try {
+        const { req, res, captured } = makeMockReqRes(undefined);
+        await this.metadataHandler.handle(req, res);
+        if (!captured.data) {
+          throw new Error('No response data returned');
+        }
+        const rt = captured.data.resourceType;
+        if (rt !== 'CapabilityStatement') {
+          throw new Error(`Expected CapabilityStatement, got ${rt}`);
+        }
+        this.log.info(`  [OK] CapabilityStatement for ${label}`);
+      } catch (err) {
+        this.log.error(`  [FAIL] CapabilityStatement for ${label}: ${err.message}`);
+        throw new Error(`Startup self-test failed (CapabilityStatement, ${label}): ${err.message}`);
+      }
+
+      // Test 2: TerminologyCapabilities  (/metadata?mode=terminology)
+      try {
+        const { req, res, captured } = makeMockReqRes('terminology');
+        await this.metadataHandler.handle(req, res);
+        if (!captured.data) {
+          throw new Error('No response data returned');
+        }
+        const rt = captured.data.resourceType;
+        if (rt !== 'TerminologyCapabilities') {
+          throw new Error(`Expected TerminologyCapabilities, got ${rt}`);
+        }
+        this.log.info(`  [OK] TerminologyCapabilities for ${label}`);
+      } catch (err) {
+        this.log.error(`  [FAIL] TerminologyCapabilities for ${label}: ${err.message}`);
+        throw new Error(`Startup self-test failed (TerminologyCapabilities, ${label}): ${err.message}`);
+      }
+    }
+
+    this.log.info('Startup self-test passed.');
+  }
+
+  /**
    * Build an OperationOutcome for errors
    */
   operationOutcome(severity, code, message) {
@@ -1077,21 +1152,21 @@ class TXModule {
   ec = 0;
 
   checkProperJson() { // jsonStr) {
-  //   const errors = [];
-  //   if (jsonStr.includes("[]")) errors.push("Found [] in json");
-  //   if (jsonStr.includes('""')) errors.push('Found "" in json');
-  //
-  //   if (errors.length > 0) {
-  //     this.ec++;
-  //     const filename = `/Users/grahamegrieve/temp/tx-err-log/err${this.ec}.json`;
-  //     writeFileSync(filename, jsonStr);
-  //     throw new Error(errors.join('; '));
-  //   }
+                      //   const errors = [];
+                      //   if (jsonStr.includes("[]")) errors.push("Found [] in json");
+                      //   if (jsonStr.includes('""')) errors.push('Found "" in json');
+                      //
+                      //   if (errors.length > 0) {
+                      //     this.ec++;
+                      //     const filename = `/Users/grahamegrieve/temp/tx-err-log/err${this.ec}.json`;
+                      //     writeFileSync(filename, jsonStr);
+                      //     throw new Error(errors.join('; '));
+                      //   }
   }
 
   transformResourceForVersion(data, fhirVersion) {
     if (fhirVersion == "5.0" || !data.resourceType) {
-        return data;
+      return data;
     }
     switch (data.resourceType) {
       case "CodeSystem": return codeSystemFromR5(data, fhirVersion);
