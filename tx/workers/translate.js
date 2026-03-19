@@ -180,7 +180,7 @@ class TranslateWorker extends TerminologyWorker {
     // If no explicit concept map, we need to find one based on source/target
     if (conceptMaps.length == 0) {
       await this.findConceptMapsInAdditionalResources(conceptMaps, coding.system, sourceScope, targetScope, targetSystem);
-      await this.provider.findConceptMapForTranslation(this.opContext, conceptMaps, coding.system, sourceScope, targetScope, targetSystem);
+      await this.provider.findConceptMapForTranslation(this.opContext, conceptMaps, coding.system, sourceScope, targetScope, targetSystem, coding.code);
       if (conceptMaps.length == 0) {
         throw new Issue('error', 'not-found', null, null, 'No suitable ConceptMaps found for the specified source and target', null, 404);
       }

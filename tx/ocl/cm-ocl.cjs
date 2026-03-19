@@ -97,32 +97,10 @@ class OCLConceptMapProvider extends AbstractConceptMapProvider {
   }
 
   // eslint-disable-next-line no-unused-vars
-  async searchConceptMaps(searchParams, _elements) {
-    this._validateSearchParams(searchParams);
-
-    const params = Object.fromEntries(searchParams.map(({ name, value }) => [name, String(value).toLowerCase()]));
-    const oclParams = {};
-
-    if (params.source) {
-      oclParams.from_source_url = params.source;
-    }
-    if (params.target) {
-      oclParams.to_source_url = params.target;
-    }
-
-    const mappings = await this.#searchMappings(oclParams, this.maxSearchPages);
-    const results = [];
-    for (const mapping of mappings) {
-      const cm = this.#toConceptMap(mapping);
-      if (!cm) {
-        continue;
-      }
-      this.#indexConceptMap(cm);
-      if (this.#matches(cm.jsonObj, params)) {
-        results.push(cm);
-      }
-    }
-    return results;
+  async searchConceptMaps(_searchParams, _elements) {
+    // OCL does not have ConceptMap resources; it exposes individual mappings
+    // between concepts. Searching is not feasible — use $translate instead.
+    return [];
   }
 
   async findConceptMapForTranslation(opContext, conceptMaps, sourceSystem, sourceScope, targetScope, targetSystem, sourceCode = null) {
@@ -309,43 +287,6 @@ class OCLConceptMapProvider extends AbstractConceptMapProvider {
       default:
         return 'related-to';
     }
-  }
-
-  #matches(json, params) {
-    for (const [name, value] of Object.entries(params)) {
-      if (!value) {
-        continue;
-      }
-
-      if (name === 'url') {
-        if ((json.url || '').toLowerCase() !== value) {
-          return false;
-        }
-        continue;
-      }
-
-      if (name === 'source') {
-        const src = json.group?.[0]?.source || '';
-        if (!src.toLowerCase().includes(value)) {
-          return false;
-        }
-        continue;
-      }
-
-      if (name === 'target') {
-        const tgt = json.group?.[0]?.target || '';
-        if (!tgt.toLowerCase().includes(value)) {
-          return false;
-        }
-        continue;
-      }
-
-      const field = json[name];
-      if (field == null || !String(field).toLowerCase().includes(value)) {
-        return false;
-      }
-    }
-    return true;
   }
 
   async #searchMappings(params = {}, maxPages = this.maxSearchPages) {

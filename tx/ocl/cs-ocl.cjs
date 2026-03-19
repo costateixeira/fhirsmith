@@ -673,16 +673,33 @@ class OCLSourceCodeSystemProvider extends CodeSystemProvider {
   async designations(code, displays) {
     const ctxt = await this.#ensureContext(code);
     if (ctxt && ctxt.display) {
-      const hasConceptDesignations = Array.isArray(ctxt.designations) && ctxt.designations.length > 0;
+      const hasConceptDesignations = Array.isArray(ctxt.designation) && ctxt.designation.length > 0;
       if (hasConceptDesignations) {
-        for (const d of ctxt.designations) {
+        let hasNoLanguageEntry = false;
+        for (const d of ctxt.designation) {
           if (!d || !d.value) {
             continue;
           }
           displays.addDesignation(true, 'active', d.language || '', CodeSystem.makeUseForDisplay(), d.value);
+          if (!d.language) {
+            hasNoLanguageEntry = true;
+          }
+        }
+        // Guarantee a language-neutral fallback so preferredDesignation() always returns
+        // a display value when the requested language has no matching designation.
+        // This implements the FHIR graceful-fallback rule for displayLanguage.
+        if (!hasNoLanguageEntry) {
+          displays.addDesignation(true, 'active', '', CodeSystem.makeUseForDisplay(), ctxt.display);
         }
       } else {
-        displays.addDesignation(true, 'active', 'en', CodeSystem.makeUseForDisplay(), ctxt.display);
+        // No structured designations available. Use the source's configured language
+        // rather than hard-coding 'en' to avoid mislabeling non-English displays as English.
+        const defaultLang = this.meta?.codeSystem?.jsonObj?.language || '';
+        displays.addDesignation(true, 'active', defaultLang, CodeSystem.makeUseForDisplay(), ctxt.display);
+        // Also provide a no-language fallback for graceful language resolution.
+        if (defaultLang) {
+          displays.addDesignation(true, 'active', '', CodeSystem.makeUseForDisplay(), ctxt.display);
+        }
       }
       this._listSupplementDesignations(ctxt.code, displays);
     }
@@ -914,7 +931,7 @@ class OCLSourceCodeSystemProvider extends CodeSystemProvider {
     if (!this.meta.conceptsUrl) {
       return [];
     }
-    const cacheKey = `${this.meta.conceptsUrl}|p=${page}|l=${CONCEPT_PAGE_SIZE}`;
+    const cacheKey = `${this.meta.conceptsUrl}|p=${page}|l=${CONCEPT_PAGE_SIZE}|verbose=1`;
     if (this.pageCache.has(cacheKey)) {
       const cached = this.pageCache.get(cacheKey);
       return Array.isArray(cached)
@@ -939,7 +956,7 @@ class OCLSourceCodeSystemProvider extends CodeSystemProvider {
     const pending = (async () => {
       let response;
       try {
-        response = await this.httpClient.get(this.meta.conceptsUrl, { params: { page, limit: CONCEPT_PAGE_SIZE } });
+        response = await this.httpClient.get(this.meta.conceptsUrl, { params: { page, limit: CONCEPT_PAGE_SIZE, verbose: true } });
       } catch (error) {
         // Some OCL instances return 404 for sources without concept listing endpoints.
         // Treat this as an empty page so terminology operations degrade gracefully.
@@ -1525,7 +1542,7 @@ class OCLSourceCodeSystemFactory extends CodeSystemFactoryProvider {
   }
 
   async #fetchAndCacheConceptPage(page) {
-    const cacheKey = `${this.meta.conceptsUrl}|p=${page}|l=${CONCEPT_PAGE_SIZE}`;
+    const cacheKey = `${this.meta.conceptsUrl}|p=${page}|l=${CONCEPT_PAGE_SIZE}|verbose=1`;
     if (this.sharedPageCache.has(cacheKey)) {
       const cached = this.sharedPageCache.get(cacheKey);
       const concepts = Array.isArray(cached)
@@ -1544,7 +1561,7 @@ class OCLSourceCodeSystemFactory extends CodeSystemFactoryProvider {
     const pending = (async () => {
       let response;
       try {
-        response = await this.httpClient.get(this.meta.conceptsUrl, { params: { page, limit: CONCEPT_PAGE_SIZE } });
+        response = await this.httpClient.get(this.meta.conceptsUrl, { params: { page, limit: CONCEPT_PAGE_SIZE, verbose: true } });
       } catch (error) {
         if (error && error.response && error.response.status === 404) {
           this.sharedPageCache.set(cacheKey, []);
