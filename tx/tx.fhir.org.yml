@@ -8,6 +8,7 @@ sources:
   - internal:areacode
   - internal:mimetypes
   - internal:usstates
+  - internal:urls
   - internal:hgvs
   - ucum:tx/data/ucum-essence.xml
   - loinc:loinc-2.77-a.db
