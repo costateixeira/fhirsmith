@@ -101,6 +101,7 @@ class Library {
     this.conceptMapProviders = [];
     this.oclProviderSets = new Map();
     this.oclConfig = {};
+    this.ignored = new Set();
 
     // Create package manager for FHIR packages
     const packageServers = ['https://packages2.fhir.org/packages'];
@@ -161,6 +162,7 @@ class Library {
     const config = yaml.parse(yamlContent);
     this.baseUrl = config.base.url;
     this.oclConfig = config.ocl && typeof config.ocl === 'object' ? config.ocl : {};
+    this.ignored = new Set(Array.isArray(config.ignored) ? config.ignored : []);
 
     this.log.info('Fetching Data from '+this.baseUrl);
 
@@ -288,7 +290,7 @@ class Library {
       case 'ocl':
         await this.loadOcl(details, isDefault, mode);
         break;
-        
+
       default:
         throw new Error(`Unknown source type: ${type}`);
     }
@@ -567,6 +569,17 @@ class Library {
     this.registerProvider(omopFN, omop, isDefault);
   }
 
+  /**
+   * Returns true if the given url/version should be excluded from npm/url package loading.
+   * Matches against the ignored list using either plain url or url#version.
+   */
+  #isIgnored(url, version) {
+    if (this.ignored.size === 0) return false;
+    if (this.ignored.has(url)) return true;
+    if (version && this.ignored.has(`${url}#${version}`)) return true;
+    return false;
+  }
+
   async loadNpm(packageManager, details, isDefault, mode, csOnly) {
     // Parse packageId and version from details (e.g., "hl7.terminology.r4#6.0.2")
     let packageId = details;
@@ -591,6 +604,10 @@ class Library {
     let csc = 0;
     for (const resource of resources) {
       const cs = new CodeSystem(await contentLoader.loadFile(resource, contentLoader.fhirVersion()));
+      if (this.#isIgnored(cs.url, cs.version)) {
+        this.log.info(`Ignoring CodeSystem ${cs.url}${cs.version ? '#' + cs.version : ''} (excluded by config)`);
+        continue;
+      }
       cs.sourcePackage = contentLoader.pid();
       cp.codeSystems.push(cs);
       csc++;
@@ -625,6 +642,10 @@ class Library {
     let csc = 0;
     for (const resource of resources) {
       const cs = new CodeSystem(await contentLoader.loadFile(resource, contentLoader.fhirVersion()));
+      if (this.#isIgnored(cs.url, cs.version)) {
+        this.log.info(`Ignoring CodeSystem ${cs.url}${cs.version ? '#' + cs.version : ''} (excluded by config)`);
+        continue;
+      }
       cs.sourcePackage = contentLoader.pid();
       cp.codeSystems.set(cs.url, cs);
       cp.codeSystems.set(cs.vurl, cs);

@@ -40,3 +40,6 @@ sources:
   - npm:us.cdc.phinvads
   - npm:hl7.fhir.uv.sdc
   - internal:vsac
+
+ignored:
+  - urn:iso:std:iso:3166#20210120
