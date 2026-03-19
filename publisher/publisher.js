@@ -466,6 +466,13 @@ class PublisherModule {
     // Step 1: Create/scrub task directory
     await this.createTaskDirectory(taskDir);
 
+    // Record the log file path and local folder immediately so they're accessible
+    // even if the build fails later
+    await this.updateTaskStatus(task.id, task.status, {
+      build_output_path: logFile,
+      local_folder: taskDir
+    });
+
     // Step 2: Download latest publisher
     const publisherJar = await this.downloadPublisher(taskDir, task.id);
 
@@ -477,12 +484,6 @@ class PublisherModule {
 
     // Step 5: Verify package-id and version match the task
     await this.verifyBuildOutput(task, draftDir);
-
-    // Update task with build output path
-    await this.updateTaskStatus(task.id, task.status, {
-      build_output_path: logFile,
-      local_folder: taskDir
-    });
 
     this.logger.info('Draft build completed for ' + task.npm_package_id + '#' + task.version);
   }
