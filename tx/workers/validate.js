@@ -1389,17 +1389,22 @@ class ValueSetChecker {
     let hd = list.hasDisplay(this.params.workingLanguages(), null, c.display, false, DisplayCheckingStyle.CASE_INSENSITIVE)
     if (!hd.found) {
       let baseMsg;
-      if (hd.difference === DisplayDifference.Normalized) {
+      let severity = this.dispWarning();
+      if (list.userDefined) {
+        baseMsg = 'Display_Name_Not_Fixed_use_Supplement';
+        severity = 'information';
+      } else if (hd.difference === DisplayDifference.Normalized) {
         baseMsg = 'Display_Name_WS_for__should_be_one_of__instead_of';
       } else {
         baseMsg = 'Display_Name_for__should_be_one_of__instead_of';
       }
-      let mid = baseMsg;
       let dc = list.displayCount(this.params.workingLanguages(), null, true);
-      let severity = this.dispWarning();
-      if (dc === 0) {
-        severity = 'warning';
-        dc = list.displayCount(this.params.workingLanguages(), null, false);
+      let mid = baseMsg;
+      if (severity !== 'information') {
+        if (dc === 0) {
+          severity = 'warning';
+          dc = list.displayCount(this.params.workingLanguages(), null, false);
+        }
       }
 
       let m, ds;
