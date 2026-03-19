@@ -22,15 +22,17 @@ class OCLBackgroundJobQueue {
     const resolveAndEnqueue = async () => {
       const resolvedSize = await this.#resolveJobSize(options);
       const normalizedSize = this.#normalizeJobSize(resolvedSize);
-      this.#insertPendingJobOrdered({
+      const job = {
         jobKey,
         jobType: jobType || 'background-job',
         jobId: options?.jobId || jobKey,
         jobSize: normalizedSize,
         getProgress: typeof options?.getProgress === 'function' ? options.getProgress : null,
         runJob,
-        enqueueOrder: this.enqueueSequence++
-      });
+        enqueueOrder: this.enqueueSequence++,
+        userRequested: !!options.userRequested
+      };
+      this.#insertPendingJobOrdered(job);
       this.ensureHeartbeatRunning();
       console.log(`[OCL] ${jobType || 'Background job'} enqueued: ${jobKey} (size=${normalizedSize}, queue=${this.pendingJobs.length}, active=${this.activeCount})`);
       this.processNext();
@@ -72,17 +74,21 @@ class OCLBackgroundJobQueue {
   }
 
   static #insertPendingJobOrdered(job) {
+    // Prioridade máxima para userRequested
+    if (job.userRequested) {
+      this.pendingJobs.unshift(job);
+      console.log(`[OCL] User-requested job prioritized: ${job.jobKey}`);
+      return;
+    }
     let index = this.pendingJobs.findIndex(existing => {
       if (existing.jobSize === job.jobSize) {
         return existing.enqueueOrder > job.enqueueOrder;
       }
       return existing.jobSize > job.jobSize;
     });
-
     if (index < 0) {
       index = this.pendingJobs.length;
     }
-
     this.pendingJobs.splice(index, 0, job);
   }
 
