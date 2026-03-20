@@ -299,16 +299,29 @@ class PublisherModule {
     const pollInterval = this.config.pollInterval || 5000; // Default 5 seconds
 
     this.logger.info('Starting task processor with ' + pollInterval + 'ms poll interval');
+    this.isProcessingStarted = null; // timestamp when isProcessing was set
 
     this.taskProcessor = setInterval(async () => {
-      if (!this.isProcessing && !this.shutdownRequested) {
-        await this.processNextTask();
+      if (this.shutdownRequested) return;
+
+      // Safety net: if isProcessing has been true for more than 60 minutes, reset it
+      if (this.isProcessing) {
+        const stuckMs = this.isProcessingStarted ? Date.now() - this.isProcessingStarted : 0;
+        if (stuckMs > 60 * 60 * 1000) {
+          this.logger.warn('Task processor appears stuck (isProcessing for ' + Math.round(stuckMs / 60000) + ' min) — resetting');
+          this.isProcessing = false;
+        } else {
+          return;
+        }
       }
+
+      await this.processNextTask();
     }, pollInterval);
   }
 
   async processNextTask() {
     this.isProcessing = true;
+    this.isProcessingStarted = Date.now();
 
     try {
       // Look for queued tasks first (draft builds)
