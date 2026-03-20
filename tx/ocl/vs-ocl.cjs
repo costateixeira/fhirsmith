@@ -51,6 +51,9 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     this.pendingSourceCanonicalRequests = new Map();
     this.collectionByCanonicalCache = new Map();
     this.pendingCollectionByCanonicalRequests = new Map();
+    this._organizationIdsCache = null;
+    this._organizationIdsFetchPromise = null;
+    this._negativeUrlCache = new Set();
     this._composePromises = new Map();
     this.backgroundExpansionCache = new Map();
     this.backgroundExpansionProgress = new Map();
@@ -128,7 +131,6 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
           this._idMap.set(valueSetObj.id, valueSetObj);
           this.valueSetFingerprints.set(cacheKey, cached.fingerprint || null);
           loadedCount++;
-          console.log(`[OCL-ValueSet] Loaded ValueSet from cold cache into memory: ${cached.canonicalUrl}`);
         } catch (error) {
           console.error(`[OCL-ValueSet] Failed to load cold cache file ${file}:`, error.message);
         }
@@ -249,12 +251,15 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
   async fetchValueSet(url, version) {
     this._validateFetchParams(url, version);
 
+    // Fast path: skip URLs already known to not be in OCL
+    if (this._negativeUrlCache.has(url)) {
+      return null;
+    }
+
     let key = `${url}|${version}`;
     if (this.valueSetMap.has(key)) {
       const vs = this.valueSetMap.get(key);
       // await this.#ensureComposeIncludes(vs);
-      this.#clearInlineExpansion(vs);
-      console.log(`[OCL-ValueSet] fetchValueSet cache hit for ${url} (version: ${version || 'none'})`);
       this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset', userRequested: true });
       return vs;
     }
@@ -266,7 +271,6 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
         if (this.valueSetMap.has(key)) {
           const vs = this.valueSetMap.get(key);
           // await this.#ensureComposeIncludes(vs);
-          this.#clearInlineExpansion(vs);
           this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset-mm' });
           return vs;
         }
@@ -276,7 +280,6 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     if (this.valueSetMap.has(url)) {
       const vs = this.valueSetMap.get(url);
       // await this.#ensureComposeIncludes(vs);
-      this.#clearInlineExpansion(vs);
       this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset-url' });
       return vs;
     }
@@ -284,7 +287,6 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     const resolved = await this.#resolveValueSetByCanonical(url, version);
     if (resolved) {
       // await this.#ensureComposeIncludes(resolved);
-      this.#clearInlineExpansion(resolved);
       this.#scheduleBackgroundExpansion(resolved, { reason: 'fetch-valueset-resolved' });
       return resolved;
     }
@@ -295,7 +297,6 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     if (this.valueSetMap.has(key)) {
       const vs = this.valueSetMap.get(key);
       // await this.#ensureComposeIncludes(vs);
-      this.#clearInlineExpansion(vs);
       this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset-init' });
       return vs;
     }
@@ -307,7 +308,6 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
         if (this.valueSetMap.has(key)) {
           const vs = this.valueSetMap.get(key);
           // await this.#ensureComposeIncludes(vs);
-          this.#clearInlineExpansion(vs);
           this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset-init-mm' });
           return vs;
         }
@@ -317,11 +317,12 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     if (this.valueSetMap.has(url)) {
       const vs = this.valueSetMap.get(url);
       // await this.#ensureComposeIncludes(vs);
-      this.#clearInlineExpansion(vs);
       this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset-init-url' });
       return vs;
     }
 
+    // Remember that this URL is not in OCL to skip future lookups
+    this._negativeUrlCache.add(url);
     return null;
   }
 
@@ -329,7 +330,6 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     const local = this.#getLocalValueSetById(id);
     if (local) {
       // await this.#ensureComposeIncludes(local);
-      this.#clearInlineExpansion(local);
       this.#scheduleBackgroundExpansion(local, { reason: 'fetch-valueset-by-id' });
       return local;
     }
@@ -338,7 +338,6 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
 
     const vs = this.#getLocalValueSetById(id);
     // await this.#ensureComposeIncludes(vs);
-    this.#clearInlineExpansion(vs);
     this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset-by-id-init' });
     return vs;
   }
@@ -941,10 +940,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
 
     if (!this.#isCachedExpansionValid(vs, cached)) {
       this.backgroundExpansionCache.delete(cacheKey);
-      if (vs.jsonObj.expansion) {
-        delete vs.jsonObj.expansion;
-      }
-      console.log(`[OCL-ValueSet] Cached ValueSet expansion invalidated: ${cacheKey}`);
+      // Don't delete vs.jsonObj.expansion - keep serving stale data
       return;
     }
 
@@ -953,7 +949,6 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     }
 
     vs.jsonObj.expansion = structuredClone(cached.expansion);
-    console.log(`[OCL-ValueSet] ValueSet expansion restored from cache: ${cacheKey}`);
   }
 
   #scheduleBackgroundExpansion(vs, options = {}) {
@@ -970,10 +965,8 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     const cached = this.backgroundExpansionCache.get(cacheKey);
     if (cached && !this.#isCachedExpansionValid(vs, cached)) {
       this.backgroundExpansionCache.delete(cacheKey);
-      if (vs.jsonObj.expansion) {
-        delete vs.jsonObj.expansion;
-      }
-      console.log(`[OCL-ValueSet] Cached ValueSet expansion invalidated: ${cacheKey}`);
+      // Don't delete vs.jsonObj.expansion here - keep serving stale data
+      // until a fresh background expansion replaces it
     }
 
     if (vs.jsonObj.expansion) {
@@ -996,23 +989,15 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
         : cacheAgeFromFileMs != null
           ? 'file'
           : 'metadata';
-      console.log(`[OCL-ValueSet] Skipping warm-up for ValueSet ${vs.url} (cold cache age: ${formatCacheAgeMinutes(freshestCacheAgeMs)})`);
-      console.log(`[OCL-ValueSet] ValueSet cold cache is fresh, not enqueueing warm-up job (${cacheKey}, source=${freshnessSource})`);
       return;
     }
 
     const jobKey = `vs:${cacheKey}`;
     if (OCLBackgroundJobQueue.isQueuedOrRunning(jobKey)) {
-      console.log(`[OCL-ValueSet] ValueSet expansion already queued or running: ${cacheKey}`);
       return;
     }
 
     let queuedJobSize = null;
-    const warmupAgeText = freshestCacheAgeMs != null
-      ? formatCacheAgeMinutes(freshestCacheAgeMs)
-      : 'no cold cache';
-    console.log(`[OCL-ValueSet] Enqueueing warm-up for ValueSet ${vs.url} (cold cache age: ${warmupAgeText})`);
-    console.log(`[OCL-ValueSet] ValueSet expansion enqueued: ${cacheKey}`);
     OCLBackgroundJobQueue.enqueue(
       jobKey,
       'ValueSet expansion',
@@ -1033,7 +1018,6 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
   }
 
   async #runBackgroundExpansion(vs, cacheKey, paramsKey = 'default', knownConceptCount = null) {
-    console.log(`[OCL-ValueSet] ValueSet expansion started: ${cacheKey}`);
     const progressState = { processed: 0, total: null };
     this.backgroundExpansionProgress.set(cacheKey, progressState);
     try {
@@ -1070,16 +1054,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
       const newFingerprint = computeValueSetExpansionFingerprint(expansion);
       const oldFingerprint = this.valueSetFingerprints.get(cacheKey);
 
-      if (oldFingerprint && newFingerprint === oldFingerprint) {
-        console.log(`[OCL-ValueSet] ValueSet expansion fingerprint unchanged: ${cacheKey} (fingerprint=${newFingerprint?.substring(0, 8)})`);
-      } else {
-        if (oldFingerprint) {
-          console.log(`[OCL-ValueSet] ValueSet expansion fingerprint changed: ${cacheKey} (${oldFingerprint?.substring(0, 8)} -> ${newFingerprint?.substring(0, 8)})`);
-          console.log(`[OCL-ValueSet] Replacing cold cache with new hot cache: ${cacheKey}`);
-        } else {
-          console.log(`[OCL-ValueSet] Computed fingerprint for ValueSet expansion: ${cacheKey} (fingerprint=${newFingerprint?.substring(0, 8)})`);
-        }
-        
+      if (!oldFingerprint || newFingerprint !== oldFingerprint) {
         // Save to cold cache
         const savedFingerprint = await this.#saveColdCacheForValueSet(vs, expansion, metadataSignature, dependencyChecksums, paramsKey);
         if (savedFingerprint) {
@@ -1096,8 +1071,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
       // Keep expansions in provider-managed cache only.
       // Inline expansion on ValueSet bypasses $expand filtering in worker pipeline.
 
-      console.log(`[OCL-ValueSet] ValueSet expansion completed and cached: ${cacheKey}`);
-      console.log(`[OCL-ValueSet] ValueSet now available in cache: ${cacheKey}`);
+      console.log(`[OCL-ValueSet] expansion cached: ${vs.url}`);
     } catch (error) {
       console.error(`[OCL-ValueSet] ValueSet background expansion failed: ${cacheKey}: ${error.message}`);
     } finally {
@@ -1354,36 +1328,55 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
   }
 
   async #fetchOrganizationIds() {
-    const endpoint = '/orgs/';
-    console.log(`[OCL-ValueSet] Loading organizations from: ${this.baseUrl}${endpoint}`);
-    const orgs = await this.#fetchAllPages(endpoint);
-
-    const ids = [];
-    const seen = new Set();
-    for (const org of orgs || []) {
-      if (!org || typeof org !== 'object') {
-        continue;
-      }
-
-      const id = org.id || org.mnemonic || org.short_code || org.shortCode || org.name || null;
-      if (!id) {
-        continue;
-      }
-
-      const normalized = String(id).trim();
-      if (!normalized || seen.has(normalized)) {
-        continue;
-      }
-
-      seen.add(normalized);
-      ids.push(normalized);
+    // Return cached result if available
+    if (this._organizationIdsCache) {
+      return this._organizationIdsCache;
     }
 
-    if (ids.length === 0 && this.org) {
-      ids.push(this.org);
+    // Deduplicate concurrent requests
+    if (this._organizationIdsFetchPromise) {
+      return this._organizationIdsFetchPromise;
     }
 
-    return ids;
+    this._organizationIdsFetchPromise = (async () => {
+      const endpoint = '/orgs/';
+      console.log(`[OCL-ValueSet] Loading organizations from: ${this.baseUrl}${endpoint}`);
+      const orgs = await this.#fetchAllPages(endpoint);
+
+      const ids = [];
+      const seen = new Set();
+      for (const org of orgs || []) {
+        if (!org || typeof org !== 'object') {
+          continue;
+        }
+
+        const id = org.id || org.mnemonic || org.short_code || org.shortCode || org.name || null;
+        if (!id) {
+          continue;
+        }
+
+        const normalized = String(id).trim();
+        if (!normalized || seen.has(normalized)) {
+          continue;
+        }
+
+        seen.add(normalized);
+        ids.push(normalized);
+      }
+
+      if (ids.length === 0 && this.org) {
+        ids.push(this.org);
+      }
+
+      this._organizationIdsCache = ids;
+      return ids;
+    })();
+
+    try {
+      return await this._organizationIdsFetchPromise;
+    } finally {
+      this._organizationIdsFetchPromise = null;
+    }
   }
 
   #collectionIdentity(collection) {
