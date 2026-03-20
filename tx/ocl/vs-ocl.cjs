@@ -80,7 +80,13 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
           const data = await fs.readFile(filePath, 'utf-8');
           const cached = JSON.parse(data);
 
-          if (!cached || !cached.canonicalUrl || !cached.expansion) {
+          if (!cached || !cached.canonicalUrl) {
+            continue;
+          }
+
+          // Support both old (expansion-based) and new (compose-based) cache formats
+          const compose = cached.compose || this.#composeFromExpansion(cached.expansion);
+          if (!compose || !Array.isArray(compose.include) || compose.include.length === 0) {
             continue;
           }
 
@@ -91,37 +97,19 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
           );
           const createdAt = cached.timestamp ? new Date(cached.timestamp).getTime() : null;
           this.backgroundExpansionCache.set(cacheKey, {
-            expansion: cached.expansion,
+            compose,
             metadataSignature: cached.metadataSignature || null,
             dependencyChecksums: cached.dependencyChecksums || {},
             createdAt: Number.isFinite(createdAt) ? createdAt : null
           });
-          // Instancia ValueSet para garantir jsonObj
-          // Reconstrói compose.include se não existir
-          let compose = cached.expansion?.compose;
-          if (!compose || !Array.isArray(compose.include)) {
-            // Reconstrói a partir dos sistemas/códigos em expansion.contains
-            const systemConcepts = new Map();
-            if (Array.isArray(cached.expansion?.contains)) {
-              for (const entry of cached.expansion.contains) {
-                if (!entry.system || !entry.code) continue;
-                if (!systemConcepts.has(entry.system)) {
-                  systemConcepts.set(entry.system, []);
-                }
-                systemConcepts.get(entry.system).push({ code: entry.code });
-              }
-            }
-            compose = { include: Array.from(systemConcepts.entries()).map(([system, concepts]) => ({ system, concept: concepts })) };
-          }
           const valueSetObj = new ValueSet({
             resourceType: 'ValueSet',
             url: cached.canonicalUrl,
             version: cached.version || null,
-            expansion: cached.expansion,
             compose,
-            id: cached.canonicalUrl // ou outro identificador se necessário
+            id: cached.canonicalUrl
           }, 'R5');
-          this.#applyCachedExpansion(valueSetObj, paramsKey);
+          this.#applyCachedCompose(valueSetObj, paramsKey);
           // Indexa o ValueSet restaurado para torná-lo disponível via fetchValueSet
           this.valueSetMap.set(valueSetObj.url, valueSetObj);
           if (valueSetObj.version) {
@@ -146,10 +134,10 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     }
   }
 
-  async #saveColdCacheForValueSet(vs, expansion, metadataSignature, dependencyChecksums, paramsKey = 'default') {
+  async #saveColdCacheForValueSet(vs, compose, metadataSignature, dependencyChecksums, paramsKey = 'default') {
     const canonicalUrl = vs?.url;
     const version = vs?.version || null;
-    if (!canonicalUrl || !expansion) {
+    if (!canonicalUrl || !compose) {
       return null;
     }
 
@@ -158,22 +146,25 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     try {
       await ensureCacheDirectories(CACHE_VS_DIR);
 
-      const fingerprint = computeValueSetExpansionFingerprint(expansion);
+      const conceptCount = Array.isArray(compose.include)
+        ? compose.include.reduce((sum, inc) => sum + (Array.isArray(inc.concept) ? inc.concept.length : 0), 0)
+        : 0;
+      const fingerprint = computeValueSetExpansionFingerprint(compose);
       const cacheData = {
         canonicalUrl,
         version,
         paramsKey,
         fingerprint,
         timestamp: new Date().toISOString(),
-        conceptCount: expansion.contains?.length || 0,
-        expansion,
+        conceptCount,
+        compose,
         metadataSignature,
         dependencyChecksums
       };
 
       await fs.writeFile(cacheFilePath, JSON.stringify(cacheData, null, 2), 'utf-8');
-      console.log(`[OCL-ValueSet] Saved ValueSet expansion to cold cache: ${canonicalUrl} (${expansion.contains?.length || 0} concepts, fingerprint=${fingerprint?.substring(0, 8)})`);
-      
+      console.log(`[OCL-ValueSet] Saved ValueSet compose to cold cache: ${canonicalUrl} (${conceptCount} concepts, fingerprint=${fingerprint?.substring(0, 8)})`);
+
       return fingerprint;
     } catch (error) {
       console.error(`[OCL-ValueSet] Failed to save cold cache for ValueSet ${canonicalUrl}:`, error.message);
@@ -259,7 +250,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     let key = `${url}|${version}`;
     if (this.valueSetMap.has(key)) {
       const vs = this.valueSetMap.get(key);
-      // await this.#ensureComposeIncludes(vs);
+      await this.#ensureComposeIncludes(vs);
       this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset', userRequested: true });
       return vs;
     }
@@ -270,7 +261,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
         key = `${url}|${majorMinor}`;
         if (this.valueSetMap.has(key)) {
           const vs = this.valueSetMap.get(key);
-          // await this.#ensureComposeIncludes(vs);
+          await this.#ensureComposeIncludes(vs);
           this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset-mm' });
           return vs;
         }
@@ -279,14 +270,14 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
 
     if (this.valueSetMap.has(url)) {
       const vs = this.valueSetMap.get(url);
-      // await this.#ensureComposeIncludes(vs);
+      await this.#ensureComposeIncludes(vs);
       this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset-url' });
       return vs;
     }
 
     const resolved = await this.#resolveValueSetByCanonical(url, version);
     if (resolved) {
-      // await this.#ensureComposeIncludes(resolved);
+      await this.#ensureComposeIncludes(resolved);
       this.#scheduleBackgroundExpansion(resolved, { reason: 'fetch-valueset-resolved' });
       return resolved;
     }
@@ -296,7 +287,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     key = `${url}|${version}`;
     if (this.valueSetMap.has(key)) {
       const vs = this.valueSetMap.get(key);
-      // await this.#ensureComposeIncludes(vs);
+      await this.#ensureComposeIncludes(vs);
       this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset-init' });
       return vs;
     }
@@ -307,7 +298,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
         key = `${url}|${majorMinor}`;
         if (this.valueSetMap.has(key)) {
           const vs = this.valueSetMap.get(key);
-          // await this.#ensureComposeIncludes(vs);
+          await this.#ensureComposeIncludes(vs);
           this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset-init-mm' });
           return vs;
         }
@@ -316,7 +307,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
 
     if (this.valueSetMap.has(url)) {
       const vs = this.valueSetMap.get(url);
-      // await this.#ensureComposeIncludes(vs);
+      await this.#ensureComposeIncludes(vs);
       this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset-init-url' });
       return vs;
     }
@@ -329,7 +320,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
   async fetchValueSetById(id) {
     const local = this.#getLocalValueSetById(id);
     if (local) {
-      // await this.#ensureComposeIncludes(local);
+      await this.#ensureComposeIncludes(local);
       this.#scheduleBackgroundExpansion(local, { reason: 'fetch-valueset-by-id' });
       return local;
     }
@@ -337,7 +328,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     await this.initialize();
 
     const vs = this.#getLocalValueSetById(id);
-    // await this.#ensureComposeIncludes(vs);
+    await this.#ensureComposeIncludes(vs);
     this.#scheduleBackgroundExpansion(vs, { reason: 'fetch-valueset-by-id-init' });
     return vs;
   }
@@ -900,6 +891,24 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     }
   }
 
+  #composeFromExpansion(expansion) {
+    if (!expansion || !Array.isArray(expansion.contains)) {
+      return null;
+    }
+    const systemConcepts = new Map();
+    for (const entry of expansion.contains) {
+      if (!entry.system || !entry.code) continue;
+      if (!systemConcepts.has(entry.system)) {
+        systemConcepts.set(entry.system, []);
+      }
+      systemConcepts.get(entry.system).push({ code: entry.code });
+    }
+    if (systemConcepts.size === 0) {
+      return null;
+    }
+    return { include: Array.from(systemConcepts.entries()).map(([system, concepts]) => ({ system, concept: concepts })) };
+  }
+
   #expansionCacheKey(vs, paramsKey) {
     const base = this.#valueSetBaseKey(vs);
     if (!base) {
@@ -923,7 +932,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     }
   }
 
-  #applyCachedExpansion(vs, paramsKey) {
+  #applyCachedCompose(vs, paramsKey) {
     if (!vs || !vs.jsonObj) {
       return;
     }
@@ -934,21 +943,20 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     }
 
     const cached = this.backgroundExpansionCache.get(cacheKey);
-    if (!cached || !cached.expansion) {
+    if (!cached || !cached.compose) {
       return;
     }
 
     if (!this.#isCachedExpansionValid(vs, cached)) {
       this.backgroundExpansionCache.delete(cacheKey);
-      // Don't delete vs.jsonObj.expansion - keep serving stale data
       return;
     }
 
-    if (vs.jsonObj.expansion) {
+    if (vs.jsonObj.compose && Array.isArray(vs.jsonObj.compose.include) && vs.jsonObj.compose.include.length > 0) {
       return;
     }
 
-    vs.jsonObj.expansion = structuredClone(cached.expansion);
+    vs.jsonObj.compose = structuredClone(cached.compose);
   }
 
   #scheduleBackgroundExpansion(vs, options = {}) {
@@ -965,11 +973,10 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     const cached = this.backgroundExpansionCache.get(cacheKey);
     if (cached && !this.#isCachedExpansionValid(vs, cached)) {
       this.backgroundExpansionCache.delete(cacheKey);
-      // Don't delete vs.jsonObj.expansion here - keep serving stale data
-      // until a fresh background expansion replaces it
     }
 
-    if (vs.jsonObj.expansion) {
+    // Already have a cached compose ready
+    if (cached && cached.compose) {
       return;
     }
 
@@ -1037,41 +1044,46 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
         );
       }
 
-      const expansion = await this.#buildBackgroundExpansion(vs, progressState);
-      if (!expansion) {
+      const compose = await this.#buildBackgroundCompose(vs, progressState);
+      if (!compose) {
         return;
       }
 
-      progressState.processed = expansion.total || progressState.processed;
+      const conceptCount = Array.isArray(compose.include)
+        ? compose.include.reduce((sum, inc) => sum + (Array.isArray(inc.concept) ? inc.concept.length : 0), 0)
+        : 0;
+      progressState.processed = conceptCount || progressState.processed;
       if (typeof progressState.total !== 'number' || !Number.isFinite(progressState.total) || progressState.total <= 0) {
-        progressState.total = expansion.total || 0;
+        progressState.total = conceptCount || 0;
       }
 
       const metadataSignature = this.#valueSetMetadataSignature(vs);
       const dependencyChecksums = this.#valueSetDependencyChecksums(vs);
 
-      // Compute custom fingerprint and compare with cold cache
-      const newFingerprint = computeValueSetExpansionFingerprint(expansion);
+      // Compute fingerprint and compare with cold cache
+      const newFingerprint = computeValueSetExpansionFingerprint(compose);
       const oldFingerprint = this.valueSetFingerprints.get(cacheKey);
 
       if (!oldFingerprint || newFingerprint !== oldFingerprint) {
-        // Save to cold cache
-        const savedFingerprint = await this.#saveColdCacheForValueSet(vs, expansion, metadataSignature, dependencyChecksums, paramsKey);
+        const savedFingerprint = await this.#saveColdCacheForValueSet(vs, compose, metadataSignature, dependencyChecksums, paramsKey);
         if (savedFingerprint) {
           this.valueSetFingerprints.set(cacheKey, savedFingerprint);
         }
       }
 
       this.backgroundExpansionCache.set(cacheKey, {
-        expansion,
+        compose,
         metadataSignature,
         dependencyChecksums,
         createdAt: Date.now()
       });
-      // Keep expansions in provider-managed cache only.
-      // Inline expansion on ValueSet bypasses $expand filtering in worker pipeline.
 
-      console.log(`[OCL-ValueSet] expansion cached: ${vs.url}`);
+      // Apply compose to the ValueSet so the expand engine can use it
+      vs.jsonObj.compose = structuredClone(compose);
+      // Ensure no stale inline expansion
+      delete vs.jsonObj.expansion;
+
+      console.log(`[OCL-ValueSet] compose cached: ${vs.url} (${conceptCount} concepts)`);
     } catch (error) {
       console.error(`[OCL-ValueSet] ValueSet background expansion failed: ${cacheKey}: ${error.message}`);
     } finally {
@@ -1079,17 +1091,15 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     }
   }
 
-  async #buildBackgroundExpansion(vs, progressState = null) {
+  async #buildBackgroundCompose(vs, progressState = null) {
     const meta = this.#getCollectionMeta(vs);
     if (!meta || !meta.conceptsUrl) {
       return null;
     }
 
-    const contains = [];
-    let offset = 0; // Moved this line up
-    // Agrupa conceitos por system
+    let offset = 0;
     const systemConcepts = new Map();
-    // Removed duplicate offset declaration
+    let totalCount = 0;
     while (true) {
       const batch = await this.#fetchCollectionConcepts(meta, {
         count: CONCEPT_PAGE_SIZE,
@@ -1106,55 +1116,30 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
         if (!entry?.system || !entry?.code) {
           continue;
         }
-        const out = {
-          system: entry.system,
-          code: entry.code
-        };
-        if (entry.display) {
-          out.display = entry.display;
-        }
-        if (entry.definition) {
-          out.definition = entry.definition;
-        }
-        if (entry.inactive === true) {
-          out.inactive = true;
-        }
-        if (Array.isArray(entry.designation) && entry.designation.length > 0) {
-          out.designation = entry.designation
-            .filter(d => d && d.value)
-            .map(d => ({
-              language: d.language,
-              value: d.value
-            }));
-        }
-        contains.push(out);
-        // Agrupa por system
         if (!systemConcepts.has(entry.system)) {
           systemConcepts.set(entry.system, []);
         }
         systemConcepts.get(entry.system).push(entry.code);
+        totalCount++;
       }
       if (progressState) {
-        progressState.processed = contains.length;
+        progressState.processed = totalCount;
       }
       if (entries.length < CONCEPT_PAGE_SIZE) {
         break;
       }
       offset += entries.length;
     }
-    // Popular compose.include para cada system
-    if (!vs.jsonObj.compose) {
-      vs.jsonObj.compose = { include: [] };
+
+    if (systemConcepts.size === 0) {
+      return null;
     }
-    vs.jsonObj.compose.include = Array.from(systemConcepts.entries()).map(([system, codes]) => ({
-      system,
-      concept: codes.map(code => ({ code }))
-    }));
+
     return {
-      timestamp: new Date().toISOString(),
-      identifier: `urn:uuid:${crypto.randomUUID()}`,
-      total: contains.length,
-      contains
+      include: Array.from(systemConcepts.entries()).map(([system, codes]) => ({
+        system,
+        concept: codes.map(code => ({ code }))
+      }))
     };
   }
 
