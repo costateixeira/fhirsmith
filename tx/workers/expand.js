@@ -1184,20 +1184,7 @@ class ValueSetExpander {
     }
 
     if (result.expansion) {
-      // Apply language-specific display selection to pre-built expansions
-      const langList = this.params.workingLanguages();
-      if (langList && result.expansion.contains) {
-        for (const entry of result.expansion.contains) {
-          if (!Array.isArray(entry.designation) || entry.designation.length === 0) {
-            continue;
-          }
-          const bestDisplay = this.selectDisplayForLanguage(entry.designation, langList);
-          if (bestDisplay) {
-            entry.display = bestDisplay;
-          }
-        }
-      }
-      return result;
+      return result; // just return the expansion
     }
 
     if (this.params.generateNarrative) {
@@ -1618,29 +1605,6 @@ class ValueSetExpander {
   }
 
   /**
-   * Select the best display value from a designation array for a given language list.
-   * Used when applying language selection to pre-built expansions.
-   */
-  selectDisplayForLanguage(designations, langList) {
-    if (!langList || !langList.languages) {
-      return null;
-    }
-    for (const lang of langList.languages) {
-      if (lang.quality <= 0) continue;
-      if (lang.code === '*') continue;
-      const langCode = lang.code.toLowerCase();
-      for (const d of designations) {
-        if (!d.language || !d.value) continue;
-        const dLang = d.language.toLowerCase();
-        if (dLang === langCode || dLang.startsWith(langCode + '-') || langCode.startsWith(dLang + '-')) {
-          return d.value;
-        }
-      }
-    }
-    return null;
-  }
-
-  /**
    * we have a look at the value set compose to see what we have.
    * If it's all one code system(|version), and has no value set dependencies,
    * then we call it simple - this will affect how it can be handled later
@@ -1650,11 +1614,8 @@ class ValueSetExpander {
    */
   scanValueSet(compose) {
     let result = { isSimple : false, hasExcludes : true, csset : new Set(), csDoExcludes : false, csDoOffset : false};
-    if (!compose) {
-      return result;
-    }
     let simple = true;
-    for (let inc of compose.include || []) {
+    for (let inc of compose.include || {}) {
       if (!this.isSimpleSelect(inc, result.csset)) {
         simple = false;
       }
@@ -2038,9 +1999,12 @@ class ExpandWorker extends TerminologyWorker {
     const result = await this.performExpansion(valueSet, params, logExtraOutput);
     const durationMs = performance.now() - startTime;
 
-    // Cache the result
-    if (cacheKey && expansionCache) {
-      expansionCache.set(cacheKey, result, durationMs);
+    // Cache if it took long enough (and not debugging)
+    if (cacheKey && expansionCache && (CACHE_WHEN_DEBUGGING || !this.opContext.debugging)) {
+      const wasCached = expansionCache.set(cacheKey, result, durationMs);
+      if (wasCached) {
+        this.log.debug(`Cached expansion (took ${Math.round(durationMs)}ms)`);
+      }
     }
 
     return result;

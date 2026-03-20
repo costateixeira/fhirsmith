@@ -188,7 +188,7 @@ class ExpansionCache {
   /**
    * Minimum time (ms) an expansion must take before we cache it
    */
-  static MIN_CACHE_TIME_MS = 0;
+  static MIN_CACHE_TIME_MS = 250;
 
   /**
    * Default maximum number of cached entries
