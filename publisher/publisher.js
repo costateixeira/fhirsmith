@@ -299,7 +299,7 @@ class PublisherModule {
     const pollInterval = this.config.pollInterval || 5000; // Default 5 seconds
 
     this.logger.info('Starting task processor with ' + pollInterval + 'ms poll interval');
-    this.isProcessingStarted = null; // timestamp when isProcessing was set
+    this.isProcessingStarted = null;
 
     this.taskProcessor = setInterval(async () => {
       if (this.shutdownRequested) return;
@@ -1289,7 +1289,6 @@ class PublisherModule {
             await require('fs').promises.rm(task.local_folder, { recursive: true, force: true });
           } catch (err) {
             this.logger.warn('Failed to remove task directory ' + task.local_folder + ': ' + err.message);
-            // Continue even if directory removal fails
           }
         }
 
@@ -1394,6 +1393,19 @@ class PublisherModule {
           }
         }
 
+        // Get publication log if available
+        let publishLog = '';
+        if (task.local_folder) {
+          const publishLogPath = path.join(task.local_folder, 'publication.log');
+          if (fs.existsSync(publishLogPath)) {
+            try {
+              publishLog = fs.readFileSync(publishLogPath, 'utf8');
+            } catch (error) {
+              publishLog = 'Error reading publication log: ' + error.message;
+            }
+          }
+        }
+
         if (req.headers.accept && req.headers.accept.includes('text/html')) {
           const htmlServer = require('../library/html-server');
           let content = '<h3>Task Output: #' + task.id + ' - ' + task.npm_package_id + '#' + task.version + '</h3>';
@@ -1431,6 +1443,15 @@ class PublisherModule {
             content += '<p><em>Build in progress... Log will appear when available.</em></p>';
           }
 
+          // Publication log section
+          if (publishLog) {
+            content += '<h4>Publication Log</h4>';
+            content += '<div class="output-viewer">' + escape(publishLog) + '</div>';
+          } else if (task.status === 'publishing') {
+            content += '<h4>Publication Log</h4>';
+            content += '<p><em>Publication in progress... Log will appear when available.</em></p>';
+          }
+
           content += '<div class="mt-3"><a href="/publisher/tasks" class="btn btn-secondary">Back to Tasks</a></div>';
 
           const html = htmlServer.renderPage('publisher', 'Task Output - FHIR Publisher', content, {
@@ -1466,6 +1487,11 @@ class PublisherModule {
           if (buildLog) {
             output += '\n--- Build Log ---\n';
             output += buildLog;
+          }
+
+          if (publishLog) {
+            output += '\n--- Publication Log ---\n';
+            output += publishLog;
           }
 
           res.setHeader('Content-Type', 'text/plain');
@@ -1636,7 +1662,7 @@ class PublisherModule {
 
         // Links at the bottom
         content += '<div class="mt-3">';
-        if (task.build_output_path) {
+        if (task.build_output_path || task.local_folder) {
           content += '<a href="/publisher/tasks/' + task.id + '/output" class="btn btn-outline-info me-2">View Build Output</a>';
         }
         if (task.status === 'waiting for approval') {

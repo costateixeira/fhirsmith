@@ -21,7 +21,7 @@ class RegistryModule {
     this.isInitialized = false;
     this.lastCrawlTime = null;
     this.crawlInProgress = false;
-    
+
     // Thread-safe data storage
     this.currentData = null;
     this.dataLock = false;
@@ -46,7 +46,7 @@ class RegistryModule {
 
       this.crawler = new RegistryCrawler(crawlerConfig, this.stats);
       this.crawler.useLog(regLog);
-      
+
       // Initialize API with crawler
       this.api = new RegistryAPI(this.crawler);
 
@@ -79,13 +79,13 @@ class RegistryModule {
       const dataPath = folders.ensureFilePath('registry', 'registry-data.json');  // <-- CHANGE
       const data = await fs.readFile(dataPath, 'utf8');
       const jsonData = JSON.parse(data);
-      
+
       // Thread-safe update
       await this.updateData(() => {
         this.crawler.loadData(jsonData);
         this.currentData = this.crawler.getData();
       });
-      
+
       this.logger.info('Loaded saved registry data');
     } catch (error) {
       this.logger.info('No saved registry data found, will fetch fresh data');
@@ -113,7 +113,7 @@ class RegistryModule {
    */
   startPeriodicCrawl(intervalMinutes) {
     const intervalMs = intervalMinutes * 60 * 1000;
-    
+
     // Run initial crawl after a short delay
     setTimeout(() => {
       this.performCrawl();
@@ -145,7 +145,7 @@ class RegistryModule {
     try {
       // Perform the crawl
       const newData = await this.crawler.crawl(this.config.masterUrl);
-      
+
       // Thread-safe update of current data
       await this.updateData(() => {
         this.currentData = newData;
@@ -153,16 +153,16 @@ class RegistryModule {
 
       this.lastCrawlTime = new Date();
       const elapsed = Date.now() - startTime;
-      
+
       // Save to disk
       await this.saveData();
-      
+
       // Get metadata
       const metadata = this.crawler.getMetadata();
       this.logger.info(`Crawl completed in ${(elapsed/1000).toFixed(1)}s. ` +
-                      `Found ${newData.registries.length} registries, ` +
-                      `${metadata.errors.length} errors, ` +
-                      `downloaded ${this.crawler.formatBytes(metadata.totalBytes)}`);
+        `Found ${newData.registries.length} registries, ` +
+        `${metadata.errors.length} errors, ` +
+        `downloaded ${this.crawler.formatBytes(metadata.totalBytes)}`);
       this.stats.task('TxRegistry', 'Crawling Finished');
     } catch (error) {
       this.logger.error('Crawl failed:', error);
@@ -173,20 +173,10 @@ class RegistryModule {
   }
 
   /**
-   * Thread-safe data update
+   * Data update - no locking needed, Node.js is single-threaded
    */
   async updateData(updateFn) {
-    // Simple lock mechanism - in production, consider using a proper mutex
-    while (this.dataLock) {
-      await new Promise(resolve => setTimeout(resolve, 10));
-    }
-    
-    this.dataLock = true;
-    try {
-      updateFn();
-    } finally {
-      this.dataLock = false;
-    }
+    updateFn();
   }
 
   _normalizeQueryParams(query) {
@@ -248,12 +238,12 @@ class RegistryModule {
    */
   renderHtmlPage(req, res, jsonResult, basePath, registry, server, fhirVersion, codeSystem, valueSet) {
     // Generate path with query parameters
-    let path = basePath;
-    if (registry) path += `&registry=${encodeURIComponent(registry)}`;
-    if (server) path += `&server=${encodeURIComponent(server)}`;
-    if (fhirVersion) path += `&fhirVersion=${encodeURIComponent(fhirVersion)}`;
-    if (codeSystem) path += `&url=${encodeURIComponent(codeSystem)}`;
-    if (valueSet) path += `&valueSet=${encodeURIComponent(valueSet)}`;
+    let pagePath = basePath;
+    if (registry) pagePath += `&registry=${encodeURIComponent(registry)}`;
+    if (server) pagePath += `&server=${encodeURIComponent(server)}`;
+    if (fhirVersion) pagePath += `&fhirVersion=${encodeURIComponent(fhirVersion)}`;
+    if (codeSystem) pagePath += `&url=${encodeURIComponent(codeSystem)}`;
+    if (valueSet) pagePath += `&valueSet=${encodeURIComponent(valueSet)}`;
 
     // Get registry documentation and info
     const data = this.api.getData();
@@ -264,7 +254,7 @@ class RegistryModule {
 
     // Render matches table
     const matchesTable = this.api.renderJsonToHtml(
-      jsonResult, path, registry, server, fhirVersion
+      jsonResult, pagePath, registry, server, fhirVersion
     );
 
     // Render registry info
@@ -272,7 +262,7 @@ class RegistryModule {
 
     // Assemble template variables
     const templateVars = {
-      path,
+      path: pagePath,
       matches: matchesTable,
       count: jsonResult.results.length,
       registry: registry || '',
@@ -288,7 +278,7 @@ class RegistryModule {
     // Use HTML server to render the page
     try {
       if (!htmlServer.hasTemplate('registry')) {
-        const templatePath = path.join(__dirname, 'tx-registry-template.html');
+        const templatePath = path.join(__dirname, 'registry-template.html');
         htmlServer.loadTemplate('registry', templatePath);
       }
 
@@ -303,7 +293,7 @@ class RegistryModule {
       );
     } catch (error) {
       this.logger.error('Error rendering page:', error);
-      return `<html><body><h1>Error rendering page</h1><p>${error.message}</p></body></html>`;
+      return `<html><body><h1>Error rendering page</h1><p>${escape(error.message)}</p></body></html>`;
     }
   }
 
@@ -315,9 +305,9 @@ class RegistryModule {
     if (this.crawlInProgress) {
       return 'Scanning for updates now';
     } else if (!this.lastCrawlTime) {
-      const nextScan = this.crawlInterval ? 
+      const nextScan = this.crawlInterval ?
         new Date(Date.now() + this.crawlInterval) : null;
-      
+
       if (nextScan) {
         const timeUntil = this.describePeriod(nextScan - Date.now());
         return `First Scan in ${timeUntil}`;
@@ -325,9 +315,9 @@ class RegistryModule {
         return 'No automatic scanning configured';
       }
     } else {
-      const nextScan = this.crawlInterval ? 
+      const nextScan = this.crawlInterval ?
         new Date(this.lastCrawlTime.getTime() + (this.config.crawlInterval * 60 * 1000)) : null;
-      
+
       if (nextScan) {
         const timeUntil = this.describePeriod(nextScan - Date.now());
         const timeSince = this.describePeriod(Date.now() - this.lastCrawlTime);
@@ -345,7 +335,7 @@ class RegistryModule {
    */
   describePeriod(milliseconds) {
     const seconds = Math.floor(milliseconds / 1000);
-    
+
     if (seconds < 60) {
       return `${seconds} seconds`;
     } else if (seconds < 3600) {
@@ -364,56 +354,63 @@ class RegistryModule {
     const start = Date.now();
     try {
 
-    const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
-    
-    if (!acceptsHtml) {
-      // Return JSON overview
-      return res.json({
-        name: 'FHIR Terminology Server Registry',
-        description: 'Registry and discovery service for FHIR terminology servers',
-        endpoints: {
-          status: '/registry/api/status',
-          statistics: '/registry/api/stats',
-          registries: '/registry/api/registries',
-          queryCodeSystem: '/registry/api/query/codesystem',
-          queryValueSet: '/registry/api/query/valueset',
-          bestServer: '/registry/api/best-server/{type}',
-          errors: '/registry/api/errors'
-        },
-        documentation: 'https://github.com/your-org/fhir-registry'
-      });
-    }
+      const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
 
-    // Render HTML page
-    try {
-      const startTime = Date.now();
-      
-      // Load template if needed
-      if (!htmlServer.hasTemplate('registry')) {
-        const templatePath = path.join(__dirname, 'registry-template.html');
-        htmlServer.loadTemplate('registry', templatePath);
+      if (!acceptsHtml) {
+        // Return JSON overview
+        return res.json({
+          name: 'FHIR Terminology Server Registry',
+          description: 'Registry and discovery service for FHIR terminology servers',
+          endpoints: {
+            status: '/registry/api/status',
+            statistics: '/registry/api/stats',
+            registries: '/registry/api/registries',
+            queryCodeSystem: '/registry/api/query/codesystem',
+            queryValueSet: '/registry/api/query/valueset',
+            bestServer: '/registry/api/best-server/{type}',
+            errors: '/registry/api/errors'
+          },
+          documentation: 'https://github.com/your-org/fhir-registry'
+        });
       }
 
-      const content = await this.buildHtmlContent();
-      const stats = this.api.getStatistics();
-      stats.processingTime = Date.now() - startTime;
-      stats.crawlInProgress = this.crawlInProgress;
-      stats.lastCrawl = this.lastCrawlTime;
+      // Render HTML page
+      try {
+        const startTime = Date.now();
 
-      const html = htmlServer.renderPage(
-        'registry',
-        'FHIR Terminology Server Registry',
-        content,
-        stats
-      );
-      
-      res.setHeader('Content-Type', 'text/html');
-      res.send(html);
-      
-    } catch (error) {
-      this.logger.error('Error rendering registry page:', error);
-      htmlServer.sendErrorResponse(res, 'registry', error);
-    }
+        // Load template if needed
+        if (!htmlServer.hasTemplate('registry')) {
+          const templatePath = path.join(__dirname, 'registry-template.html');
+          try {
+            htmlServer.loadTemplate('registry', templatePath);
+          } catch (templateError) {
+            this.logger.error('Failed to load registry template:', templateError);
+            return res.status(500).send(`<html><body><h1>Template Error</h1><p>Could not load registry-template.html: ${escape(templateError.message)}</p></body></html>`);
+          }
+        }
+
+        const content = await this.buildHtmlContent();
+        this.logger.info('Registry: buildHtmlContent completed');
+        const stats = this.api.getStatistics();
+        this.logger.info('Registry: getStatistics completed');
+        stats.processingTime = Date.now() - startTime;
+        stats.crawlInProgress = this.crawlInProgress;
+        stats.lastCrawl = this.lastCrawlTime;
+
+        const html = htmlServer.renderPage(
+          'registry',
+          'FHIR Terminology Server Registry',
+          content,
+          stats
+        );
+
+        res.setHeader('Content-Type', 'text/html');
+        res.send(html);
+
+      } catch (error) {
+        this.logger.error('Error rendering registry page:', error);
+        res.status(500).send(`<html><body><h1>Error rendering registry page</h1><pre>${escape(error.message)}\n${escape(error.stack || '')}</pre></body></html>`);
+      }
     } finally {
       this.stats.countRequest('home', Date.now() - start);
     }
@@ -429,11 +426,18 @@ class RegistryModule {
     const stats = this.api.getStatistics();
     let html = '';
 
-    // Skip the overview card and search forms
+    const data = this.api.getData();
+
+    if (!data || !data.registries) {
+      html += '<div class="alert alert-info">';
+      html += '<h4>Registry data not yet available</h4>';
+      html += '<p>The initial crawl is in progress. Please refresh in a moment.</p>';
+      html += '</div>';
+      return html;
+    }
 
     // Gather all server versions into a flat list
     const serverVersions = [];
-    const data = this.api.getData();
 
     data.registries.forEach(registry => {
       const authority = registry.authority || '';
@@ -546,6 +550,8 @@ class RegistryModule {
     const data = this.crawler.getData();
     const authCSMap = new Map();
 
+    if (!data || !data.registries) return [];
+
     // Gather all authoritative code systems
     data.registries.forEach(registry => {
       registry.servers.forEach(server => {
@@ -605,6 +611,8 @@ class RegistryModule {
   _getAuthoritativeValueSets() {
     const data = this.crawler.getData();
     const authVSMap = new Map();
+
+    if (!data || !data.registries) return [];
 
     // Gather all authoritative value sets
     data.registries.forEach(registry => {
@@ -902,7 +910,7 @@ class RegistryModule {
   getStatus() {
     const metadata = this.crawler ? this.crawler.getMetadata() : null;
     const stats = this.api ? this.api.getStatistics() : null;
-    
+
     return {
       enabled: true,
       initialized: this.isInitialized,
@@ -919,7 +927,7 @@ class RegistryModule {
    */
   async shutdown() {
     this.logger.info('Shutting down Registry module...');
-    
+
     // Stop periodic crawling
     if (this.crawlInterval) {
       clearInterval(this.crawlInterval);
