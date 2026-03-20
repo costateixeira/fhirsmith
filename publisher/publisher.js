@@ -269,6 +269,7 @@ class PublisherModule {
     this.router.post('/tasks', this.requireAuth.bind(this), this.createTask.bind(this));
     this.router.post('/tasks/:id/approve', this.requireAuth.bind(this), this.approveTask.bind(this));
     this.router.post('/tasks/:id/delete', this.requireAdmin.bind(this), this.deleteTask.bind(this));
+    this.router.post('/tasks/:id/retry', this.requireAuth.bind(this), this.retryTask.bind(this));
     this.router.get('/tasks/:id/output', this.getTaskOutput.bind(this));
     this.router.get('/tasks/:id/history', this.getTaskHistory.bind(this));
     this.router.get('/tasks/:id/qa', this.getTaskQA.bind(this));
@@ -1130,6 +1131,12 @@ class PublisherModule {
               content += '</form>';
             }
 
+            if (req.session.userId && task.status === 'failed') {
+              content += ' <form method="post" action="/publisher/tasks/' + task.id + '/retry" style="display: inline;">';
+              content += '<button type="submit" class="btn btn-sm btn-warning">Retry</button>';
+              content += '</form>';
+            }
+
             content += '</td>';
             content += '</tr>';
           }
@@ -1272,15 +1279,12 @@ class PublisherModule {
 
         // Remove build output directory
         if (task.local_folder && fs.existsSync(task.local_folder)) {
-          const rimraf = require('rimraf');
-          await new Promise((resolve) => {
-            rimraf(task.local_folder, (err) => {
-              if (err) {
-                this.logger.warn('Failed to remove task directory ' + task.local_folder + ': ' + err.message);
-              }
-              resolve(); // Continue even if directory removal fails
-            });
-          });
+          try {
+            await require('fs').promises.rm(task.local_folder, { recursive: true, force: true });
+          } catch (err) {
+            this.logger.warn('Failed to remove task directory ' + task.local_folder + ': ' + err.message);
+            // Continue even if directory removal fails
+          }
         }
 
         // Delete task logs
@@ -1304,10 +1308,61 @@ class PublisherModule {
         res.redirect('/publisher/tasks');
       } catch (error) {
         this.logger.error('Error deleting task:', error);
-        res.status(500).send('Failed to delete task');
+        res.status(500).send('Failed to delete task: ' + error.message);
       }
     } finally {
       this.stats.countRequest('delete-task', Date.now() - start);
+    }
+  }
+
+  async retryTask(req, res) {
+    const start = Date.now();
+    try {
+      try {
+        const taskId = req.params.id;
+        const task = await this.getTask(taskId);
+
+        if (!task) {
+          return res.status(404).send('Task not found');
+        }
+
+        if (task.status !== 'failed') {
+          return res.status(400).send('Only failed tasks can be retried');
+        }
+
+        // Check the user has permission to queue for this website
+        const canQueue = await this.userCanQueue(req.session.userId, task.website_id);
+        if (!canQueue) {
+          return res.status(403).send('You do not have permission to queue tasks for this website');
+        }
+
+        // Block if there is already an active task for the same package/version
+        const existingTask = await this.findActiveTask(task.npm_package_id, task.version);
+        if (existingTask) {
+          return res.status(400).send('An active task for this package and version is already in progress.');
+        }
+
+        // Insert a fresh task copying all key fields from the original
+        const newTaskId = await new Promise((resolve, reject) => {
+          this.db.run(
+            'INSERT INTO tasks (user_id, website_id, github_org, github_repo, git_branch, npm_package_id, version) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [req.session.userId, task.website_id, task.github_org, task.github_repo, task.git_branch, task.npm_package_id, task.version],
+            function (err) {
+              if (err) reject(err);
+              else resolve(this.lastID);
+            }
+          );
+        });
+
+        this.logUserAction(req.session.userId, 'retry_task', newTaskId.toString(), req.ip);
+        this.logger.info('Task retried: new ID=' + newTaskId + ' from task #' + taskId + ' (' + task.npm_package_id + '#' + task.version + ') by user ' + req.session.userId);
+        res.redirect('/publisher/tasks/' + newTaskId + '/history');
+      } catch (error) {
+        this.logger.error('Error retrying task:', error);
+        res.status(500).send('Failed to retry task: ' + error.message);
+      }
+    } finally {
+      this.stats.countRequest('retry-task', Date.now() - start);
     }
   }
 
@@ -1583,6 +1638,16 @@ class PublisherModule {
         }
         if (task.status === 'waiting for approval') {
           content += '<a href="/publisher/tasks/' + task.id + '/qa" class="btn btn-outline-secondary me-2">View QA Report</a>';
+        }
+        if (req.session.userId && task.status === 'failed') {
+          content += '<form method="post" action="/publisher/tasks/' + task.id + '/retry" style="display: inline;" class="me-2">';
+          content += '<button type="submit" class="btn btn-warning">Retry</button>';
+          content += '</form>';
+        }
+        if (req.session.isAdmin && task.status === 'failed') {
+          content += '<form method="post" action="/publisher/tasks/' + task.id + '/delete" style="display: inline;" class="me-2" onsubmit="return confirm(\'Delete task #' + task.id + ' and all its build output? This cannot be undone.\')">';
+          content += '<button type="submit" class="btn btn-danger">Delete</button>';
+          content += '</form>';
         }
         content += '<a href="/publisher/tasks" class="btn btn-secondary">Back to Tasks</a>';
         content += '</div>';
