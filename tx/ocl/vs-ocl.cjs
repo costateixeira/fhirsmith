@@ -800,29 +800,12 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
           continue;
         }
 
-        // Busca detalhes do conceito
-        let detailedConcept = concept;
-        const conceptId = concept.id || concept.code;
-        if (conceptId) {
-          let detailUrl = meta.conceptsUrl;
-          if (!detailUrl.endsWith('/')) detailUrl += '/';
-          detailUrl += encodeURIComponent(conceptId) + '/';
-          try {
-            const detailResp = await this.httpClient.get(detailUrl);
-            if (detailResp && detailResp.data && typeof detailResp.data === 'object') {
-              detailedConcept = { ...concept, ...detailResp.data };
-            }
-          } catch (error) {
-            // Se falhar, usa o conceito da listagem
-          }
-        }
+        const localizedNames = this.#extractLocalizedNames(concept, effectiveLanguageCodes);
+        const localizedDefinitions = this.#extractLocalizedDefinitions(concept, effectiveLanguageCodes);
 
-        const localizedNames = this.#extractLocalizedNames(detailedConcept, effectiveLanguageCodes);
-        const localizedDefinitions = this.#extractLocalizedDefinitions(detailedConcept, effectiveLanguageCodes);
-
-        const display = localizedNames.display || detailedConcept.display_name || detailedConcept.display || detailedConcept.name || null;
-        const definition = localizedDefinitions.definition || detailedConcept.definition || detailedConcept.description || detailedConcept.concept_class || null;
-        const code = detailedConcept.code || detailedConcept.id || null;
+        const display = localizedNames.display || concept.display_name || concept.display || concept.name || null;
+        const definition = localizedDefinitions.definition || concept.definition || concept.description || concept.concept_class || null;
+        const code = concept.code || concept.id || null;
         const searchableText = [
           code,
           display,
@@ -838,9 +821,9 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
           continue;
         }
 
-        const owner = detailedConcept.owner || meta.owner || null;
-        const source = detailedConcept.source || null;
-        const conceptCanonical = detailedConcept.source_canonical_url || detailedConcept.sourceCanonicalUrl || null;
+        const owner = concept.owner || meta.owner || null;
+        const source = concept.source || null;
+        const conceptCanonical = concept.source_canonical_url || concept.sourceCanonicalUrl || null;
         const system = conceptCanonical || (owner && source
           ? await this.#getSourceCanonicalUrl(owner, source)
           : fallbackSystem);
@@ -852,7 +835,7 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
           definition: definition || undefined,
           designation: localizedNames.designation,
           definitions: localizedDefinitions.definitions,
-          inactive: detailedConcept.retired === true ? true : undefined
+          inactive: concept.retired === true ? true : undefined
         });
         remaining -= 1;
       }
