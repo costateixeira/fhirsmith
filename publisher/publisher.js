@@ -490,16 +490,9 @@ class PublisherModule {
   }
 
   async createTaskDirectory(taskDir) {
-    const rimraf = require('rimraf');
-
     // Remove existing directory if it exists
     if (fs.existsSync(taskDir)) {
-      await new Promise((resolve, reject) => {
-        rimraf(taskDir, (err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
+      await require('fs').promises.rm(taskDir, { recursive: true, force: true });
     }
 
     // Create fresh directory
@@ -1330,19 +1323,16 @@ class PublisherModule {
           return res.status(400).send('Only failed tasks can be retried');
         }
 
-        // Check the user has permission to queue for this website
         const canQueue = await this.userCanQueue(req.session.userId, task.website_id);
         if (!canQueue) {
           return res.status(403).send('You do not have permission to queue tasks for this website');
         }
 
-        // Block if there is already an active task for the same package/version
         const existingTask = await this.findActiveTask(task.npm_package_id, task.version);
         if (existingTask) {
           return res.status(400).send('An active task for this package and version is already in progress.');
         }
 
-        // Insert a fresh task copying all key fields from the original
         const newTaskId = await new Promise((resolve, reject) => {
           this.db.run(
             'INSERT INTO tasks (user_id, website_id, github_org, github_repo, git_branch, npm_package_id, version) VALUES (?, ?, ?, ?, ?, ?, ?)',
