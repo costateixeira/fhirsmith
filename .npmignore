@@ -24,6 +24,11 @@ logs/
 *.log
 *.sqlite
 passwords.ini
+tx/data/ndc
+tx/data/snomed
+tx/data/loinc
+tx/data/rxnorm
+
 
 # Build artifacts
 node_modules/

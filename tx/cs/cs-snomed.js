@@ -1275,7 +1275,7 @@ class SnomedServicesFactory extends CodeSystemFactoryProvider {
 
   id() {
     const match = this.version().match(/^http:\/\/snomed\.info\/sct\/(\d+)(?:\/version\/(\d{8}))?$/);
-    return "SCT-"+match[1]+"-"+match[2];
+    return match && match[1] && match[2] ? "SCT-"+match[1]+"-"+match[2] : null;
   }
 
   describeVersion(version) {

@@ -269,6 +269,7 @@ class PublisherModule {
     this.router.post('/tasks', this.requireAuth.bind(this), this.createTask.bind(this));
     this.router.post('/tasks/:id/approve', this.requireAuth.bind(this), this.approveTask.bind(this));
     this.router.post('/tasks/:id/delete', this.requireAdmin.bind(this), this.deleteTask.bind(this));
+    this.router.post('/tasks/:id/retry', this.requireAuth.bind(this), this.retryTask.bind(this));
     this.router.get('/tasks/:id/output', this.getTaskOutput.bind(this));
     this.router.get('/tasks/:id/history', this.getTaskHistory.bind(this));
     this.router.get('/tasks/:id/qa', this.getTaskQA.bind(this));
@@ -298,16 +299,29 @@ class PublisherModule {
     const pollInterval = this.config.pollInterval || 5000; // Default 5 seconds
 
     this.logger.info('Starting task processor with ' + pollInterval + 'ms poll interval');
+    this.isProcessingStarted = null;
 
     this.taskProcessor = setInterval(async () => {
-      if (!this.isProcessing && !this.shutdownRequested) {
-        await this.processNextTask();
+      if (this.shutdownRequested) return;
+
+      // Safety net: if isProcessing has been true for more than 60 minutes, reset it
+      if (this.isProcessing) {
+        const stuckMs = this.isProcessingStarted ? Date.now() - this.isProcessingStarted : 0;
+        if (stuckMs > 60 * 60 * 1000) {
+          this.logger.warn('Task processor appears stuck (isProcessing for ' + Math.round(stuckMs / 60000) + ' min) — resetting');
+          this.isProcessing = false;
+        } else {
+          return;
+        }
       }
+
+      await this.processNextTask();
     }, pollInterval);
   }
 
   async processNextTask() {
     this.isProcessing = true;
+    this.isProcessingStarted = Date.now();
 
     try {
       // Look for queued tasks first (draft builds)
@@ -466,6 +480,13 @@ class PublisherModule {
     // Step 1: Create/scrub task directory
     await this.createTaskDirectory(taskDir);
 
+    // Record the log file path and local folder immediately so they're accessible
+    // even if the build fails later
+    await this.updateTaskStatus(task.id, task.status, {
+      build_output_path: logFile,
+      local_folder: taskDir
+    });
+
     // Step 2: Download latest publisher
     const publisherJar = await this.downloadPublisher(taskDir, task.id);
 
@@ -478,26 +499,13 @@ class PublisherModule {
     // Step 5: Verify package-id and version match the task
     await this.verifyBuildOutput(task, draftDir);
 
-    // Update task with build output path
-    await this.updateTaskStatus(task.id, task.status, {
-      build_output_path: logFile,
-      local_folder: taskDir
-    });
-
     this.logger.info('Draft build completed for ' + task.npm_package_id + '#' + task.version);
   }
 
   async createTaskDirectory(taskDir) {
-    const rimraf = require('rimraf');
-
     // Remove existing directory if it exists
     if (fs.existsSync(taskDir)) {
-      await new Promise((resolve, reject) => {
-        rimraf(taskDir, (err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
+      await require('fs').promises.rm(taskDir, { recursive: true, force: true });
     }
 
     // Create fresh directory
@@ -1129,6 +1137,12 @@ class PublisherModule {
               content += '</form>';
             }
 
+            if (req.session.userId && task.status === 'failed') {
+              content += ' <form method="post" action="/publisher/tasks/' + task.id + '/retry" style="display: inline;">';
+              content += '<button type="submit" class="btn btn-sm btn-warning">Retry</button>';
+              content += '</form>';
+            }
+
             content += '</td>';
             content += '</tr>';
           }
@@ -1271,15 +1285,11 @@ class PublisherModule {
 
         // Remove build output directory
         if (task.local_folder && fs.existsSync(task.local_folder)) {
-          const rimraf = require('rimraf');
-          await new Promise((resolve) => {
-            rimraf(task.local_folder, (err) => {
-              if (err) {
-                this.logger.warn('Failed to remove task directory ' + task.local_folder + ': ' + err.message);
-              }
-              resolve(); // Continue even if directory removal fails
-            });
-          });
+          try {
+            await require('fs').promises.rm(task.local_folder, { recursive: true, force: true });
+          } catch (err) {
+            this.logger.warn('Failed to remove task directory ' + task.local_folder + ': ' + err.message);
+          }
         }
 
         // Delete task logs
@@ -1303,10 +1313,58 @@ class PublisherModule {
         res.redirect('/publisher/tasks');
       } catch (error) {
         this.logger.error('Error deleting task:', error);
-        res.status(500).send('Failed to delete task');
+        res.status(500).send('Failed to delete task: ' + error.message);
       }
     } finally {
       this.stats.countRequest('delete-task', Date.now() - start);
+    }
+  }
+
+  async retryTask(req, res) {
+    const start = Date.now();
+    try {
+      try {
+        const taskId = req.params.id;
+        const task = await this.getTask(taskId);
+
+        if (!task) {
+          return res.status(404).send('Task not found');
+        }
+
+        if (task.status !== 'failed') {
+          return res.status(400).send('Only failed tasks can be retried');
+        }
+
+        const canQueue = await this.userCanQueue(req.session.userId, task.website_id);
+        if (!canQueue) {
+          return res.status(403).send('You do not have permission to queue tasks for this website');
+        }
+
+        const existingTask = await this.findActiveTask(task.npm_package_id, task.version);
+        if (existingTask) {
+          return res.status(400).send('An active task for this package and version is already in progress.');
+        }
+
+        const newTaskId = await new Promise((resolve, reject) => {
+          this.db.run(
+            'INSERT INTO tasks (user_id, website_id, github_org, github_repo, git_branch, npm_package_id, version) VALUES (?, ?, ?, ?, ?, ?, ?)',
+            [req.session.userId, task.website_id, task.github_org, task.github_repo, task.git_branch, task.npm_package_id, task.version],
+            function (err) {
+              if (err) reject(err);
+              else resolve(this.lastID);
+            }
+          );
+        });
+
+        this.logUserAction(req.session.userId, 'retry_task', newTaskId.toString(), req.ip);
+        this.logger.info('Task retried: new ID=' + newTaskId + ' from task #' + taskId + ' (' + task.npm_package_id + '#' + task.version + ') by user ' + req.session.userId);
+        res.redirect('/publisher/tasks/' + newTaskId + '/history');
+      } catch (error) {
+        this.logger.error('Error retrying task:', error);
+        res.status(500).send('Failed to retry task: ' + error.message);
+      }
+    } finally {
+      this.stats.countRequest('retry-task', Date.now() - start);
     }
   }
 
@@ -1332,6 +1390,19 @@ class PublisherModule {
             buildLog = fs.readFileSync(task.build_output_path, 'utf8');
           } catch (error) {
             buildLog = 'Error reading build log: ' + error.message;
+          }
+        }
+
+        // Get publication log if available
+        let publishLog = '';
+        if (task.local_folder) {
+          const publishLogPath = path.join(task.local_folder, 'publication.log');
+          if (fs.existsSync(publishLogPath)) {
+            try {
+              publishLog = fs.readFileSync(publishLogPath, 'utf8');
+            } catch (error) {
+              publishLog = 'Error reading publication log: ' + error.message;
+            }
           }
         }
 
@@ -1372,6 +1443,15 @@ class PublisherModule {
             content += '<p><em>Build in progress... Log will appear when available.</em></p>';
           }
 
+          // Publication log section
+          if (publishLog) {
+            content += '<h4>Publication Log</h4>';
+            content += '<div class="output-viewer">' + escape(publishLog) + '</div>';
+          } else if (task.status === 'publishing') {
+            content += '<h4>Publication Log</h4>';
+            content += '<p><em>Publication in progress... Log will appear when available.</em></p>';
+          }
+
           content += '<div class="mt-3"><a href="/publisher/tasks" class="btn btn-secondary">Back to Tasks</a></div>';
 
           const html = htmlServer.renderPage('publisher', 'Task Output - FHIR Publisher', content, {
@@ -1407,6 +1487,11 @@ class PublisherModule {
           if (buildLog) {
             output += '\n--- Build Log ---\n';
             output += buildLog;
+          }
+
+          if (publishLog) {
+            output += '\n--- Publication Log ---\n';
+            output += publishLog;
           }
 
           res.setHeader('Content-Type', 'text/plain');
@@ -1577,11 +1662,21 @@ class PublisherModule {
 
         // Links at the bottom
         content += '<div class="mt-3">';
-        if (task.build_output_path) {
+        if (task.build_output_path || task.local_folder) {
           content += '<a href="/publisher/tasks/' + task.id + '/output" class="btn btn-outline-info me-2">View Build Output</a>';
         }
         if (task.status === 'waiting for approval') {
           content += '<a href="/publisher/tasks/' + task.id + '/qa" class="btn btn-outline-secondary me-2">View QA Report</a>';
+        }
+        if (req.session.userId && task.status === 'failed') {
+          content += '<form method="post" action="/publisher/tasks/' + task.id + '/retry" style="display: inline;" class="me-2">';
+          content += '<button type="submit" class="btn btn-warning">Retry</button>';
+          content += '</form>';
+        }
+        if (req.session.isAdmin && task.status === 'failed') {
+          content += '<form method="post" action="/publisher/tasks/' + task.id + '/delete" style="display: inline;" class="me-2" onsubmit="return confirm(\'Delete task #' + task.id + ' and all its build output? This cannot be undone.\')">';
+          content += '<button type="submit" class="btn btn-danger">Delete</button>';
+          content += '</form>';
         }
         content += '<a href="/publisher/tasks" class="btn btn-secondary">Back to Tasks</a>';
         content += '</div>';

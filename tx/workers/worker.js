@@ -276,12 +276,9 @@ class TerminologyWorker {
         if (this.hasSupplement(cs, supplements)) {
           continue;
         }
-        // Handle exact URL match (no version specified in supplements)
+        // Handle exact URL match (no version specified in supplements field)
         if (supplementsUrl === url) {
-          // If we're looking for a specific version, only include if no version in supplements URL
-          if (!version) {
-            supplements.push(cs);
-          }
+          supplements.push(cs);
           continue;
         }
 

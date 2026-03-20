@@ -292,11 +292,11 @@ class TxParameters {
   }
 
   get hasHTTPLanguages() {
-    return this.FHTTPLanguages && this.FHTTPLanguages.source;
+    return this.FHTTPLanguages != null && this.FHTTPLanguages.length > 0;
   }
 
   get hasDisplayLanguages() {
-    return this.FDisplayLanguages && this.FDisplayLanguages.source;
+    return this.FDisplayLanguages != null && this.FDisplayLanguages.length > 0;
   }
 
   get hasDesignations() {

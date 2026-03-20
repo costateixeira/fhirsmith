@@ -8,6 +8,7 @@ sources:
   - internal:areacode
   - internal:mimetypes
   - internal:usstates
+  - internal:urls
   - internal:hgvs
   - ucum:tx/data/ucum-essence.xml
   - loinc:loinc-2.77-a.db
@@ -39,3 +40,6 @@ sources:
   - npm:us.cdc.phinvads
   - npm:hl7.fhir.uv.sdc
   - internal:vsac
+
+ignored:
+  - urn:iso:std:iso:3166#20210120
