@@ -428,6 +428,10 @@ class XhtmlNode {
     return this.addTag('label').setAttribute('for', forId);
   }
 
+  colspan(width) {
+    return this.attr("colspan", String(width));
+  }
+
   // Conditional
   iff(test) {
     if (test) {
