@@ -1140,7 +1140,11 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
         if (!systemConcepts.has(entry.system)) {
           systemConcepts.set(entry.system, []);
         }
-        systemConcepts.get(entry.system).push(entry.code);
+        const concept = { code: entry.code };
+        if (Array.isArray(entry.designation) && entry.designation.length > 0) {
+          concept.designation = entry.designation;
+        }
+        systemConcepts.get(entry.system).push(concept);
         totalCount++;
       }
       if (progressState) {
@@ -1157,9 +1161,9 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     }
 
     return {
-      include: Array.from(systemConcepts.entries()).map(([system, codes]) => ({
+      include: Array.from(systemConcepts.entries()).map(([system, concepts]) => ({
         system,
-        concept: codes.map(code => ({ code }))
+        concept: concepts
       }))
     };
   }
