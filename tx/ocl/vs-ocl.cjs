@@ -389,20 +389,12 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
   }
 
   #indexValueSet(vs) {
-    const existing = this.valueSetMap.get(vs.url)
-      || (vs.version ? this.valueSetMap.get(`${vs.url}|${vs.version}`) : null)
-      || this._idMap.get(vs.id)
-      || null;
-
-    // Só indexa se não existe ou se for o mesmo objeto
-    if (!existing || existing === vs) {
-      this.valueSetMap.set(vs.url, vs);
-      if (vs.version) {
-        this.valueSetMap.set(`${vs.url}|${vs.version}`, vs);
-      }
-      this.valueSetMap.set(vs.id, vs);
-      this._idMap.set(vs.id, vs);
+    this.valueSetMap.set(vs.url, vs);
+    if (vs.version) {
+      this.valueSetMap.set(`${vs.url}|${vs.version}`, vs);
     }
+    this.valueSetMap.set(vs.id, vs);
+    this._idMap.set(vs.id, vs);
   }
 
   #toValueSet(collection) {
@@ -567,6 +559,17 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
       const existingInclude = Array.isArray(vs?.jsonObj?.compose?.include)
         ? vs.jsonObj.compose.include
         : [];
+
+      // If the compose already has enumerated concepts (from background expansion),
+      // it is the authoritative representation of the collection contents — don't
+      // overwrite it with system-only entries that would cause the expand engine
+      // to include ALL concepts from the CodeSystem.
+      const hasEnumeratedConcepts = existingInclude.some(
+        inc => Array.isArray(inc.concept) && inc.concept.length > 0
+      );
+      if (hasEnumeratedConcepts) {
+        return;
+      }
 
       // Always normalize existing compose entries first because discovery metadata
       // can carry non-canonical preferred_source values.
