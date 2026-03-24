@@ -3,6 +3,6 @@
 // Regenerate with: node generate-tests.js
 
 function txTestVersion() {
-  return '1.9.1-SNAPSHOT';
+  return '1.9.1';
 }
 module.exports = { txTestVersion };
