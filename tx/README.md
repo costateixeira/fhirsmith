@@ -201,7 +201,7 @@ Loads LOINC from a SQLite database file.
 ```
 
 The filename is downloaded from the base URL if not cached. Database files must be in the server's proprietary format.
-The file is built by importing LOINC (to be documented)
+The file is built by importing LOINC (see [documentation](importers/readme.md))
 
 #### `rxnorm` - RxNorm
 
@@ -211,7 +211,7 @@ Loads RxNorm drug terminology from a SQLite database file.
 - rxnorm:rxnorm_02032025-a.db
 ```
 
-The file is built by importing RxNorm (to be documented)
+The file is built by importing RxNorm (see [documentation](importers/readme.md))
 
 #### `ndc` - NDC (National Drug Code)
 
@@ -228,7 +228,7 @@ Loads FDA UNII codes from a SQLite database file.
 ```yaml
 - unii:unii_20240622.db
 ```
-The file is built by importing UNII (to be documented)
+The file is built by importing UNII (see [documentation](importers/readme.md))
 
 #### `snomed` - SNOMED CT
 
@@ -254,7 +254,7 @@ Common edition identifiers:
 - `nl` - Netherlands
 - `ips` - IPS (International Patient Summary) Free Set
 
-The file is built by importing SNOMED CT (to be documented)
+The file is built by importing SNOMED CT (see [documentation](importers/readme.md))
 
 
 #### `cpt` - CPT (Current Procedural Terminology)
@@ -267,7 +267,7 @@ Loads CPT codes from a SQLite database file.
 
 **Note:** CPT is copyrighted by the American Medical Association. Ensure you have appropriate licensing.
 
-The file is built by importing CPT (to be documented)
+The file is built by importing CPT (see [documentation](importers/readme.md))
 
 #### `omop` - OMOP Vocabularies
 
@@ -276,7 +276,7 @@ Loads OMOP (Observational Medical Outcomes Partnership) vocabulary mappings from
 ```yaml
 - omop:omop_v20250227.db
 ```
-The file is built by importing OMOP (to be documented)
+The file is built by importing OMOP (see [documentation](importers/readme.md))
 
 #### `npm` - FHIR NPM Packages
 
