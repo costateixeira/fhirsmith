@@ -1114,7 +1114,8 @@ class PublisherModule {
             content += '<a href="/publisher/tasks/' + task.id + '/history" class="btn btn-sm btn-outline-secondary me-1">History</a>';
 
             if (task.status === 'waiting for approval') {
-              content += '<a href="/publisher/tasks/' + task.id + '/output" class="btn btn-sm btn-outline-info me-1">View Output</a>';
+              content += '<a href="/publisher/tasks/' + task.id + '/output" class="btn btn-sm btn-outline-info me-1">View Log</a>';
+              content += '<a href="/publisher/tasks/' + task.id + '/index.html" class="btn btn-sm btn-outline-secondary me-1">View IG</a>';
               content += '<a href="/publisher/tasks/' + task.id + '/qa" class="btn btn-sm btn-outline-secondary me-1">View QA</a>';
               if (canApprove) {
                 content += '<form method="post" action="/publisher/tasks/' + task.id + '/approve" style="display: inline;">';
