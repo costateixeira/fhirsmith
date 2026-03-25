@@ -34,7 +34,6 @@ class OCLBackgroundJobQueue {
       };
       this.#insertPendingJobOrdered(job);
       this.ensureHeartbeatRunning();
-      console.log(`[OCL] ${jobType || 'Background job'} enqueued: ${jobKey} (size=${normalizedSize}, queue=${this.pendingJobs.length}, active=${this.activeCount})`);
       this.processNext();
     };
 
@@ -77,7 +76,6 @@ class OCLBackgroundJobQueue {
     // Prioridade máxima para userRequested
     if (job.userRequested) {
       this.pendingJobs.unshift(job);
-      console.log(`[OCL] User-requested job prioritized: ${job.jobKey}`);
       return;
     }
     let index = this.pendingJobs.findIndex(existing => {
@@ -179,13 +177,8 @@ class OCLBackgroundJobQueue {
         getProgress: job.getProgress || null,
         startedAt: Date.now()
       });
-      console.log(`[OCL] Background job started: ${job.jobType} ${job.jobKey} (size=${job.jobSize}, queue=${this.pendingJobs.length}, active=${this.activeCount})`);
-
       Promise.resolve()
         .then(() => job.runJob())
-        .then(() => {
-          console.log(`[OCL] Background job completed: ${job.jobType} ${job.jobKey}`);
-        })
         .catch((error) => {
           const message = error && error.message ? error.message : String(error);
           console.error(`[OCL] Background job failed: ${job.jobType} ${job.jobKey}: ${message}`);
@@ -194,7 +187,6 @@ class OCLBackgroundJobQueue {
           this.activeCount -= 1;
           this.queuedOrRunningKeys.delete(job.jobKey);
           this.activeJobs.delete(job.jobKey);
-          console.log(`[OCL] Background queue status: queue=${this.pendingJobs.length}, active=${this.activeCount}`);
           this.processNext();
         });
     }
