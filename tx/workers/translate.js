@@ -115,8 +115,12 @@ class TranslateWorker extends TerminologyWorker {
     let targetSystem = null;
 
     // Get the source coding
+    // Accept both R5 names (sourceCoding, sourceCodeableConcept, sourceCode/sourceSystem)
+    // and R4 names (coding, codeableConcept, code/system) as aliases
     if (params.has('sourceCoding')) {
       coding = params.get('sourceCoding');
+    } else if (params.has('coding')) {
+      coding = params.get('coding');
     } else if (params.has('sourceCodeableConcept')) {
       const cc = params.get('sourceCodeableConcept');
       if (cc.coding && cc.coding.length > 0) {
@@ -125,16 +129,23 @@ class TranslateWorker extends TerminologyWorker {
         throw new Issue('error', 'invalid', null, null,
           'sourceCodeableConcept must contain at least one coding', null, 400);
       }
-    } else if (params.has('sourceCode')) {
-      if (!params.has('sourceSystem')) {
+    } else if (params.has('codeableConcept')) {
+      const cc = params.get('codeableConcept');
+      if (cc.coding && cc.coding.length > 0) {
+        coding = cc.coding[0];
+      } else {
         throw new Issue('error', 'invalid', null, null,
-          'sourceSystem parameter is required when using sourceCode', null, 400);
+          'codeableConcept must contain at least one coding', null, 400);
       }
-      coding = {
-        system: params.get('sourceSystem'),
-        version: params.get('sourceVersion'),
-        code: params.get('sourceCode')
-      };
+    } else if (params.has('sourceCode') || params.has('code')) {
+      const code = params.has('sourceCode') ? params.get('sourceCode') : params.get('code');
+      const system = params.has('sourceSystem') ? params.get('sourceSystem') : params.get('system');
+      if (!system) {
+        throw new Issue('error', 'invalid', null, null,
+          'system parameter is required when using code/sourceCode', null, 400);
+      }
+      const version = params.has('sourceVersion') ? params.get('sourceVersion') : params.get('version');
+      coding = { system, version, code };
     } else {
       throw new Issue('error', 'invalid', null, null,
         'Must provide sourceCode (with system), sourceCoding, or sourceCodeableConcept', null, 400);
@@ -169,7 +180,7 @@ class TranslateWorker extends TerminologyWorker {
     // If no explicit concept map, we need to find one based on source/target
     if (conceptMaps.length == 0) {
       await this.findConceptMapsInAdditionalResources(conceptMaps, coding.system, sourceScope, targetScope, targetSystem);
-      await this.provider.findConceptMapForTranslation(this.opContext, conceptMaps, coding.system, sourceScope, targetScope, targetSystem);
+      await this.provider.findConceptMapForTranslation(this.opContext, conceptMaps, coding.system, sourceScope, targetScope, targetSystem, coding.code);
       if (conceptMaps.length == 0) {
         throw new Issue('error', 'not-found', null, null, 'No suitable ConceptMaps found for the specified source and target', null, 404);
       }
@@ -208,10 +219,14 @@ class TranslateWorker extends TerminologyWorker {
     txp.readParams(params.jsonObj);
 
     // Get the source coding
+    // Accept both R5 names (sourceCoding, sourceCodeableConcept, sourceCode)
+    // and R4 names (coding, codeableConcept, code) as aliases
     let coding = null;
 
     if (params.has('sourceCoding')) {
       coding = params.get('sourceCoding');
+    } else if (params.has('coding')) {
+      coding = params.get('coding');
     } else if (params.has('sourceCodeableConcept')) {
       const cc = params.get('sourceCodeableConcept');
       if (cc.coding && cc.coding.length > 0) {
@@ -220,15 +235,25 @@ class TranslateWorker extends TerminologyWorker {
         throw new Issue('error', 'invalid', null, null,
           'sourceCodeableConcept must contain at least one coding', null, 400);
       }
-    } else if (params.has('sourceCode')) {
-      if (!params.has('system')) {
+    } else if (params.has('codeableConcept')) {
+      const cc = params.get('codeableConcept');
+      if (cc.coding && cc.coding.length > 0) {
+        coding = cc.coding[0];
+      } else {
         throw new Issue('error', 'invalid', null, null,
-          'system parameter is required when using sourceCode', null, 400);
+          'codeableConcept must contain at least one coding', null, 400);
+      }
+    } else if (params.has('sourceCode') || params.has('code')) {
+      const code = params.has('sourceCode') ? params.get('sourceCode') : params.get('code');
+      const system = params.has('system') ? params.get('system') : null;
+      if (!system) {
+        throw new Issue('error', 'invalid', null, null,
+          'system parameter is required when using code/sourceCode', null, 400);
       }
       coding = {
-        system: params.get('system'),
+        system,
         version: params.get('version'),
-        code: params.get('sourceCode')
+        code
       };
     } else {
       throw new Issue('error', 'invalid', null, null,
