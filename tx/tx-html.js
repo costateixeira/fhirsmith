@@ -234,24 +234,44 @@ class TxHtmlRenderer {
     html += await this.buildSearchForm(req);
 
     // ===== Packages and Factories Section =====
-    html += '<hr/><h3>Content Sources &amp; Code System Factories</h3>';
+    html += '<hr/><h3>Source Content</h3>';
 
-    // List content sources
-    html += '<h6>Content Sources</h6>';
-    if (provider.contentSources && provider.contentSources.length > 0) {
-      const sorted = [...provider.contentSources].sort();
+    // List Packages
+    html += '<h6>FHIR Packages</h6>';
+    if (provider.packageSources && provider.packageSources.length > 0) {
+      const sorted = [...provider.packageSources].sort();
       html += '<ul>';
       for (const source of sorted) {
         html += `<li>${escape(source)}</li>`;
       }
       html += '</ul>';
     } else {
-      html += '<p><em>No content sources available</em></p>';
+      html += '<p><em>No FHIR Packages Loaded</em></p>';
     }
 
-    // Code System Factories table
-// Code System Factories table
-    html += '<h6 class="mt-4">External CodeSystems</h6>';
+    // List Packages
+    html += '<h6>External Sources</h6>';
+    if (provider.externalSources && provider.externalSources.length > 0) {
+      const sorted = [...provider.externalSources].sort();
+      html += '<ul>';
+      for (const source of sorted) {
+        let n = source.name();
+        if (!n) {
+          n = source.sourcePackage();
+        }
+        let ii = source.infoName();
+        if (ii) {
+          html += `<li>${escape(n)} (<a href="info/${source.id()}">${ii}</a>)</li>`;
+        } else {
+          html += `<li>${escape(n)}</li>`;
+        }
+      }
+      html += '</ul>';
+    } else {
+      html += '<p><em>No External Sources Configured</em></p>';
+    }
+
+    html += '<h6 class="mt-4">Special CodeSystems</h6>';
     html += '<table class="grid">';
     html += '<thead><tr><th>Name</th><th>URI</th><th>Version</th><th>Use Count</th></tr></thead>';
     html += '<tbody>';
@@ -1288,6 +1308,13 @@ class TxHtmlRenderer {
       inferSystemId,
       valueSetsJson: JSON.stringify(json.valueSets || [])
     });
+  }
+
+  async buildInfoPage(source, req) {
+    let html = '';
+    const infoContent = await source.info(req);
+    html += infoContent;
+    return html;
   }
 
   buildSourceOptions(provider) {
