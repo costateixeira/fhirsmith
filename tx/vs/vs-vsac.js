@@ -70,6 +70,8 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
     if (!(await this.database.exists())) {
       await this.database.create();
     } else {
+      // Ensure schema is up to date (e.g. date_first_seen column added after initial deploy)
+      await this.database._migrateIfNeeded(await this.database._getWriteConnection());
       // Load existing data
       await this._reloadMap();
     }
@@ -510,6 +512,52 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
     console.log(logMsg);
     this.stats.task('VSAC Sync', logMsg);
 
+  }
+
+  name() {
+    return "VSAC";
+  }
+
+  infoName() {
+    return "history";
+  }
+
+  async info() {
+    const db = await this.database._getReadConnection();
+    const rows = await new Promise((resolve, reject) => {
+      db.all(
+        `SELECT url, version, date_first_seen
+           FROM valuesets
+          WHERE date_first_seen > 0
+          ORDER BY date_first_seen DESC
+          LIMIT 100`,
+        [],
+        (err, rows) => err ? reject(err) : resolve(rows)
+      );
+    });
+
+    const escape = require('escape-html');
+    let html = '<h3>Recently Value Sets Added to VSAC</h3>';
+    html += '<p>The last ' + rows.length + ' value sets found from VSAC, most recent first.</p>';
+    html += '<table class="grid">';
+    html += '<thead><tr><th>URL</th><th>Version</th><th>Date Observed</th></tr></thead>';
+    html += '<tbody>';
+    for (const row of rows) {
+      const date = row.date_first_seen
+        ? new Date(row.date_first_seen * 1000).toISOString().replace('T', ' ').substring(0, 19) + ' UTC'
+        : 'unknown';
+      html += '<tr>';
+      html += `<td>${escape(row.url || '')}</td>`;
+      html += `<td>${escape(row.version || '')}</td>`;
+      html += `<td>${escape(date)}</td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    return html;
+  }
+
+  id() {
+    return "vsac";
   }
 }
 

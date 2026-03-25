@@ -49,7 +49,8 @@ class Provider {
    */
   conceptMapProviders;
 
-  contentSources;
+  packageSources;
+  externalSources;
 
   baseUrl = null;
   path;

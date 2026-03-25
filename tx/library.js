@@ -65,7 +65,8 @@ class Library {
    */
   conceptMapProviders;
 
-  contentSources = [];
+  packageSources = [];
+  externalSources = [];
 
   baseUrl = null;
   cacheFolder = null;
@@ -360,6 +361,9 @@ class Library {
       const codeSystemProvider = new OCLCodeSystemProvider(config);
       const valueSetProvider = new OCLValueSetProvider(config);
       const conceptMapProvider = new OCLConceptMapProvider(config);
+      this.externalSources.push(codeSystemProvider);
+      this.externalSources.push(valueSetProvider);
+      this.externalSources.push(conceptMapProvider);
       providerSet = {
         config,
         codeSystemProvider,
@@ -470,6 +474,7 @@ class Library {
         let vsac = new VSACValueSetProvider(this.vsacCfg, this.stats);
         vsac.initialize();
         this.valueSetProviders.push(vsac);
+        this.externalSources.push(vsac);
         //const mem = process.memoryUsage();
         let time = Math.floor(Date.now() - this.lastTime).toString().padStart(5)+" ";
         let system = "vsac".padEnd(50);
@@ -597,7 +602,7 @@ class Library {
     const contentLoader = new PackageContentLoader(fullPackagePath);
     await contentLoader.initialize();
 
-    this.contentSources.push(contentLoader.id()+"#"+contentLoader.version());
+    this.packageSources.push(contentLoader.id()+"#"+contentLoader.version());
 
     let cp = new ListCodeSystemProvider();
     const resources = await contentLoader.getResourcesByType("CodeSystem");
@@ -635,7 +640,7 @@ class Library {
     const contentLoader = new PackageContentLoader(fullPackagePath);
     await contentLoader.initialize();
 
-    this.contentSources.push(contentLoader.id()+"#"+contentLoader.version());
+    this.packageSources.push(contentLoader.id()+"#"+contentLoader.version());
 
     let cp = new ListCodeSystemProvider();
     const resources = await contentLoader.getResourcesByType("CodeSystem");
@@ -847,7 +852,8 @@ class Library {
     provider.lastTime = this.lastTime;
     provider.lastMemory = this.lastMemory;
     provider.totalDownloaded = this.totalDownloaded;
-    provider.contentSources = this.contentSources;
+    provider.packageSources = this.packageSources;
+    provider.externalSources = this.externalSources;
 
 
     // Now add the existing value set providers after the FHIR core packages

@@ -23,6 +23,27 @@ class ValueSetDatabase {
   }
 
   /**
+   * Apply any pending schema migrations
+   * @param {sqlite3.Database} db
+   * @returns {Promise<void>}
+   * @private
+   */
+  _migrateIfNeeded(db) {
+    return new Promise((resolve, reject) => {
+      db.all("PRAGMA table_info(valuesets)", [], (err, cols) => {
+        if (err) { reject(err); return; }
+        const hasCol = cols.some(c => c.name === 'date_first_seen');
+        if (hasCol) { resolve(); return; }
+        db.run(
+          "ALTER TABLE valuesets ADD COLUMN date_first_seen INTEGER DEFAULT 0",
+          [],
+          (err) => err ? reject(err) : resolve()
+        );
+      });
+    });
+  }
+
+  /**
    * Get a read-only database connection (opens lazily if needed)
    * @returns {Promise<sqlite3.Database>}
    * @private
@@ -62,7 +83,7 @@ class ValueSetDatabase {
           this._writeDb = null;
           reject(new Error(`Failed to open database for writing: ${err.message}`));
         } else {
-          resolve(this._writeDb);
+          this._migrateIfNeeded(this._writeDb).then(() => resolve(this._writeDb)).catch(reject);
         }
       });
     });
@@ -144,7 +165,8 @@ class ValueSetDatabase {
                                          status TEXT,
                                          title TEXT,
                                          content TEXT NOT NULL,
-                                         last_seen INTEGER DEFAULT (strftime('%s', 'now'))
+                                         last_seen INTEGER DEFAULT (strftime('%s', 'now')),
+                                         date_first_seen INTEGER DEFAULT (strftime('%s', 'now'))
               )
           `);
 
@@ -190,6 +212,7 @@ class ValueSetDatabase {
           db.run('CREATE INDEX idx_valuesets_title ON valuesets(title)');
           db.run('CREATE INDEX idx_valuesets_publisher ON valuesets(publisher)');
           db.run('CREATE INDEX idx_valuesets_last_seen ON valuesets(last_seen)');
+          db.run('CREATE INDEX idx_valuesets_date_first_seen ON valuesets(date_first_seen)');
           db.run('CREATE INDEX idx_identifiers_system ON valueset_identifiers(system)');
           db.run('CREATE INDEX idx_identifiers_value ON valueset_identifiers(value)');
           db.run('CREATE INDEX idx_jurisdictions_system ON valueset_jurisdictions(system)');
@@ -246,10 +269,24 @@ class ValueSetDatabase {
             const expansionId = valueSet.expansion?.identifier || null;
 
             db.run(`
-                INSERT OR REPLACE INTO valuesets (
+                INSERT INTO valuesets (
                 id, url, version, date, description, effectivePeriod_start, effectivePeriod_end,
-                expansion_identifier, name, publisher, status, title, content, last_seen
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'))
+                expansion_identifier, name, publisher, status, title, content, last_seen, date_first_seen
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
+              ON CONFLICT(id) DO UPDATE SET
+                url=excluded.url,
+                version=excluded.version,
+                date=excluded.date,
+                description=excluded.description,
+                effectivePeriod_start=excluded.effectivePeriod_start,
+                effectivePeriod_end=excluded.effectivePeriod_end,
+                expansion_identifier=excluded.expansion_identifier,
+                name=excluded.name,
+                publisher=excluded.publisher,
+                status=excluded.status,
+                title=excluded.title,
+                content=excluded.content,
+                last_seen=strftime('%s', 'now')
             `, [
               valueSet.id,
               valueSet.url,

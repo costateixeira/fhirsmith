@@ -9,7 +9,7 @@ const express = require('express');
 const path = require('path');
 const Logger = require('../library/logger');
 const { Library } = require('./library');
-const { OperationContext, ResourceCache, ExpansionCache } = require('./operation-context');
+const { OperationContext, ResourceCache, ExpansionCache, debugLog} = require('./operation-context');
 const { LanguageDefinitions } = require('../library/languages');
 const { I18nSupport } = require('../library/i18nsupport');
 const { CodeSystemXML } = require('./xml/codesystem-xml');
@@ -965,6 +965,29 @@ class TXModule {
         this.countRequest('home', Date.now() - start);
       }
     });
+
+    // External source info pages
+    router.get('/info/:id', async (req, res) => {
+      const start = Date.now();
+      try {
+        const source = req.txEndpoint.provider.externalSources.find(s => s.id() === req.params.id);
+        if (!source) {
+          res.status(404).send('Not found');
+          return;
+        }
+        let txhtml = new TxHtmlRenderer(new Renderer(req.txOpContext, req.txEndpoint.provider), this.liquid, this.languages, this.i18n, req.txEndpoint.path);
+        const content = await txhtml.buildInfoPage(source, req);
+        const html = await txhtml.renderPage(source.name(), content, req.txEndpoint, start);
+        res.setHeader('Content-Type', 'text/html');
+        res.send(html);
+      } catch (error) {
+        debugLog(error);
+        this.log.error(`Error rendering info page for ${req.params.id}: ${error.message}`);
+        res.status(500).send('Internal server error');
+      } finally {
+        this.countRequest('info', Date.now() - start);
+      }
+    });
   }
 
   /**
@@ -1153,16 +1176,16 @@ class TXModule {
   ec = 0;
 
   checkProperJson() { // jsonStr) {
-                      //   const errors = [];
-                      //   if (jsonStr.includes("[]")) errors.push("Found [] in json");
-                      //   if (jsonStr.includes('""')) errors.push('Found "" in json');
-                      //
-                      //   if (errors.length > 0) {
-                      //     this.ec++;
-                      //     const filename = `/Users/grahamegrieve/temp/tx-err-log/err${this.ec}.json`;
-                      //     writeFileSync(filename, jsonStr);
-                      //     throw new Error(errors.join('; '));
-                      //   }
+    //   const errors = [];
+    //   if (jsonStr.includes("[]")) errors.push("Found [] in json");
+    //   if (jsonStr.includes('""')) errors.push('Found "" in json');
+    //
+    //   if (errors.length > 0) {
+    //     this.ec++;
+    //     const filename = `/Users/grahamegrieve/temp/tx-err-log/err${this.ec}.json`;
+    //     writeFileSync(filename, jsonStr);
+    //     throw new Error(errors.join('; '));
+    //   }
   }
 
   transformResourceForVersion(data, fhirVersion) {
