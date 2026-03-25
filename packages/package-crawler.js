@@ -27,6 +27,25 @@ class PackageCrawler {
     this.db.run('PRAGMA busy_timeout = 5000');
   }
 
+  async isFeedPageVisited(url) {
+    return new Promise((resolve, reject) => {
+      this.db.get('SELECT Url FROM FeedPages WHERE Url = ?', [url], (err, row) => {
+        if (err) reject(err);
+        else resolve(!!row);
+      });
+    });
+  }
+
+  async markFeedPageVisited(url) {
+    return new Promise((resolve, reject) => {
+      this.db.run(
+        'INSERT OR REPLACE INTO FeedPages (Url, VisitedAt) VALUES (?, ?)',
+        [url, new Date().toISOString()],
+        (err) => { if (err) reject(err); else resolve(); }
+      );
+    });
+  }
+
   async crawl(log) {
     this.log = log;
     this.packages.clear();
@@ -151,7 +170,8 @@ class PackageCrawler {
         const parser = new XMLParser({
           ignoreAttributes: false,
           attributeNamePrefix: '@_',
-          textNodeName: '#text'
+          textNodeName: '#text',
+          entityExpansionLimit: 100000
         });
         return parser.parse(content);
       } else {
@@ -166,13 +186,13 @@ class PackageCrawler {
         const parser = new XMLParser({
           ignoreAttributes: false,
           attributeNamePrefix: '@_',
-          textNodeName: '#text'
+          textNodeName: '#text',
+          entityExpansionLimit: 100000
         });
-
         return parser.parse(response.data);
       }
     } catch (error) {
-      debugLog(error);
+      debugLog(`Failed to fetch XML from ${url}: ${error.message}`);
       if (error.response && error.response.status === 429) {
         throw new Error(`RATE_LIMITED: Server returned 429 Too Many Requests for ${url}`);
       }
@@ -200,7 +220,7 @@ class PackageCrawler {
         return Buffer.from(response.data);
       }
     } catch (error) {
-      debugLog(error);
+      debugLog(`Failed to fetch ${url}: ${error.message}`);
       if (error.response && error.response.status === 429) {
         throw new Error(`RATE_LIMITED: Server returned 429 Too Many Requests for ${url}`);
       }
@@ -218,61 +238,95 @@ class PackageCrawler {
     this.log.info('Processing feed: ' + url);
     const startTime = Date.now();
 
-    try {
-      const xmlData = await this.fetchXml(url);
-      feedLog.fetchTime = `${Date.now() - startTime}ms`;
+    // The first page (the root feed URL) is always processed — it contains the
+    // latest packages. Subsequent pages (followed via atom:link rel="next") are
+    // historical archives and only need to be visited once.
+    let currentUrl = url;
+    let isFirstPage = true;
 
-      // Navigate the RSS structure
-      let items = [];
-      if (xmlData.rss && xmlData.rss.channel) {
-        const channel = xmlData.rss.channel;
-        items = Array.isArray(channel.item) ? channel.item : [channel.item].filter(Boolean);
-      }
+    while (currentUrl) {
+      if (this.abortController?.signal.aborted) break;
 
-      this.log.info(`Found ${items.length} items in feed`);
-
-      for (let i = 0; i < items.length; i++) {
-        if (this.abortController?.signal.aborted) break;
-        try {
-          await this.updateItem(url, items[i], i, packageRestrictions, feedLog);
-        } catch (itemError) {
-          // Check if this is a 429 error on package download
-          if (itemError.message.includes('RATE_LIMITED')) {
-            this.log.info(`Rate limited while downloading package from ${url}, stopping feed processing`);
-            feedLog.rateLimited = true;
-            feedLog.rateLimitedAt = `item ${i}`;
-            feedLog.rateLimitMessage = itemError.message;
-            break; // Stop processing this feed
-          }
-          // For other errors, log and continue with next item
-          this.log.error(`Error processing item ${i} from ${url}:` + itemError.message);
+      if (!isFirstPage) {
+        const alreadyVisited = await this.isFeedPageVisited(currentUrl);
+        if (alreadyVisited) {
+          this.log.info(`Feed page already visited, stopping: ${currentUrl}`);
+          break;
         }
       }
 
-      // TODO: Send email if there were errors and email is provided
-      if (this.errors && email && !feedLog.rateLimited) {
-        this.log.info(`Would send error email to ${email} for feed ${url}`);
-      }
+      try {
+        this.log.info(`Fetching feed page: ${currentUrl}`);
+        const xmlData = await this.fetchXml(currentUrl);
+        if (isFirstPage) feedLog.fetchTime = `${Date.now() - startTime}ms`;
 
-    } catch (error) {
-      debugLog(error);
-      // Check if this is a 429 error on feed fetch
-      if (error.message.includes('RATE_LIMITED')) {
-        this.log.info(`Rate limited while fetching feed ${url}, skipping this feed`);
-        feedLog.rateLimited = true;
-        feedLog.rateLimitMessage = error.message;
+        let items = [];
+        let nextUrl = null;
+
+        if (xmlData.rss && xmlData.rss.channel) {
+          const channel = xmlData.rss.channel;
+          items = Array.isArray(channel.item) ? channel.item : [channel.item].filter(Boolean);
+
+          // Check for RFC 5005 next-page link: <atom:link rel="next" href="..."/>
+          const atomLinks = channel['atom:link'];
+          if (atomLinks) {
+            const links = Array.isArray(atomLinks) ? atomLinks : [atomLinks];
+            const nextLink = links.find(l => l['@_rel'] === 'next');
+            if (nextLink && nextLink['@_href']) {
+              nextUrl = this.fixUrl(nextLink['@_href']);
+            }
+          }
+        }
+
+        this.log.info(`Found ${items.length} items in feed page ${currentUrl}`);
+
+        let rateLimited = false;
+        for (let i = 0; i < items.length; i++) {
+          if (this.abortController?.signal.aborted) break;
+          try {
+            await this.updateItem(currentUrl, items[i], i, packageRestrictions, feedLog);
+          } catch (itemError) {
+            if (itemError.message.includes('RATE_LIMITED')) {
+              this.log.info(`Rate limited while downloading package from ${currentUrl}, stopping feed processing`);
+              feedLog.rateLimited = true;
+              feedLog.rateLimitedAt = `item ${i}`;
+              feedLog.rateLimitMessage = itemError.message;
+              rateLimited = true;
+              break;
+            }
+            this.log.error(`Error processing item ${i} from ${currentUrl}:` + itemError.message);
+          }
+        }
+
+        if (rateLimited) break;
+
+        // Mark this page as visited now that we've successfully processed it.
+        // Don't mark the first page — it must always be re-crawled for new entries.
+        if (!isFirstPage) {
+          await this.markFeedPageVisited(currentUrl);
+        }
+
+        currentUrl = nextUrl;
+        isFirstPage = false;
+
+      } catch (error) {
+        debugLog(error);
+        if (error.message.includes('RATE_LIMITED')) {
+          this.log.info(`Rate limited while fetching feed ${currentUrl}, stopping`);
+          feedLog.rateLimited = true;
+          feedLog.rateLimitMessage = error.message;
+          feedLog.failTime = `${Date.now() - startTime}ms`;
+          break;
+        }
+        feedLog.exception = error.message;
         feedLog.failTime = `${Date.now() - startTime}ms`;
-        return; // Skip this feed entirely
+        this.log.error(`Exception processing feed ${currentUrl}:` + error.message);
+        break;
       }
+    }
 
-      feedLog.exception = error.message;
-      feedLog.failTime = `${Date.now() - startTime}ms`;
-      this.log.error(`Exception processing feed ${url}:` + error.message);
-
-      // TODO: Send email notification for non-rate-limit errors
-      if (email) {
-        this.log.info(`Would send exception email to ${email} for feed ${url}`);
-      }
+    if (this.errors && email && !feedLog.rateLimited) {
+      this.log.info(`Would send error email to ${email} for feed ${url}`);
     }
   }
 
@@ -699,6 +753,7 @@ class PackageCrawler {
       };
 
     } catch (error) {
+      console.log(error);
       throw new Error(`Failed to extract NPM package from ${source}: ${error.message}`);
     }
   }

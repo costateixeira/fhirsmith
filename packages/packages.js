@@ -617,6 +617,13 @@ class PackagesModule {
             this.createTables().then(resolve).catch(reject);
           } else {
             pckLog.info('Packages database already exists');
+            // Run migrations for tables added after initial schema
+            this.db.run(`CREATE TABLE IF NOT EXISTS FeedPages (
+              Url TEXT PRIMARY KEY,
+              VisitedAt TEXT NOT NULL
+            )`, (err) => {
+              if (err) pckLog.error('Failed to create FeedPages table:', err.message);
+            });
             resolve();
           }
         }
@@ -692,6 +699,13 @@ class PackagesModule {
              ManualToken          TEXT(64) NOT NULL,
              Email                TEXT(128) NOT NULL,
              Mask                 TEXT(64)
+         )`,
+
+        // FeedPages table - tracks which paginated feed archive pages have been visited
+        `CREATE TABLE FeedPages
+         (
+             Url       TEXT PRIMARY KEY,
+             VisitedAt TEXT NOT NULL
          )`
       ];
 
