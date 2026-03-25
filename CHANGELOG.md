@@ -5,6 +5,30 @@ All notable changes to the Health Intersections Node Server will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.7.6] - 2026-03-25
+
+### Added
+
+- Dashboard endpoint (see dashboard.html)
+- Initial cs-api documentation
+
+### Changed
+
+- Update package crawler to support archived feed entries
+
+### Fixed
+
+- OCL improvements:
+   - Improve multilingual support and caching for non-OCL expansions
+   - cache compose instead of pre-built expansions
+- Fix ConceptMap rendering
+- Ongoing on work on publishing module
+- Tidy up tx-reg to prevent hanging
+
+### Tx Conformance Statement
+
+FHIRsmith passed all 1464 HL7 terminology service tests (modes tx.fhir.org+omop+general+snomed, tests v1.9.1, runner v6.9.3)
+
 ## [v0.7.5] - 2026-03-19
 
 ### Changed
