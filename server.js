@@ -267,6 +267,57 @@ async function loadTemplates() {
   }
 }
 
+async function buildDashboardContent() {
+  // Calculate uptime
+  const uptimeMs = Date.now() - stats.startTime;
+  const uptimeSeconds = Math.floor(uptimeMs / 1000);
+  const uptimeDays = Math.floor(uptimeSeconds / 86400);
+  const uptimeHours = Math.floor((uptimeSeconds % 86400) / 3600);
+  const uptimeMinutes = Math.floor((uptimeSeconds % 3600) / 60);
+  const uptimeSecs = uptimeSeconds % 60;
+  let uptimeStr = '';
+  if (uptimeDays > 0) uptimeStr += `${uptimeDays}d `;
+  if (uptimeHours > 0 || uptimeDays > 0) uptimeStr += `${uptimeHours}h `;
+  if (uptimeMinutes > 0 || uptimeHours > 0 || uptimeDays > 0) uptimeStr += `${uptimeMinutes}m `;
+  uptimeStr += `${uptimeSecs}s`;
+
+  // Memory usage
+  const memUsage = process.memoryUsage();
+  const heapUsedMB = (memUsage.heapUsed / 1024 / 1024).toFixed(2);
+  const heapAvailableMB = ((memUsage.heapTotal - memUsage.heapUsed) / 1024 / 1024).toFixed(2);
+  const rssMB = (memUsage.rss / 1024 / 1024).toFixed(2);
+  const freeMemMB = (os.freemem() / 1024 / 1024).toFixed(0);
+  const totalMemMB = (os.totalmem() / 1024 / 1024).toFixed(0);
+
+  let content = '';
+  content += '<table class="grid">';
+  content += '<tr>';
+  content += `<td><strong>Uptime:</strong> ${escape(uptimeStr)}</td>`;
+  content += `<td><strong>Request Count:</strong> ${stats.requestCount}</td>`;
+  content += `<td><strong>Free Memory:</strong> ${freeMemMB} MB of ${totalMemMB} MB</td>`;
+  content += '</tr>';
+  content += '<tr>';
+  content += `<td><strong>Heap Used:</strong> ${heapUsedMB} MB</td>`;
+  content += `<td><strong>Heap Available:</strong> ${heapAvailableMB} MB</td>`;
+  content += `<td><strong>Process Memory:</strong> ${rssMB} MB</td>`;
+  content += '</tr>';
+  content += getLogStats();
+  content += '</table>';
+
+  // ===== Metrics Graphs =====
+  const liquid = new Liquid({
+    root: path.join(__dirname, 'tx', 'html'),
+    extname: '.liquid'
+  });
+  content += await liquid.renderFile('home-metrics', {
+    historyJson: JSON.stringify(stats.history),
+    startTime: stats.startTime
+  });
+  content += stats.taskDetails();
+
+  return content;
+}
+
 async function buildRootPageContent() {
   stats.requestCount++;
   let mc = 0;
@@ -383,53 +434,7 @@ async function buildRootPageContent() {
   content += '<hr/>';
 
 
-  // Calculate uptime
-  const uptimeMs = Date.now() - stats.startTime;
-  const uptimeSeconds = Math.floor(uptimeMs / 1000);
-  const uptimeDays = Math.floor(uptimeSeconds / 86400);
-  const uptimeHours = Math.floor((uptimeSeconds % 86400) / 3600);
-  const uptimeMinutes = Math.floor((uptimeSeconds % 3600) / 60);
-  const uptimeSecs = uptimeSeconds % 60;
-  let uptimeStr = '';
-  if (uptimeDays > 0) uptimeStr += `${uptimeDays}d `;
-  if (uptimeHours > 0 || uptimeDays > 0) uptimeStr += `${uptimeHours}h `;
-  if (uptimeMinutes > 0 || uptimeHours > 0 || uptimeDays > 0) uptimeStr += `${uptimeMinutes}m `;
-  uptimeStr += `${uptimeSecs}s`;
-
-  // Memory usage
-  const memUsage = process.memoryUsage();
-  const heapUsedMB = (memUsage.heapUsed / 1024 / 1024).toFixed(2);
-  const heapTotalMB = (memUsage.heapTotal / 1024 / 1024).toFixed(2);
-  const rssMB = (memUsage.rss / 1024 / 1024).toFixed(2);
-  const freeMemMB = (os.freemem() / 1024 / 1024).toFixed(0);
-  const totalMemMB = (os.totalmem() / 1024 / 1024).toFixed(0);
-
-  content += '<table class="grid">';
-  content += '<tr>';
-  content += `<td><strong>Uptime:</strong> ${escape(uptimeStr)}</td>`;
-  content += `<td><strong>Request Count:</strong> ${stats.requestCount}</td>`;
-  content += `<td><strong>Free Memory:</strong> ${freeMemMB} MB of ${totalMemMB} MB</td>`;
-  content += '</tr>';
-  content += '<tr>';
-  content += `<td><strong>Heap Used:</strong> ${heapUsedMB} MB</td>`;
-  content += `<td><strong>Heap Total:</strong> ${heapTotalMB} MB</td>`;
-  content += `<td><strong>Process Memory:</strong> ${rssMB} MB</td>`;
-  content += '</tr>';
-  content += getLogStats();
-  content += '</table>';
-
-
-  // ===== Metrics Graphs =====
-
-  const liquid = new Liquid({
-    root: path.join(__dirname, 'tx', 'html'),
-    extname: '.liquid'
-  });
-  content += await liquid.renderFile('home-metrics', {
-    historyJson: JSON.stringify(stats.history),
-    startTime: stats.startTime
-  });
-  content += stats.taskDetails();
+  content += await buildDashboardContent();
 
   content += '</div>';
   return content;
@@ -467,6 +472,10 @@ app.get('/', async (req, res) => {
       if (!htmlServer.hasTemplate('root')) {
         const templatePath = path.join(__dirname, 'root-template.html');
         htmlServer.loadTemplate('root', templatePath);
+      }
+      if (!htmlServer.hasTemplate('root-bare')) {
+        const templatePath = path.join(__dirname, 'root-bare-template.html');
+        htmlServer.loadTemplate('root-bare', templatePath);
       }
 
       const content = await buildRootPageContent();
@@ -517,6 +526,35 @@ if (config.server?.webBase) {
   });
 }
 app.use(express.static(path.join(__dirname, 'static')));
+
+// Dashboard endpoint - server name, stats, graphs, and background tasks (no modules list)
+app.get('/dashboard', async (req, res) => {
+  stats.requestCount++;
+  try {
+    if (!htmlServer.hasTemplate('root-bare')) {
+      const templatePath = path.join(__dirname, 'root-bare-template.html');
+      htmlServer.loadTemplate('root-bare', templatePath);
+    }
+
+    const startTime = Date.now();
+    const dashContent = await buildDashboardContent();
+    const content = '<div class="row mb-4"><div class="col-12">' + dashContent + '</div></div>';
+
+    const pageStats = {
+      version: packageJson.version,
+      enabledModules: Object.keys(config.modules).filter(m => config.modules[m].enabled).length,
+      processingTime: Date.now() - startTime
+    };
+
+    const title = (config.hostName ? escape(config.hostName) : 'FHIRsmith Server')+' v'+packageJson.version;
+    const html = htmlServer.renderPage('root-bare', title, content, pageStats);
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+  } catch (error) {
+    serverLog.error('Error rendering dashboard:', error);
+    htmlServer.sendErrorResponse(res, 'root', error);
+  }
+});
 
 // Health check endpoint
 app.get('/health', async (req, res) => {
