@@ -1,6 +1,8 @@
 # TX-Import: Medical Terminology Import Tool
 
-A comprehensive CLI tool for importing various medical terminology standards into SQLite databases and other formats. The tool supports LOINC, SNOMED CT, UNII, NDC, and provides extensible architecture for additional terminologies.
+A comprehensive CLI tool for importing various medical terminology standards into SQLite databases and other formats
+for use by FHIRsmith. The tool supports LOINC, SNOMED CT, UNII, NDC, and provides extensible architecture for
+additional terminologies.
 
 ## Table of Contents
 

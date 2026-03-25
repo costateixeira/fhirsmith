@@ -296,7 +296,7 @@ class PublisherModule {
 
   // Background Task Processing
   startTaskProcessor() {
-    const pollInterval = this.config.pollInterval || 5000; // Default 5 seconds
+    const pollInterval = this.config.pollInterval || 5000;
 
     this.logger.info('Starting task processor with ' + pollInterval + 'ms poll interval');
     this.isProcessingStarted = null;
@@ -304,11 +304,10 @@ class PublisherModule {
     this.taskProcessor = setInterval(async () => {
       if (this.shutdownRequested) return;
 
-      // Safety net: if isProcessing has been true for more than 60 minutes, reset it
       if (this.isProcessing) {
         const stuckMs = this.isProcessingStarted ? Date.now() - this.isProcessingStarted : 0;
         if (stuckMs > 60 * 60 * 1000) {
-          this.logger.warn('Task processor appears stuck (isProcessing for ' + Math.round(stuckMs / 60000) + ' min) — resetting');
+          this.logger.warn('Task processor appears stuck (' + Math.round(stuckMs / 60000) + ' min) — resetting');
           this.isProcessing = false;
         } else {
           return;
@@ -1123,8 +1122,11 @@ class PublisherModule {
                 content += '</form>';
               }
             } else {
-              if (task.build_output_path) {
+              if (task.build_output_path || task.local_folder) {
                 content += '<a href="/publisher/tasks/' + task.id + '/output" class="btn btn-sm btn-outline-info me-1">View Output</a>';
+              }
+              if (task.announcement) {
+                content += '<a href="/publisher/tasks/' + task.id + '/history" class="btn btn-sm btn-outline-success me-1">📢 Announcement</a>';
               }
               if (task.failure_reason) {
                 content += '<span class="text-danger small me-1">' + escape(task.failure_reason) + '</span>';
@@ -1326,38 +1328,21 @@ class PublisherModule {
       try {
         const taskId = req.params.id;
         const task = await this.getTask(taskId);
-
-        if (!task) {
-          return res.status(404).send('Task not found');
-        }
-
-        if (task.status !== 'failed') {
-          return res.status(400).send('Only failed tasks can be retried');
-        }
-
+        if (!task) return res.status(404).send('Task not found');
+        if (task.status !== 'failed') return res.status(400).send('Only failed tasks can be retried');
         const canQueue = await this.userCanQueue(req.session.userId, task.website_id);
-        if (!canQueue) {
-          return res.status(403).send('You do not have permission to queue tasks for this website');
-        }
-
+        if (!canQueue) return res.status(403).send('You do not have permission to queue tasks for this website');
         const existingTask = await this.findActiveTask(task.npm_package_id, task.version);
-        if (existingTask) {
-          return res.status(400).send('An active task for this package and version is already in progress.');
-        }
-
+        if (existingTask) return res.status(400).send('An active task for this package and version is already in progress.');
         const newTaskId = await new Promise((resolve, reject) => {
           this.db.run(
             'INSERT INTO tasks (user_id, website_id, github_org, github_repo, git_branch, npm_package_id, version) VALUES (?, ?, ?, ?, ?, ?, ?)',
             [req.session.userId, task.website_id, task.github_org, task.github_repo, task.git_branch, task.npm_package_id, task.version],
-            function (err) {
-              if (err) reject(err);
-              else resolve(this.lastID);
-            }
+            function (err) { if (err) reject(err); else resolve(this.lastID); }
           );
         });
-
         this.logUserAction(req.session.userId, 'retry_task', newTaskId.toString(), req.ip);
-        this.logger.info('Task retried: new ID=' + newTaskId + ' from task #' + taskId + ' (' + task.npm_package_id + '#' + task.version + ') by user ' + req.session.userId);
+        this.logger.info('Task retried: new ID=' + newTaskId + ' from task #' + taskId);
         res.redirect('/publisher/tasks/' + newTaskId + '/history');
       } catch (error) {
         this.logger.error('Error retrying task:', error);
@@ -1432,6 +1417,13 @@ class PublisherModule {
               content += '<div class="' + levelClass + '">[' + timestamp + '] [' + log.level.toUpperCase() + '] ' + log.message + '</div>';
             });
             content += '</div>';
+          }
+
+          // Announcement section
+          if (task.announcement) {
+            content += '<h4>Announcement</h4>';
+            content += '<button onclick="navigator.clipboard.writeText(document.getElementById(\'announcement-text\').innerText)" class="btn btn-sm btn-outline-secondary mb-2">Copy to clipboard</button>';
+            content += '<div id="announcement-text" class="output-viewer" style="white-space: pre-wrap;">' + escape(task.announcement) + '</div>';
           }
 
           // Build log section
@@ -1562,8 +1554,11 @@ class PublisherModule {
         // Announcement section (for completed publications)
         if (task.announcement) {
           content += '<div class="card mb-4"><div class="card-body">';
-          content += '<h5>Announcement</h5>';
-          content += '<pre class="mb-0" style="white-space: pre-wrap;">' + escape(task.announcement) + '</pre>';
+          content += '<div class="d-flex justify-content-between align-items-center mb-2">';
+          content += '<h5 class="mb-0">Announcement</h5>';
+          content += '<button onclick="navigator.clipboard.writeText(document.getElementById(\'hist-announcement\').innerText)" class="btn btn-sm btn-outline-secondary">Copy to clipboard</button>';
+          content += '</div>';
+          content += '<pre id="hist-announcement" class="mb-0" style="white-space: pre-wrap;">' + escape(task.announcement) + '</pre>';
           content += '</div></div>';
         }
 
@@ -1663,7 +1658,7 @@ class PublisherModule {
         // Links at the bottom
         content += '<div class="mt-3">';
         if (task.build_output_path || task.local_folder) {
-          content += '<a href="/publisher/tasks/' + task.id + '/output" class="btn btn-outline-info me-2">View Build Output</a>';
+          content += '<a href="/publisher/tasks/' + task.id + '/output" class="btn btn-outline-info me-2">View Output</a>';
         }
         if (task.status === 'waiting for approval') {
           content += '<a href="/publisher/tasks/' + task.id + '/qa" class="btn btn-outline-secondary me-2">View QA Report</a>';

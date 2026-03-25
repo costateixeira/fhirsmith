@@ -4142,6 +4142,22 @@ describe('exclude', () => {
     await runTest({"suite":"exclude","test":"include-combo"}, "4.0");
   });
 
+  it('exclude-genderR5', async () => {
+    await runTest({"suite":"exclude","test":"exclude-gender"}, "5.0");
+  });
+
+  it('exclude-genderR4', async () => {
+    await runTest({"suite":"exclude","test":"exclude-gender"}, "4.0");
+  });
+
+  it('exclude-gender2R5', async () => {
+    await runTest({"suite":"exclude","test":"exclude-gender2"}, "5.0");
+  });
+
+  it('exclude-gender2R4', async () => {
+    await runTest({"suite":"exclude","test":"exclude-gender2"}, "4.0");
+  });
+
 });
 
 describe('search', () => {
@@ -5513,6 +5529,38 @@ describe('bugs', () => {
 
   it('x12-badR4', async () => {
     await runTest({"suite":"bugs","test":"x12-bad"}, "4.0");
+  });
+
+  it('3166-aR5', async () => {
+    await runTest({"suite":"bugs","test":"3166-a"}, "5.0");
+  });
+
+  it('3166-aR4', async () => {
+    await runTest({"suite":"bugs","test":"3166-a"}, "4.0");
+  });
+
+  it('3166-bR5', async () => {
+    await runTest({"suite":"bugs","test":"3166-b"}, "5.0");
+  });
+
+  it('3166-bR4', async () => {
+    await runTest({"suite":"bugs","test":"3166-b"}, "4.0");
+  });
+
+  it('3166-cR5', async () => {
+    await runTest({"suite":"bugs","test":"3166-c"}, "5.0");
+  });
+
+  it('3166-cR4', async () => {
+    await runTest({"suite":"bugs","test":"3166-c"}, "4.0");
+  });
+
+  it('3166-dR5', async () => {
+    await runTest({"suite":"bugs","test":"3166-d"}, "5.0");
+  });
+
+  it('3166-dR4', async () => {
+    await runTest({"suite":"bugs","test":"3166-d"}, "4.0");
   });
 
 });

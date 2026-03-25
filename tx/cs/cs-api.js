@@ -9,6 +9,9 @@ const {validateParameter, validateArrayParameter} = require("../../library/utili
 const {I18nSupport} = require("../../library/i18nsupport");
 const {VersionUtilities} = require("../../library/version-utilities");
 
+/**
+ * For documentation, see cs-api.md
+ */
 class FilterExecutionContext {
   filters = [];
   forIterate = false;

@@ -17,6 +17,14 @@ This server provides a set of server-side services that are useful for the FHIR 
 * [VCL](vcl/readme.md) - **Parse VCL expressions** into FHIR ValueSet resources for http://fhir.org/vcl
 * (Coming) Token services
 
+## Summary Statement
+
+* Maintainers: Grahame Grieve, Italo Macêdo, Josh Mandel, Jose Costa Teixeira 
+* Issues / Discussion: Use github issues
+* License: BSD-3
+* Contribution Policy: Make PRs. PRs have to pass all the tests 
+* Security Information: See [security.md](security.md)
+ 
 ## Build Status
 ![CI Build](https://github.com/HealthIntersections/fhirsmith/actions/workflows/ci.yml/badge.svg)
 [![Release](https://img.shields.io/github/v/release/HealthIntersections/fhirsmith?include_prereleases)](https://github.com/HealthIntersections/fhirsmith/releases)
