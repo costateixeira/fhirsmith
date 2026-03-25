@@ -548,6 +548,7 @@ app.get('/dashboard', async (req, res) => {
 
     const title = (config.hostName ? escape(config.hostName) : 'FHIRsmith Server')+' v'+packageJson.version;
     const html = htmlServer.renderPage('root-bare', title, content, pageStats);
+    res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'text/html');
     res.send(html);
   } catch (error) {
