@@ -293,7 +293,7 @@ async function buildDashboardContent() {
   content += '<table class="grid">';
   content += '<tr>';
   content += `<td><strong>Uptime:</strong> ${escape(uptimeStr)}</td>`;
-  content += `<td><strong>Request Count:</strong> ${stats.requestCount}</td>`;
+  content += `<td><strong>Request Count:</strong> ${stats.requestCount} (static: ${stats.staticRequestCount})</td>`;
   content += `<td><strong>Free Memory:</strong> ${freeMemMB} MB of ${totalMemMB} MB</td>`;
   content += '</tr>';
   content += '<tr>';
@@ -512,6 +512,15 @@ app.get('/', async (req, res) => {
 app.get('/fhirsmith', (req, res) => serveFhirsmithHome(req, res));
 
 // Serve static files
+// Count static file hits separately from API/page requests
+app.use((req, res, next) => {
+  res.on('finish', () => {
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      stats.staticRequestCount++;
+    }
+  });
+  next();
+});
 if (config.server?.webBase) {
   const overrideDir = path.resolve(config.server.webBase);
   app.use((req, res, next) => {
@@ -548,7 +557,6 @@ app.get('/dashboard', async (req, res) => {
 
     const title = (config.hostName ? escape(config.hostName) : 'FHIRsmith Server')+' v'+packageJson.version;
     const html = htmlServer.renderPage('root-bare', title, content, pageStats);
-    res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'text/html');
     res.send(html);
   } catch (error) {

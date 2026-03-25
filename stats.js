@@ -5,6 +5,7 @@ const escape = require('escape-html');
 class ServerStats {
   started = false;
   requestCount = 0;
+  staticRequestCount = 0;
   requestTime = 0;
   // Collect metrics every 10 minutes
   intervalMs = 10 * 60 * 1000;
@@ -27,7 +28,8 @@ class ServerStats {
       const now = Date.now();
 
       const currentMem = process.memoryUsage().heapUsed;
-      const requestsDelta = this.requestCount - this.requestCountSnapshot;
+      const combinedCount = this.requestCount + this.staticRequestCount;
+      const requestsDelta = combinedCount - this.requestCountSnapshot;
       const requestsTat = requestsDelta > 0 ? this.requestTime / requestsDelta : 0;
       const minutesSinceStart = this.history.length > 1
         ? this.intervalMs / 60000
@@ -38,7 +40,7 @@ class ServerStats {
       const idleDelta = currentCpu.idle - this.lastUsage.idle;
       const totalDelta = currentCpu.total - this.lastUsage.total;
       const percent = totalDelta > 0 ? 100 * (1 - idleDelta / totalDelta) : 0;
-      
+
       const loopDelay = this.eventLoopMonitor.mean / 1e6;
       let cacheCount = 0;
       for (let m of this.cachingModules) {
@@ -48,11 +50,11 @@ class ServerStats {
       this.history.push({time: now, mem: currentMem - this.startMem, rpm: requestsPerMin, tat: requestsTat, cpu: percent, block: loopDelay, cache : cacheCount});
 
       this.eventLoopMonitor.reset();
-      this.requestCountSnapshot = this.requestCount;
+      this.requestCountSnapshot = combinedCount;
       this.requestTime = 0;
       this.lastTime = now;
       this.lastUsage = currentCpu;
-      
+
       // Prune old data (keep 24 hours)
       const cutoff = now - (24 * 60 * 60 * 1000); // 24 hours ago
       this.history = this.history.filter(m => m.time > cutoff);
