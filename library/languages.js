@@ -455,6 +455,16 @@ class Languages {
     return true;
   }
 
+  includesLanguage(code) {
+    const llang = new Language(code);
+    for (const lang of this.languages) {
+      if (lang.matches(llang)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /**
    * Convert to string representation (similar to Accept-Language header format)
    */
