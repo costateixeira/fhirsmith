@@ -4461,6 +4461,14 @@ describe('tx.fhir.org', () => {
     await runTest({"suite":"tx.fhir.org","test":"loinc-expand-status"}, "4.0");
   });
 
+  it('loinc-expand-parentR5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"loinc-expand-parent"}, "5.0");
+  });
+
+  it('loinc-expand-parentR4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"loinc-expand-parent"}, "4.0");
+  });
+
   it('loinc-expand-class-regexR5', async () => {
     await runTest({"suite":"tx.fhir.org","test":"loinc-expand-class-regex"}, "5.0");
   });
@@ -4715,6 +4723,134 @@ describe('tx.fhir.org', () => {
 
   it('loinc-expand-filter-answer-listR4', async () => {
     await runTest({"suite":"tx.fhir.org","test":"loinc-expand-filter-answer-list"}, "4.0");
+  });
+
+  it('snomed-expand-activeR5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-expand-active"}, "5.0");
+  });
+
+  it('snomed-expand-activeR4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-expand-active"}, "4.0");
+  });
+
+  it('snomed-expand-inactiveR5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-expand-inactive"}, "5.0");
+  });
+
+  it('snomed-expand-inactiveR4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-expand-inactive"}, "4.0");
+  });
+
+  it('snomed-expand-inactive2R5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-expand-inactive2"}, "5.0");
+  });
+
+  it('snomed-expand-inactive2R4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-expand-inactive2"}, "4.0");
+  });
+
+  it('snomed-expand-moduleid-1R5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-expand-moduleid-1"}, "5.0");
+  });
+
+  it('snomed-expand-moduleid-1R4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-expand-moduleid-1"}, "4.0");
+  });
+
+  it('snomed-expand-moduleid-2R5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-expand-moduleid-2"}, "5.0");
+  });
+
+  it('snomed-expand-moduleid-2R4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-expand-moduleid-2"}, "4.0");
+  });
+
+  it('snomed-expand-moduleid-3R5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-expand-moduleid-3"}, "5.0");
+  });
+
+  it('snomed-expand-moduleid-3R4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-expand-moduleid-3"}, "4.0");
+  });
+
+  it('snomed-expand-moduleid-4R5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-expand-moduleid-4"}, "5.0");
+  });
+
+  it('snomed-expand-moduleid-4R4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-expand-moduleid-4"}, "4.0");
+  });
+
+  it('snomed-expand-property-1R5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-expand-property-1"}, "5.0");
+  });
+
+  it('snomed-expand-property-1R4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-expand-property-1"}, "4.0");
+  });
+
+  it('snomed-validate-active-badR5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-validate-active-bad"}, "5.0");
+  });
+
+  it('snomed-validate-active-badR4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-validate-active-bad"}, "4.0");
+  });
+
+  it('snomed-validate-active-goodR5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-validate-active-good"}, "5.0");
+  });
+
+  it('snomed-validate-active-goodR4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-validate-active-good"}, "4.0");
+  });
+
+  it('snomed-validate-inactive-badR5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-validate-inactive-bad"}, "5.0");
+  });
+
+  it('snomed-validate-inactive-badR4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-validate-inactive-bad"}, "4.0");
+  });
+
+  it('snomed-validate-inactive-goodR5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-validate-inactive-good"}, "5.0");
+  });
+
+  it('snomed-validate-inactive-goodR4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-validate-inactive-good"}, "4.0");
+  });
+
+  it('snomed-validate-moduleid-badR5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-validate-moduleid-bad"}, "5.0");
+  });
+
+  it('snomed-validate-moduleid-badR4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-validate-moduleid-bad"}, "4.0");
+  });
+
+  it('snomed-validate-moduleid-goodR5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-validate-moduleid-good"}, "5.0");
+  });
+
+  it('snomed-validate-moduleid-goodR4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-validate-moduleid-good"}, "4.0");
+  });
+
+  it('snomed-validate-property-badR5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-validate-property-bad"}, "5.0");
+  });
+
+  it('snomed-validate-property-badR4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-validate-property-bad"}, "4.0");
+  });
+
+  it('snomed-validate-property-goodR5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-validate-property-good"}, "5.0");
+  });
+
+  it('snomed-validate-property-goodR4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-validate-property-good"}, "4.0");
   });
 
 });
