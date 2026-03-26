@@ -269,7 +269,6 @@ async function loadTemplates() {
 
 async function buildRootPageContent() {
   stats.requestCount++;
-  let mc = 0;
   let content = '<div class="row mb-4">';
   content += '<div class="col-12">';
 
@@ -278,35 +277,30 @@ async function buildRootPageContent() {
 
   // Check which modules are enabled and add them to the list
   if (config.modules.packages.enabled) {
-    mc++;
     content += '<li class="list-group-item">';
     content += '<a href="/packages" class="text-decoration-none">Package Server</a>: Browse and download FHIR Implementation Guide packages';
     content += '</li>';
   }
 
   if (config.modules.xig.enabled) {
-    mc++;
     content += '<li class="list-group-item">';
     content += '<a href="/xig" class="text-decoration-none">FHIR IG Statistics</a>: Statistics and analysis of FHIR Implementation Guides';
     content += '</li>';
   }
 
   if (config.modules.shl.enabled) {
-    mc++;
     content += '<li class="list-group-item">';
     content += '<a href="/shl" class="text-decoration-none">SHL Server</a>: SMART Health Links management and validation';
     content += '</li>';
   }
 
   if (config.modules.vcl.enabled) {
-    mc++;
     content += '<li class="list-group-item">';
     content += '<a href="/VCL" class="text-decoration-none">VCL Server</a>: ValueSet Compose Language expression parsing';
     content += '</li>';
   }
 
   if (config.modules.registry && config.modules.registry.enabled) {
-    mc++;
     content += '<li class="list-group-item">';
     content += '<a href="/tx-reg" class="text-decoration-none">Terminology Server Registry</a>: ';
     content += 'Discover and query FHIR terminology servers for code system and value set support';
@@ -314,7 +308,6 @@ async function buildRootPageContent() {
   }
 
   if (config.modules.publisher && config.modules.publisher.enabled) {
-    mc++;
     content += '<li class="list-group-item">';
     content += '<a href="/publisher" class="text-decoration-none">FHIR Publisher</a>: ';
     content += 'Manage FHIR Implementation Guide publication tasks and approvals';
@@ -322,7 +315,6 @@ async function buildRootPageContent() {
   }
 
   if (config.modules.token && config.modules.token.enabled) {
-    mc++;
     content += '<li class="list-group-item">';
     content += '<a href="/token" class="text-decoration-none">Token Server</a>: ';
     content += 'OAuth authentication and API key management for FHIR services';
@@ -330,7 +322,6 @@ async function buildRootPageContent() {
   }
 
   if (config.modules.npmprojector && config.modules.npmprojector.enabled) {
-    mc++;
     content += '<li class="list-group-item">';
     content += '<a href="/npmprojector" class="text-decoration-none">NpmProjector</a>: ';
     content += 'Hot-reloading FHIR server with FHIRPath-based search indexes';
@@ -338,7 +329,6 @@ async function buildRootPageContent() {
   }
 
   if (config.modules?.['ext-tracker']?.enabled) {
-    mc++;
     content += '<li class="list-group-item">';
     content += '<a href="/ext-tracker" class="text-decoration-none">Extension Tracker</a>: ';
     content += 'View of Extension Usage';
@@ -353,7 +343,6 @@ async function buildRootPageContent() {
     content += '<ul class="mt-2 mb-0">';
     for (const fc of folders) {
       if (fc.enabled === false) continue;
-      mc++;
       content += '<li>';
       content += `<a href="${fc.url}" class="text-decoration-none">${fc.name}</a>: `;
       content += 'File folder with write control';
@@ -370,7 +359,6 @@ async function buildRootPageContent() {
     if (config.modules.tx.endpoints && config.modules.tx.endpoints.length > 0) {
       content += '<ul class="mt-2 mb-0">';
       for (const endpoint of config.modules.tx.endpoints) {
-        mc++;
         content += `<li><a href="${endpoint.path}" class="text-decoration-none">${endpoint.path}</a> (FHIR v${endpoint.fhirVersion}${endpoint.context ? ', context: ' + endpoint.context : ''})</li>`;
       }
       content += '</ul>';
