@@ -13,7 +13,7 @@ sources:
   - ucum:tx/data/ucum-essence.xml
   - loinc:loinc-2.77-a.db
   - loinc!:loinc-2.81-b.db
-  - rxnorm:rxnorm_02032025-a.db
+  - rxnorm:rxnorm_03022026.db
   - ndc:ndc-20211101.db
   - unii:unii_20240622.db
   - snomed:sct_intl_20240201.cache
