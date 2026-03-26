@@ -581,10 +581,15 @@ class SnomedConceptList {
     return { found: result, index };
   }
 
+  getConceptByCount(index) {
+    return this.getConcept(index * SnomedConceptList.CONCEPT_SIZE);
+  }
+
   getConcept(index) {
     this.#checkPostBuildAccess(index);
 
     return {
+      index : index,
       identity: this.master.readBigUInt64LE(index + 0),
       flags: this.master.readUInt8(index + 8),
       parents: this.master.readUInt32LE(index + 9),

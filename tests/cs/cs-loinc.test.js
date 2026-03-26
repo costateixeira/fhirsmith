@@ -5,7 +5,7 @@ const { LoincDataMigrator } = require('../../tx/importers/import-loinc.module');
 const { LoincServices, LoincServicesFactory, LoincProviderContext } = require('../../tx/cs/cs-loinc');
 const { OperationContext } = require('../../tx/operation-context');
 const {validateParameter} = require("../../library/utilities");
-const {Designations} = require("../../tx/library/designations");
+const {Designations, SearchFilterText} = require("../../tx/library/designations");
 const {TestUtilities} = require("../test-utilities");
 const folders = require('../../library/folder-setup');
 
@@ -812,6 +812,15 @@ describe('LOINC Provider', () => {
 
         // console.log(`✓ Copyright filter "${testCase.value}": ${size} results`);
       }
+    });
+
+    test('should support text filtering', async () => {
+      const filterContext = await provider.getPrepContext(true);
+      await provider.searchFilter(filterContext, new SearchFilterText('Bilirubin'), true);
+      const filters = await provider.executeFilters(filterContext);
+      const filter = filters[0];
+      const size = await provider.filterSize(filterContext, filter);
+      expect(size).toBeGreaterThanOrEqual(0);
     });
   });
 

@@ -371,6 +371,29 @@ class SnomedServices {
     return result;
   }
 
+  filterInactive(state) {
+    const result = new SnomedFilterContext();
+    result.inactive = state;
+    return result;
+  }
+
+  filterModuleId(id) {
+    const result = new SnomedFilterContext();
+    let concept = this.concepts.findConcept(id);
+    result.moduleId = concept.index;
+    return result;
+  }
+
+  filterByProperty(prop, value) {
+    const result = new SnomedFilterContext();
+    let p = this.concepts.findConcept(prop);
+    let v = this.concepts.findConcept(value);
+    result.propProp = p.index;
+    result.propValue = v.index;
+    return result;
+
+  }
+
   searchFilter(searchText, includeInactive = false, exactMatch = false) {
     const result = new SnomedFilterContext();
 
@@ -765,6 +788,12 @@ class SnomedProvider extends BaseCSServices {
           this._addCodeProperty(params, 'property', 'child', code, null, description);
         }
 
+        const moduleId = this.sct.concepts.getModuleId(ctxt.getReference());
+        if (moduleId) {
+          const code = this.sct.getConceptId(moduleId);
+          this._addCodeProperty(params, 'property', 'module', code, null, null);
+        }
+
         const relationships = this.sct.getConceptRelationships(ctxt.getReference());
         let set = new Set();
         for (let relationshipRef of relationships) {
@@ -812,8 +841,23 @@ class SnomedProvider extends BaseCSServices {
         return this.sct.conceptExists(value);
       }
     }
+    if (prop === 'inactive') {
+      return op === '=' && ['true', 'false'].includes(value);
+    }
+
+    if (prop === 'moduleId') {
+      const id = this.sct.stringToIdOrZero(value);
+      return id !== 0n && op === '=';
+    }
+
     if (prop == 'expressions' && op == '=' && ['true', 'false'].includes(value)) {
       return true;
+    }
+
+    const cid = this.sct.stringToIdOrZero(prop);
+    if (cid != 0) {
+      const id = this.sct.stringToIdOrZero(value);
+      return id !== 0n && op === '=';
     }
 
     return false;
@@ -851,7 +895,38 @@ class SnomedProvider extends BaseCSServices {
           return null;
         }
         default:
-          throw new Error(`Unsupported filter operation: ${op}`);
+          throw new Error(`Unsupported filter operation: concept ${op} ${value}`);
+      }
+    }
+
+    if (prop === 'inactive') {
+      if (value !== 'true' && value !== 'false') {
+        throw new Error(`Invalid filter value: ${value}`);
+      }
+
+      switch (op) {
+        case '=': {
+          filterContext.filters.push(this.sct.filterInactive(value === 'true'));
+          return null;
+        }
+        default:
+          throw new Error(`Unsupported filter operation: inactive ${op} ${value}`);
+      }
+    }
+
+    if (prop === 'moduleId') {
+      const id = this.sct.stringToIdOrZero(value);
+      if (id === 0n) {
+        throw new Error(`Invalid concept ID: ${value}`);
+      }
+
+      switch (op) {
+        case '=': {
+          filterContext.filters.push(this.sct.filterModuleId(id));
+          return null;
+        }
+        default:
+          throw new Error(`Unsupported filter operation: moduleId ${op} ${value}`);
       }
     }
 
@@ -860,6 +935,24 @@ class SnomedProvider extends BaseCSServices {
       filter.expressions = value == 'true';
       filterContext.filters.push(filter);
       return null;
+    }
+
+    const cid = this.sct.stringToIdOrZero(prop);
+    if (cid != 0) {
+
+      const id = this.sct.stringToIdOrZero(value);
+      if (id === 0n) {
+        throw new Error(`Invalid concept ID: ${value}`);
+      }
+
+      switch (op) {
+        case '=': {
+          filterContext.filters.push(this.sct.filterByProperty(cid, id));
+          return null;
+        }
+        default:
+          throw new Error(`Unsupported filter operation: ${prop} ${op} ${value}`);
+      }
     }
 
     throw new Error(`Unsupported filter property: ${prop}`);
@@ -893,7 +986,7 @@ class SnomedProvider extends BaseCSServices {
 
   async filterMore(filterContext, set) {
     set.cursor = set.cursor || 0;
-
+    this.#ensurePopulated(set);
     const size = await this.filterSize(filterContext, set);
     return set.cursor < size;
   }
@@ -927,12 +1020,27 @@ class SnomedProvider extends BaseCSServices {
     }
 
     const ctxt = conceptResult.context;
-
-
     const reference = ctxt.getReference();
     let found = false;
 
-    if (set.matches && set.matches.length > 0) {
+    if (set.inactive !== undefined) {
+      let concept = this.sct.concepts.getConcept(reference);
+      let active = (concept.flags & 0x0F) === 0;
+      found = active !== set.inactive
+    } else if (set.moduleId) {
+      let concept = this.sct.concepts.getConcept(reference);
+      let moduleId = this.sct.concepts.getModuleId(concept.index);
+      found = moduleId === set.moduleId;
+    } else if (set.propProp || set.propValue) {
+      found = false;
+      const relationships = this.sct.getConceptRelationships(reference);
+      for (let relationshipRef of relationships) {
+        const relationship = this.sct.relationships.getRelationship(relationshipRef);
+        if (set.propProp === relationship.relType && set.propValue === relationship.target) {
+          found = true;
+        }
+      }
+    } else if (set.matches && set.matches.length > 0) {
       found = set.matches.some(m => m.index === reference);
     } else if (set.members && set.members.length > 0) {
       found = set.members.some(m => m.ref === reference);
@@ -958,6 +1066,23 @@ class SnomedProvider extends BaseCSServices {
     }
 
     const reference = concept.getReference();
+    if (set.inactive !== undefined) {
+      return this.sct.isActive(reference) !== set.inactive;
+    }
+
+    if (set.moduleId) {
+      return this.sct.concepts.getModuleId(reference) === set.moduleId;
+    }
+
+    if (set.propProp || set.propValue) {
+      const relationships = this.sct.getConceptRelationships(reference);
+      for (let relationshipRef of relationships) {
+        const relationship = this.sct.relationships.getRelationship(relationshipRef);
+        if (set.propProp === relationship.relType && set.propValue === relationship.target) {
+          return true;
+        }
+      }
+    }
 
     if (set.matches && set.matches.length > 0) {
       return set.matches.some(m => m.index === reference);
@@ -970,6 +1095,42 @@ class SnomedProvider extends BaseCSServices {
     return false;
   }
 
+  #ensurePopulated(set) {
+    if (set.populationDone) {
+      return;
+    }
+    if (set.inactive !== undefined && set.descendants.length === 0) {
+      for (let i = 0; i < this.sct.concepts.count(); i++) {
+        let concept = this.sct.concepts.getConceptByCount(i);
+        let active = (concept.flags & 0x0F) === 0;
+        if (active !== set.inactive) {
+          set.descendants.push(concept.index);
+        }
+      }
+    }
+    if (set.moduleId) {
+      for (let i = 0; i < this.sct.concepts.count(); i++) {
+        let concept = this.sct.concepts.getConceptByCount(i);
+        let moduleId = this.sct.concepts.getModuleId(concept.index);
+        if (moduleId === set.moduleId) {
+          set.descendants.push(concept.index);
+        }
+      }
+    }
+    if (set.propProp || set.propValue) {
+      for (let i = 0; i < this.sct.concepts.count(); i++) {
+        let concept = this.sct.concepts.getConceptByCount(i);
+        const relationships = this.sct.getConceptRelationships(concept.getReference());
+        for (let relationshipRef of relationships) {
+          const relationship = this.sct.relationships.getRelationship(relationshipRef);
+          if (set.propProp === relationship.relType && set.propValue === relationship.target) {
+            set.descendants.push(concept.index);
+          }
+        }
+      }
+    }
+    set.populationDone = true;
+  }
 
   // Search filter
   async searchFilter(filterContext, filter, sort) {

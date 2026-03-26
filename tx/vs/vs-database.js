@@ -33,12 +33,31 @@ class ValueSetDatabase {
       db.all("PRAGMA table_info(valuesets)", [], (err, cols) => {
         if (err) { reject(err); return; }
         const hasCol = cols.some(c => c.name === 'date_first_seen');
-        if (hasCol) { resolve(); return; }
-        db.run(
-          "ALTER TABLE valuesets ADD COLUMN date_first_seen INTEGER DEFAULT 0",
-          [],
-          (err) => err ? reject(err) : resolve()
-        );
+        const migrations = [];
+        if (!hasCol) {
+          migrations.push(new Promise((res, rej) => {
+            db.run(
+              "ALTER TABLE valuesets ADD COLUMN date_first_seen INTEGER DEFAULT 0",
+              [],
+              (err) => err ? rej(err) : res()
+            );
+          }));
+        }
+        // Ensure vsac_runs table exists
+        migrations.push(new Promise((res, rej) => {
+          db.run(`
+            CREATE TABLE IF NOT EXISTS vsac_runs (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              started_at INTEGER NOT NULL,
+              finished_at INTEGER,
+              status TEXT NOT NULL DEFAULT 'running',
+              error_message TEXT,
+              total_fetched INTEGER,
+              total_new INTEGER
+            )
+          `, [], (err) => err ? rej(err) : res());
+        }));
+        Promise.all(migrations).then(() => resolve()).catch(reject);
       });
     });
   }
@@ -204,6 +223,19 @@ class ValueSetDatabase {
               )
           `);
 
+          // Run tracking table
+          db.run(`
+              CREATE TABLE vsac_runs (
+                                         id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                         started_at INTEGER NOT NULL,
+                                         finished_at INTEGER,
+                                         status TEXT NOT NULL DEFAULT 'running',
+                                         error_message TEXT,
+                                         total_fetched INTEGER,
+                                         total_new INTEGER
+              )
+          `);
+
           // Create indexes for better search performance
           db.run('CREATE INDEX idx_valuesets_url ON valuesets(url, version)');
           db.run('CREATE INDEX idx_valuesets_version ON valuesets(version)');
@@ -228,6 +260,58 @@ class ValueSetDatabase {
           });
         });
       });
+    });
+  }
+
+  /**
+   * Record the start of a VSAC sync run
+   * @returns {Promise<number>} The run ID
+   */
+  async startRun() {
+    const db = await this._getWriteConnection();
+    return new Promise((resolve, reject) => {
+      db.run(
+        `INSERT INTO vsac_runs (started_at, status) VALUES (strftime('%s','now'), 'running')`,
+        [],
+        function(err) { err ? reject(err) : resolve(this.lastID); }
+      );
+    });
+  }
+
+  /**
+   * Record the successful completion of a VSAC sync run
+   * @param {number} id - The run ID from startRun()
+   * @param {number} totalFetched - Total value sets fetched
+   * @param {number} totalNew - Number of new value sets found
+   * @returns {Promise<void>}
+   */
+  async finishRun(id, totalFetched, totalNew) {
+    const db = await this._getWriteConnection();
+    return new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE vsac_runs SET finished_at = strftime('%s','now'), status = 'ok',
+         total_fetched = ?, total_new = ? WHERE id = ?`,
+        [totalFetched, totalNew, id],
+        err => err ? reject(err) : resolve()
+      );
+    });
+  }
+
+  /**
+   * Record a failed VSAC sync run
+   * @param {number} id - The run ID from startRun()
+   * @param {string} errorMessage - The error message
+   * @returns {Promise<void>}
+   */
+  async failRun(id, errorMessage) {
+    const db = await this._getWriteConnection();
+    return new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE vsac_runs SET finished_at = strftime('%s','now'), status = 'error',
+         error_message = ? WHERE id = ?`,
+        [errorMessage, id],
+        err => err ? reject(err) : resolve()
+      );
     });
   }
 
@@ -270,23 +354,23 @@ class ValueSetDatabase {
 
             db.run(`
                 INSERT INTO valuesets (
-                id, url, version, date, description, effectivePeriod_start, effectivePeriod_end,
-                expansion_identifier, name, publisher, status, title, content, last_seen, date_first_seen
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
-              ON CONFLICT(id) DO UPDATE SET
-                url=excluded.url,
-                version=excluded.version,
-                date=excluded.date,
-                description=excluded.description,
-                effectivePeriod_start=excluded.effectivePeriod_start,
-                effectivePeriod_end=excluded.effectivePeriod_end,
-                expansion_identifier=excluded.expansion_identifier,
-                name=excluded.name,
-                publisher=excluded.publisher,
-                status=excluded.status,
-                title=excluded.title,
-                content=excluded.content,
-                last_seen=strftime('%s', 'now')
+                    id, url, version, date, description, effectivePeriod_start, effectivePeriod_end,
+                    expansion_identifier, name, publisher, status, title, content, last_seen, date_first_seen
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
+                    ON CONFLICT(id) DO UPDATE SET
+                    url=excluded.url,
+                                           version=excluded.version,
+                                           date=excluded.date,
+                                           description=excluded.description,
+                                           effectivePeriod_start=excluded.effectivePeriod_start,
+                                           effectivePeriod_end=excluded.effectivePeriod_end,
+                                           expansion_identifier=excluded.expansion_identifier,
+                                           name=excluded.name,
+                                           publisher=excluded.publisher,
+                                           status=excluded.status,
+                                           title=excluded.title,
+                                           content=excluded.content,
+                                           last_seen=strftime('%s', 'now')
             `, [
               valueSet.id,
               valueSet.url,

@@ -154,7 +154,7 @@ class ResourceCache {
       }
     }
     if (this.stats) {
-      this.stats.task("Client Cache", `Pruned ${i} of ${this.cache.size} entries`);
+      this.stats.taskDone("Client Cache", `Pruned ${i} of ${this.cache.size} entries`);
     }
   }
 
@@ -347,12 +347,12 @@ class ExpansionCache {
     if (heapUsed > this.memoryThresholdBytes) {
       const i = this.evictOldestHalf();
       if (this.stats) {
-        this.stats.task('Expansion Cache', `Checked Memory Pressure: evicted half (${i} entries)`);
+        this.stats.taskDone('Expansion Cache', `Checked Memory Pressure: evicted half (${i} entries)`);
       }
       return true;
     }
     if (this.stats) {
-      this.stats.task('Expansion Cache', `Checked Memory Pressure - OK (${this.cache.size} entries)`);
+      this.stats.taskDone('Expansion Cache', `Checked Memory Pressure - OK (${this.cache.size} entries)`);
     }
     return false;
   }

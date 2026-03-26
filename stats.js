@@ -84,6 +84,7 @@ class ServerStats {
     this.taskMap.set(name, info);
     info.frequency = frequency;
     info.state = "Started";
+    info.status = "started"
   }
 
   task(name, state) {
@@ -91,6 +92,25 @@ class ServerStats {
     if (info) {
       info.date = Date.now();
       info.state = state;
+      info.status = 'working';
+    }
+  }
+
+  taskDone(name, state) {
+    let info = this.taskMap.get(name);
+    if (info) {
+      info.date = Date.now();
+      info.state = state;
+      info.status = 'resting';
+    }
+  }
+
+  taskError(name, state) {
+    let info = this.taskMap.get(name);
+    if (info) {
+      info.date = Date.now();
+      info.state = state;
+      info.status = 'error';
     }
   }
 
@@ -98,17 +118,19 @@ class ServerStats {
     if (this.taskMap.size == 0) {
       return "";
     }
-    let html = '<table class="grid"><tr style="background-color: #EEEEEE"><th colspan="4">Background Tasks</th></tr>';
-    html += "<tr><th>Task</th><th>Status</th><th>Frequency</th><th>Last Seen</th></tr>";
+    let html = '<table class="grid">';
+    html += "<tr><th>Background Task</th><th>Status</th><th>Frequency</th><th>Last Seen</th></tr>";
     for (let m of this.taskMap.keys()) {
-      html += "<tr><td>";
+      let mm = this.taskMap.get(m);
+      let color = this.getTaskColor(mm.status);
+      html += `<tr style="background-color: ${color}"><td>`;
       html += escape(m);
       html += "</td><td>";
-      html += escape(this.taskMap.get(m).state);
+      html += escape(mm.state);
       html += "</td><td>";
-      html += this.taskMap.get(m).frequency;
+      html += mm.frequency;
       html += "</td><td>";
-      html += Utilities.formatDuration(this.taskMap.get(m).date, Date.now());
+      html += Utilities.formatDuration(mm.date, Date.now());
       html += "</td></tr>";
     }
     html += "</table>";
@@ -130,5 +152,14 @@ class ServerStats {
     return { idle, total };
   }
 
+  getTaskColor(status) {
+    switch (status) {
+      case "started": return "LightGrey";
+      case "working": return "LightGreen";
+      case "resting": return "White";
+      case "error": return "LightRed";
+      default: return "DarkBlue"; // should not happen
+    }
+  }
 }
 module.exports = ServerStats;

@@ -1,6 +1,6 @@
 const { LanguagePartType, Languages, Language, LanguageDefinitions} = require('../../library/languages');
 const {validateParameter, validateOptionalParameter, validateArrayParameter} = require("../../library/utilities");
-
+const natural = require('natural');
 /**
  * Display checking modes for concept designations
  */
@@ -26,6 +26,7 @@ class SearchFilterText {
 
     this.filter = filter ? filter.toLowerCase() : null;
     this.stems = [];
+    this.stemmer = natural.PorterStemmer;
     if (filter) {
       this._process();
     }
@@ -59,7 +60,7 @@ class SearchFilterText {
           i++;
         }
         const word = value.substring(j, i).toLowerCase();
-        const stemmed = this._stem(word);
+        const stemmed = this.stemmer.stem(word);
 
         if (this._find(stemmed)) {
           if (returnRating) {
@@ -142,7 +143,7 @@ class SearchFilterText {
           i++;
         }
         const word = this.filter.substring(j, i);
-        this.stems.push(this._stem(word));
+        this.stems.push(this.stemmer.stem(word.toLowerCase()));
       } else {
         i++;
       }
@@ -153,11 +154,6 @@ class SearchFilterText {
 
   _isAlphaNumeric(char) {
     return /[0-9a-zA-Z]/.test(char);
-  }
-
-  _stem(word) {
-    // Simple stemming - in practice you'd want a proper stemmer
-    return word.toLowerCase();
   }
 
   _find(stem) {

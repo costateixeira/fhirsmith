@@ -428,7 +428,8 @@ class RxNormModule extends BaseTerminologyModule {
       'CREATE INDEX IF NOT EXISTS idx_rxnrel_rel ON RXNREL(REL)',
       'CREATE INDEX IF NOT EXISTS idx_rxnrel_rela ON RXNREL(RELA)',
       'CREATE INDEX IF NOT EXISTS X_RXNSTY_2 ON RXNSTY(TUI)',
-      'CREATE INDEX IF NOT EXISTS idx_rxnstems_stem_cui ON RXNSTEMS(stem, CUI)'
+      'CREATE INDEX IF NOT EXISTS idx_rxnstems_stem_cui ON RXNSTEMS(stem, CUI)',
+      'CREATE INDEX IF NOT EXISTS idx_rxnstems_cui_stem ON RXNSTEMS(CUI, stem)'
     ];
 
     return new Promise((resolve, reject) => {
@@ -779,7 +780,7 @@ class RxNormImporter {
     if (this.options.verbose) console.log('Generating word stems...');
 
     // Simple English stemmer implementation
-    const stemmer = new SimpleStemmer();
+    var natural = require('natural');
     const stems = new Map();
 
     // Get all RXNORM concepts
@@ -791,7 +792,7 @@ class RxNormImporter {
         rows.forEach(row => {
           const words = this.extractWords(row.STR);
           words.forEach(word => {
-            const stem = stemmer.stem(word.toLowerCase());
+            const stem = natural.PorterStemmer.stem(word.toLowerCase());
             if (stem.length > 0 && stem.length <= 20) {
               if (!stems.has(stem)) {
                 stems.set(stem, new Set());
@@ -864,33 +865,6 @@ class RxNormImporter {
   }
 }
 
-// Simple English stemmer (basic implementation)
-class SimpleStemmer {
-  constructor() {
-    // Common English suffixes to remove
-    this.suffixes = [
-      'ing', 'ly', 'ed', 'ies', 'ied', 'ies', 'ies', 'y', 's',
-      'tion', 'sion', 'ness', 'ment', 'able', 'ible', 'ant', 'ent'
-    ].sort((a, b) => b.length - a.length); // Longest first
-  }
-
-  stem(word) {
-    if (word.length <= 3) return word;
-
-    // Try to remove suffixes
-    for (const suffix of this.suffixes) {
-      if (word.endsWith(suffix) && word.length > suffix.length + 2) {
-        const stem = word.substring(0, word.length - suffix.length);
-        // Basic validation - stem should still be reasonable length
-        if (stem.length >= 3) {
-          return stem;
-        }
-      }
-    }
-
-    return word;
-  }
-}
 
 module.exports = {
   RxNormModule,

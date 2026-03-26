@@ -331,20 +331,20 @@ class RxNormServices extends CodeSystemProvider {
   async doesFilter(prop, op, value) {
     
 
-    prop = prop.toUpperCase();
+    let propUC = prop.toUpperCase();
 
     // TTY filters
-    if (prop === 'TTY' && ['=', 'in'].includes(op)) {
+    if (propUC === 'TTY' && ['=', 'in'].includes(op)) {
       return true;
     }
 
     // STY filter
-    if (prop === 'STY' && op === '=') {
+    if (propUC === 'STY' && op === '=') {
       return true;
     }
 
     // SAB filter
-    if (prop === 'SAB' && op === '=') {
+    if (propUC === 'SAB' && op === '=') {
       return true;
     }
 
@@ -370,12 +370,12 @@ class RxNormServices extends CodeSystemProvider {
     
 
     const filter = new RxNormFilterHolder();
-    prop = prop.toUpperCase();
+    let propUC = prop.toUpperCase();
 
     let sql = '';
     let params = {};
 
-    if (op === 'in' && prop === 'TTY') {
+    if (op === 'in' && propUC === 'TTY') {
       const values = value.split(',').map(v => v.trim()).filter(v => v);
       const placeholders = values.map((_, i) => `$tty${i}`).join(',');
       sql = `AND TTY IN (${placeholders})`;
@@ -383,13 +383,13 @@ class RxNormServices extends CodeSystemProvider {
         params[`tty${i}`] = this.#sqlWrapString(val);
       });
     } else if (op === '=') {
-      if (prop === 'STY') {
+      if (propUC === 'STY') {
         sql = `AND ${this.getCodeField()} IN (SELECT RXCUI FROM rxnsty WHERE TUI = $sty)`;
         params.sty = this.#sqlWrapString(value);
-      } else if (prop === 'SAB') {
+      } else if (propUC === 'SAB') {
         sql = `AND ${this.getCodeField()} IN (SELECT ${this.getCodeField()} FROM rxnconso WHERE SAB = $sab)`;
         params.sab = this.#sqlWrapString(value);
-      } else if (prop === 'TTY') {
+      } else if (propUC === 'TTY') {
         sql = `AND TTY = $tty`;
         params.tty = this.#sqlWrapString(value);
       } else if (this.rels.includes(prop)) {
@@ -429,7 +429,6 @@ class RxNormServices extends CodeSystemProvider {
   }
 
   async searchFilter(filterContext, filter, sort) {
-    
 
     if (!filter || !filter.stems || filter.stems.length === 0) {
       throw new Error('Invalid search filter');
@@ -709,6 +708,11 @@ class RxNormTypeServicesFactory extends CodeSystemFactoryProvider {
     const db = new sqlite3.Database(this.dbPath);
 
     try {
+      await new Promise((resolve, reject) => {
+        db.run(`CREATE INDEX IF NOT EXISTS idx_rxnstems_cui_stem ON RXNSTEMS(CUI, stem)`,
+          err => err ? reject(err) : resolve());
+      });
+
       this._sharedData = {
         version: '',
         rels: [],

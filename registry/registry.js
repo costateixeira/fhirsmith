@@ -163,10 +163,10 @@ class RegistryModule {
         `Found ${newData.registries.length} registries, ` +
         `${metadata.errors.length} errors, ` +
         `downloaded ${this.crawler.formatBytes(metadata.totalBytes)}`);
-      this.stats.task('TxRegistry', 'Crawling Finished');
+      this.stats.taskDone('TxRegistry', 'Crawling Finished');
     } catch (error) {
       this.logger.error('Crawl failed:', error);
-      this.stats.task('TxRegistry', 'Crawling Error: '+error.message);
+      this.stats.taskError('TxRegistry', 'Crawling Error: '+error.message);
     } finally {
       this.crawlInProgress = false;
     }
