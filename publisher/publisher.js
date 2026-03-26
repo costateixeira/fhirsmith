@@ -481,7 +481,7 @@ class PublisherModule {
 
     // Record the log file path and local folder immediately so they're accessible
     // even if the build fails later
-    await this.updateTaskStatus(task.id, task.status, {
+    await this.updateTaskStatus(task.id, 'building', {
       build_output_path: logFile,
       local_folder: taskDir
     });
