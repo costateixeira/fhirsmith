@@ -98,6 +98,7 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
       try {
         await this.refreshValueSets();
       } catch (error) {
+        debugLog(error);
         this.log.error(error, 'Error during scheduled refresh:');
       }
     }, intervalMs);
@@ -126,6 +127,7 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
     this.queue = [];
 
     this.isRefreshing = true;
+    const runId = await this.database.startRun();
 
     try {
       // phase 1: list all value sets
@@ -202,10 +204,15 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
 
       // Reload map with fresh data
       await this._reloadMap();
-      console.log(`VSAC refresh completed. Total: ${tracking.totalFetched} ValueSets, Deleted: ${tracking.deletedCount}`);
+      let msg = `VSAC refresh completed. Total: ${tracking.totalFetched} ValueSets, Deleted: ${tracking.deletedCount}`;
+      this.stats.taskDone('VSAC Sync', msg);
+      console.log(msg);
+
+      await this.database.finishRun(runId, tracking.totalFetched, tracking.totalNew);
     } catch (error) {
       debugLog(error, 'Error during VSAC refresh:');
-      this.stats.task('VSAC Sync', `Error (${error.message})`);
+      this.stats.taskError('VSAC Sync', `Error (${error.message})`);
+      await this.database.failRun(runId, error.message);
       throw error;
     } finally {
       this.isRefreshing = false;
@@ -264,7 +271,6 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
       }
     }
   }
-
 
   /**
    * Fetch a FHIR Bundle from the server
@@ -511,7 +517,6 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
     let logMsg = `VSAC (${tracking.count} of ${length}) ${q}: ${vcount} versions`;
     console.log(logMsg);
     this.stats.task('VSAC Sync', logMsg);
-
   }
 
   name() {
@@ -523,35 +528,77 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
   }
 
   async info() {
+    const escape = require('escape-html');
     const db = await this.database._getReadConnection();
+
     const rows = await new Promise((resolve, reject) => {
       db.all(
-        `SELECT url, version, date_first_seen
+        `SELECT 'vs' AS kind,
+                url,
+                version,
+                date_first_seen AS ts,
+                NULL AS status,
+                NULL AS error_message,
+                NULL AS finished_at,
+                NULL AS total_fetched,
+                NULL AS total_new
            FROM valuesets
           WHERE date_first_seen > 0
-          ORDER BY date_first_seen DESC
-          LIMIT 100`,
+         UNION ALL
+         SELECT 'run' AS kind,
+                NULL,
+                NULL,
+                started_at AS ts,
+                status,
+                error_message,
+                finished_at,
+                total_fetched,
+                total_new
+           FROM vsac_runs
+         ORDER BY ts DESC
+         LIMIT 200`,
         [],
         (err, rows) => err ? reject(err) : resolve(rows)
       );
     });
 
-    const escape = require('escape-html');
-    let html = '<h3>Recently Value Sets Added to VSAC</h3>';
-    html += '<p>The last ' + rows.length + ' value sets found from VSAC, most recent first.</p>';
+    const fmt = ts => ts
+      ? new Date(ts * 1000).toISOString().replace('T', ' ').substring(0, 19) + ' UTC'
+      : '—';
+
+    let html = '<h3>VSAC Sync History</h3>';
     html += '<table class="grid">';
-    html += '<thead><tr><th>URL</th><th>Version</th><th>Date Observed</th></tr></thead>';
+    html += '<thead><tr><th>Time</th><th>Event</th><th>Detail</th></tr></thead>';
     html += '<tbody>';
+
     for (const row of rows) {
-      const date = row.date_first_seen
-        ? new Date(row.date_first_seen * 1000).toISOString().replace('T', ' ').substring(0, 19) + ' UTC'
-        : 'unknown';
-      html += '<tr>';
-      html += `<td>${escape(row.url || '')}</td>`;
-      html += `<td>${escape(row.version || '')}</td>`;
-      html += `<td>${escape(date)}</td>`;
-      html += '</tr>';
+      if (row.kind === 'run') {
+        const duration = row.finished_at ? `${row.finished_at - row.ts}s` : 'in progress';
+        let detail, colour;
+        if (row.status === 'ok') {
+          detail = `${row.total_fetched} fetched, ${row.total_new} new, ${duration}`;
+          colour = 'green';
+        } else if (row.status === 'error') {
+          detail = `Failed: ${escape(row.error_message || '')} (${duration})`;
+          colour = 'red';
+        } else {
+          detail = `Running... (started ${fmt(row.ts)})`;
+          colour = 'orange';
+        }
+        html += `<tr style="background:#f0f0f0">`;
+        html += `<td>${escape(fmt(row.ts))}</td>`;
+        html += `<td><strong style="color:${colour}">Sync run</strong></td>`;
+        html += `<td>${detail}</td>`;
+        html += `</tr>`;
+      } else {
+        html += `<tr>`;
+        html += `<td>${escape(fmt(row.ts))}</td>`;
+        html += `<td>New value set</td>`;
+        html += `<td>${escape(row.url || '')}#${escape(row.version || '')}</td>`;
+        html += `</tr>`;
+      }
     }
+
     html += '</tbody></table>';
     return html;
   }
