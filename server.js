@@ -267,57 +267,6 @@ async function loadTemplates() {
   }
 }
 
-async function buildDashboardContent() {
-  // Calculate uptime
-  const uptimeMs = Date.now() - stats.startTime;
-  const uptimeSeconds = Math.floor(uptimeMs / 1000);
-  const uptimeDays = Math.floor(uptimeSeconds / 86400);
-  const uptimeHours = Math.floor((uptimeSeconds % 86400) / 3600);
-  const uptimeMinutes = Math.floor((uptimeSeconds % 3600) / 60);
-  const uptimeSecs = uptimeSeconds % 60;
-  let uptimeStr = '';
-  if (uptimeDays > 0) uptimeStr += `${uptimeDays}d `;
-  if (uptimeHours > 0 || uptimeDays > 0) uptimeStr += `${uptimeHours}h `;
-  if (uptimeMinutes > 0 || uptimeHours > 0 || uptimeDays > 0) uptimeStr += `${uptimeMinutes}m `;
-  uptimeStr += `${uptimeSecs}s`;
-
-  // Memory usage
-  const memUsage = process.memoryUsage();
-  const heapUsedMB = (memUsage.heapUsed / 1024 / 1024).toFixed(2);
-  const heapAvailableMB = ((memUsage.heapTotal - memUsage.heapUsed) / 1024 / 1024).toFixed(2);
-  const rssMB = (memUsage.rss / 1024 / 1024).toFixed(2);
-  const freeMemMB = (os.freemem() / 1024 / 1024).toFixed(0);
-  const totalMemMB = (os.totalmem() / 1024 / 1024).toFixed(0);
-
-  let content = '';
-  content += '<table class="grid">';
-  content += '<tr>';
-  content += `<td><strong>Uptime:</strong> ${escape(uptimeStr)}</td>`;
-  content += `<td><strong>Request Count:</strong> ${stats.requestCount} (static: ${stats.staticRequestCount})</td>`;
-  content += `<td><strong>Free Memory:</strong> ${freeMemMB} MB of ${totalMemMB} MB</td>`;
-  content += '</tr>';
-  content += '<tr>';
-  content += `<td><strong>Heap Used:</strong> ${heapUsedMB} MB</td>`;
-  content += `<td><strong>Heap Available:</strong> ${heapAvailableMB} MB</td>`;
-  content += `<td><strong>Process Memory:</strong> ${rssMB} MB</td>`;
-  content += '</tr>';
-  content += getLogStats();
-  content += '</table>';
-
-  // ===== Metrics Graphs =====
-  const liquid = new Liquid({
-    root: path.join(__dirname, 'tx', 'html'),
-    extname: '.liquid'
-  });
-  content += await liquid.renderFile('home-metrics', {
-    historyJson: JSON.stringify(stats.history),
-    startTime: stats.startTime
-  });
-  content += stats.taskDetails();
-
-  return content;
-}
-
 async function buildRootPageContent() {
   stats.requestCount++;
   let mc = 0;
@@ -433,8 +382,51 @@ async function buildRootPageContent() {
 
   content += '<hr/>';
 
+  // Calculate uptime
+  const uptimeMs = Date.now() - stats.startTime;
+  const uptimeSeconds = Math.floor(uptimeMs / 1000);
+  const uptimeDays = Math.floor(uptimeSeconds / 86400);
+  const uptimeHours = Math.floor((uptimeSeconds % 86400) / 3600);
+  const uptimeMinutes = Math.floor((uptimeSeconds % 3600) / 60);
+  const uptimeSecs = uptimeSeconds % 60;
+  let uptimeStr = '';
+  if (uptimeDays > 0) uptimeStr += `${uptimeDays}d `;
+  if (uptimeHours > 0 || uptimeDays > 0) uptimeStr += `${uptimeHours}h `;
+  if (uptimeMinutes > 0 || uptimeHours > 0 || uptimeDays > 0) uptimeStr += `${uptimeMinutes}m `;
+  uptimeStr += `${uptimeSecs}s`;
 
-  content += await buildDashboardContent();
+  // Memory usage
+  const memUsage = process.memoryUsage();
+  const heapUsedMB = (memUsage.heapUsed / 1024 / 1024).toFixed(2);
+  const heapAvailableMB = ((memUsage.heapTotal - memUsage.heapUsed) / 1024 / 1024).toFixed(2);
+  const rssMB = (memUsage.rss / 1024 / 1024).toFixed(2);
+  const freeMemMB = (os.freemem() / 1024 / 1024).toFixed(0);
+  const totalMemMB = (os.totalmem() / 1024 / 1024).toFixed(0);
+
+  content += '<table class="grid">';
+  content += '<tr>';
+  content += `<td><strong>Uptime:</strong> ${escape(uptimeStr)}</td>`;
+  content += `<td><strong>Request Count:</strong> ${stats.requestCount} (static: ${stats.staticRequestCount})</td>`;
+  content += `<td><strong>Free Memory:</strong> ${freeMemMB} MB of ${totalMemMB} MB</td>`;
+  content += '</tr>';
+  content += '<tr>';
+  content += `<td><strong>Heap Used:</strong> ${heapUsedMB} MB</td>`;
+  content += `<td><strong>Heap Available:</strong> ${heapAvailableMB} MB</td>`;
+  content += `<td><strong>Process Memory:</strong> ${rssMB} MB</td>`;
+  content += '</tr>';
+  content += getLogStats();
+  content += '</table>';
+
+  // ===== Metrics Graphs =====
+  const liquid = new Liquid({
+    root: path.join(__dirname, 'tx', 'html'),
+    extname: '.liquid'
+  });
+  content += await liquid.renderFile('home-metrics', {
+    historyJson: JSON.stringify(stats.history),
+    startTime: stats.startTime
+  });
+  content += stats.taskDetails();
 
   content += '</div>';
   return content;
@@ -546,8 +538,52 @@ app.get('/dashboard', async (req, res) => {
     }
 
     const startTime = Date.now();
-    const dashContent = await buildDashboardContent();
-    const content = '<div class="row mb-4"><div class="col-12">' + dashContent + '</div></div>';
+    // Calculate uptime
+    const uptimeMs = Date.now() - stats.startTime;
+    const uptimeSeconds = Math.floor(uptimeMs / 1000);
+    const uptimeDays = Math.floor(uptimeSeconds / 86400);
+    const uptimeHours = Math.floor((uptimeSeconds % 86400) / 3600);
+    const uptimeMinutes = Math.floor((uptimeSeconds % 3600) / 60);
+    const uptimeSecs = uptimeSeconds % 60;
+    let uptimeStr = '';
+    if (uptimeDays > 0) uptimeStr += `${uptimeDays}d `;
+    if (uptimeHours > 0 || uptimeDays > 0) uptimeStr += `${uptimeHours}h `;
+    if (uptimeMinutes > 0 || uptimeHours > 0 || uptimeDays > 0) uptimeStr += `${uptimeMinutes}m `;
+    uptimeStr += `${uptimeSecs}s`;
+
+    // Memory usage
+    const memUsage = process.memoryUsage();
+    const heapUsedPCT =  (memUsage.heapUsed * 100) / memUsage.heapTotal;
+    const freeMemMB = (os.freemem() / 1024 / 1024).toFixed(0);
+    const totalMemMB = (os.totalmem() / 1024 / 1024).toFixed(0);
+    const usedMemPCT = 100 - ((freeMemMB * 100) / totalMemMB);
+    const fstats = fs.statfsSync(folders.logsDir());
+    const diskPCT = (fstats.bavail * 100) / fstats.blocks;
+
+    let content = '';
+    content += '<table border="1">';
+    content += '<tr>';
+    content += `<td><strong>Uptime:</strong> ${escape(uptimeStr)}</td>`;
+    content += `<td><strong>Request Count:</strong> ${stats.requestCount} (static: ${stats.staticRequestCount})</td>`;
+    content += `<td style="background-color:${pctColor(usedMemPCT)}"><strong>Memory:</strong> ${usedMemPCT.toFixed(0)}%</td>`;
+    content += `<td style="background-color:${pctColor(heapUsedPCT)}"><strong>Heap:</strong> ${heapUsedPCT.toFixed(0)}%</td>`;
+    content += `<td style="background-color:${pctColor(diskPCT)}"><strong>Disk:</strong> ${diskPCT.toFixed(0)}%</td>`;
+    content += '</tr>';
+    content += '</table>';
+
+    // ===== Metrics Graphs =====
+    const liquid = new Liquid({
+      root: path.join(__dirname, 'tx', 'html'),
+      extname: '.liquid'
+    });
+    content += await liquid.renderFile('dash-metrics', {
+      historyJson: JSON.stringify(stats.history),
+      startTime: stats.startTime
+    });
+    content += stats.taskDetails();
+    content += `<p>Data: ${folders.dataDir()}</p>`;
+
+    content = '<div class="row mb-4"><div class="col-12">' + content + '</div></div>';
 
     const pageStats = {
       version: packageJson.version,
@@ -564,6 +600,12 @@ app.get('/dashboard', async (req, res) => {
     htmlServer.sendErrorResponse(res, 'root', error);
   }
 });
+
+function pctColor(pct) {
+  const r = Math.round(pct * 2.55);
+  const g = Math.round((100 - pct) * 2.55);
+  return `rgb(${r}, ${g}, 100)`;  // the 100 keeps it pastel/light
+}
 
 // Health check endpoint
 app.get('/health', async (req, res) => {
@@ -611,10 +653,10 @@ function getLogStats() {
     let diskInfo = '';
     try {
       // statfs available in Node 18.15+
-      const stats = fs.statfsSync(logDir);
-      const blockSize = stats.bsize;
-      const freeSpace = stats.bavail * blockSize;
-      const totalSpace = stats.blocks * blockSize;
+      const fstats = fs.statfsSync(logDir);
+      const blockSize = fstats.bsize;
+      const freeSpace = fstats.bavail * blockSize;
+      const totalSpace = fstats.blocks * blockSize;
       const freeGB = (freeSpace / 1024 / 1024 / 1024).toFixed(2);
       const totalGB = (totalSpace / 1024 / 1024 / 1024).toFixed(2);
       diskInfo = `<td><strong>Disk Space:</strong> ${freeGB} GB of ${totalGB} GB</td>`;

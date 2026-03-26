@@ -120,7 +120,7 @@ class PackageCrawler {
       this.log.info(`Web crawler completed successfully in ${runTime}ms`);
       this.log.info(`Total bytes processed: ${this.totalBytes}`);
 
-      this.stats.task('Package Crawler', 'Complete');
+      this.stats.taskDone('Package Crawler', 'Complete');
       return this.crawlerLog;
 
     } catch (error) {
@@ -128,7 +128,7 @@ class PackageCrawler {
       this.crawlerLog.runTime = `${runTime}ms`;
       this.crawlerLog.fatalException = error.message;
       this.crawlerLog.endTime = new Date().toISOString();
-      this.stats.task('Package Crawler', 'Error: '+error.message);
+      this.stats.taskError('Package Crawler', 'Error: '+error.message);
 
       this.log.error('Web crawler failed: '+ error);
       throw error;

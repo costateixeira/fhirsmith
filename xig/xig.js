@@ -1600,7 +1600,7 @@ function downloadFile(url, destination, maxRedirects = 5) {
 
           if (response.statusCode !== 200) {
             if (globalStats) {
-              globalStats.task('XIG Download', `Download failed:  ${response.statusCode}`)
+              globalStats.taskError('XIG Download', `Download failed:  ${response.statusCode}`)
             }
             reject(Object.assign(
               new Error(`Download failed with HTTP ${response.statusCode}`),
@@ -1613,7 +1613,7 @@ function downloadFile(url, destination, maxRedirects = 5) {
           const maxSize = 10 * 1024 * 1024 * 1024; // 10GB limit
           if (downloadMeta.contentLength && downloadMeta.contentLength > maxSize) {
             if (globalStats) {
-              globalStats.task('XIG Download', `Download failed: too large`)
+              globalStats.taskError('XIG Download', `Download failed: too large`)
             }
             reject(Object.assign(new Error('File too large'), { downloadMeta }));
             return;
@@ -1626,7 +1626,7 @@ function downloadFile(url, destination, maxRedirects = 5) {
             if (downloadMeta.downloadedBytes > maxSize) {
               request.destroy();
               if (globalStats) {
-                globalStats.task('XIG Download', `Download failed: file too large`);
+                globalStats.taskError('XIG Download', `Download failed: file too large`);
               }
               fs.unlink(destination, () => {}); // Clean up
               reject(Object.assign(new Error('File too large'), { downloadMeta }));
@@ -1641,14 +1641,14 @@ function downloadFile(url, destination, maxRedirects = 5) {
             downloadMeta.durationMs = Date.now() - downloadMeta.startTime;
             xigLog.info(`Download completed successfully. Downloaded ${downloadMeta.downloadedBytes} bytes to ${destination}`);
             if (globalStats) {
-              globalStats.task('XIG Download', `Downloaded ${downloadMeta.downloadedBytes} bytes to ${destination}`);
+              globalStats.taskDone('XIG Download', `Downloaded ${downloadMeta.downloadedBytes} bytes to ${destination}`);
             }
             resolve(downloadMeta);
           });
 
           fileStream.on('error', (err) => {
             if (globalStats) {
-              globalStats.task('XIG Download', `Download failed`);
+              globalStats.taskError('XIG Download', `Download failed`);
             }
             fs.unlink(destination, () => {}); // Delete partial file
             reject(Object.assign(err, { downloadMeta }));
@@ -1657,7 +1657,7 @@ function downloadFile(url, destination, maxRedirects = 5) {
 
         request.on('error', (err) => {
           if (globalStats) {
-            globalStats.task('XIG Download', `Download Error`);
+            globalStats.taskError('XIG Download', `Download Error`);
           }
           reject(Object.assign(err, { downloadMeta }));
         });
@@ -1665,7 +1665,7 @@ function downloadFile(url, destination, maxRedirects = 5) {
         request.setTimeout(300000, () => { // 5 minutes timeout
           request.destroy();
           if (globalStats) {
-            globalStats.task('XIG Download', `Download Timeout`);
+            globalStats.taskError('XIG Download', `Download Timeout`);
           }
           reject(Object.assign(new Error('Download timeout after 5 minutes'), { downloadMeta }));
         });
