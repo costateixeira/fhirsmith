@@ -64,6 +64,14 @@ class CanonicalResource {
     return this.version ? this.url+'|' + this.version : this.url;
   }
 
+  get vurlOrMsg() {
+    if (this.url) {
+      return this.version ? this.url+'|' + this.version : this.url;
+    } else {
+      return '(unidentified)';
+    }
+  }
+
   get fhirType() {
     return this.jsonObj.resourceType;
   }

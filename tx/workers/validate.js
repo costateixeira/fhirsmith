@@ -1107,7 +1107,7 @@ class ValueSetChecker {
       codelist = !codelist ? '\'' + cc + '\'' : codelist + ', \'' + cc + '\'';
 
       if (v === false && !this.valueSet.jsonObj.internallyDefined && mode === 'codeableConcept') {
-        let m = this.worker.i18n.translate('None_of_the_provided_codes_are_in_the_value_set_one', this.params.HTTPLanguages, ['', this.valueSet.vurl, '\'' + cc + '\'']);
+        let m = this.worker.i18n.translate('None_of_the_provided_codes_are_in_the_value_set_one', this.params.HTTPLanguages, ['', this.valueSet.vurlOrMsg, '\'' + cc + '\'']);
         let p = issuePath + '.coding[' + i + '].code';
         op.addIssue(new Issue('information', 'code-invalid', p, 'None_of_the_provided_codes_are_in_the_value_set_one', m, 'this-code-not-in-vs'));
         if (cause.value === 'null') {
@@ -1284,10 +1284,10 @@ class ValueSetChecker {
       let mid, m, p;
       if (mode === 'codeableConcept') {
         mid = 'TX_GENERAL_CC_ERROR_MESSAGE';
-        m = this.worker.i18n.translate('TX_GENERAL_CC_ERROR_MESSAGE', this.params.HTTPLanguages, [this.valueSet.vurl]);
+        m = this.worker.i18n.translate('TX_GENERAL_CC_ERROR_MESSAGE', this.params.HTTPLanguages, [this.valueSet.vurlOrMsg]);
       } else {
         mid = 'None_of_the_provided_codes_are_in_the_value_set_one';
-        m = this.worker.i18n.translate('None_of_the_provided_codes_are_in_the_value_set_one', this.params.HTTPLanguages, ['', this.valueSet.vurl, codelist]);
+        m = this.worker.i18n.translate('None_of_the_provided_codes_are_in_the_value_set_one', this.params.HTTPLanguages, ['', this.valueSet.vurlOrMsg, codelist]);
       }
 
       if (mode === 'codeableConcept') {
