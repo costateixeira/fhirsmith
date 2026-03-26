@@ -13,13 +13,14 @@ function toConceptContext(concept) {
     display: concept.display_name || concept.display || concept.name || null,
     definition: concept.description || concept.definition || null,
     retired: concept.retired === true,
-    designations: extractDesignations(concept)
+      designation: extractDesignations(concept)
   };
 }
 
 function extractDesignations(concept) {
   const result = [];
   const seen = new Set();
+  const seenValues = new Set();
 
   const add = (language, value) => {
     const text = typeof value === 'string' ? value.trim() : '';
@@ -28,12 +29,19 @@ function extractDesignations(concept) {
     }
 
     const lang = typeof language === 'string' ? language.trim() : '';
+
+    // Skip empty-language entries whose value already appears under any language
+    if (!lang && seenValues.has(text)) {
+      return;
+    }
+
     const key = `${lang}|${text}`;
     if (seen.has(key)) {
       return;
     }
 
     seen.add(key);
+    seenValues.add(text);
     result.push({ language: lang, value: text });
   };
 
@@ -42,8 +50,10 @@ function extractDesignations(concept) {
       if (!entry || typeof entry !== 'object') {
         continue;
       }
-
-      add(entry.locale || entry.language || entry.lang || '', entry.name || entry.display_name || entry.display || entry.value || entry.term);
+      // Prioriza locale como language
+      const lang = entry.locale;
+      const value = entry.name;
+      add(lang, value);
     }
   }
 

@@ -48,6 +48,8 @@ class OCLCodeSystemProvider extends AbstractCodeSystemProvider {
     this._pendingChanges = null;
     this._initialized = false;
     this._initializePromise = null;
+    this._organizationIdsCache = null;
+    this._organizationIdsFetchPromise = null;
   }
 
   async initialize() {
@@ -206,35 +208,54 @@ class OCLCodeSystemProvider extends AbstractCodeSystemProvider {
   }
 
   async #fetchOrganizationIds() {
-    const endpoint = '/orgs/';
-    const orgs = await this.#fetchAllPages(endpoint);
-
-    const ids = [];
-    const seen = new Set();
-    for (const org of orgs || []) {
-      if (!org || typeof org !== 'object') {
-        continue;
-      }
-
-      const id = org.id || org.mnemonic || org.short_code || org.shortCode || org.name || null;
-      if (!id) {
-        continue;
-      }
-
-      const normalized = String(id).trim();
-      if (!normalized || seen.has(normalized)) {
-        continue;
-      }
-
-      seen.add(normalized);
-      ids.push(normalized);
+    // Return cached result if available
+    if (this._organizationIdsCache) {
+      return this._organizationIdsCache;
     }
 
-    if (ids.length === 0 && this.org) {
-      ids.push(this.org);
+    // Deduplicate concurrent requests
+    if (this._organizationIdsFetchPromise) {
+      return this._organizationIdsFetchPromise;
     }
 
-    return ids;
+    this._organizationIdsFetchPromise = (async () => {
+      const endpoint = '/orgs/';
+      const orgs = await this.#fetchAllPages(endpoint);
+
+      const ids = [];
+      const seen = new Set();
+      for (const org of orgs || []) {
+        if (!org || typeof org !== 'object') {
+          continue;
+        }
+
+        const id = org.id || org.mnemonic || org.short_code || org.shortCode || org.name || null;
+        if (!id) {
+          continue;
+        }
+
+        const normalized = String(id).trim();
+        if (!normalized || seen.has(normalized)) {
+          continue;
+        }
+
+        seen.add(normalized);
+        ids.push(normalized);
+      }
+
+      if (ids.length === 0 && this.org) {
+        ids.push(this.org);
+      }
+
+      this._organizationIdsCache = ids;
+      return ids;
+    })();
+
+    try {
+      return await this._organizationIdsFetchPromise;
+    } finally {
+      this._organizationIdsFetchPromise = null;
+    }
   }
 
   #sourceIdentity(source) {
@@ -673,16 +694,33 @@ class OCLSourceCodeSystemProvider extends CodeSystemProvider {
   async designations(code, displays) {
     const ctxt = await this.#ensureContext(code);
     if (ctxt && ctxt.display) {
-      const hasConceptDesignations = Array.isArray(ctxt.designations) && ctxt.designations.length > 0;
+      const hasConceptDesignations = Array.isArray(ctxt.designation) && ctxt.designation.length > 0;
       if (hasConceptDesignations) {
-        for (const d of ctxt.designations) {
+        let hasNoLanguageEntry = false;
+        for (const d of ctxt.designation) {
           if (!d || !d.value) {
             continue;
           }
           displays.addDesignation(true, 'active', d.language || '', CodeSystem.makeUseForDisplay(), d.value);
+          if (!d.language) {
+            hasNoLanguageEntry = true;
+          }
+        }
+        // Guarantee a language-neutral fallback so preferredDesignation() always returns
+        // a display value when the requested language has no matching designation.
+        // This implements the FHIR graceful-fallback rule for displayLanguage.
+        if (!hasNoLanguageEntry) {
+          displays.addDesignation(true, 'active', '', CodeSystem.makeUseForDisplay(), ctxt.display);
         }
       } else {
-        displays.addDesignation(true, 'active', 'en', CodeSystem.makeUseForDisplay(), ctxt.display);
+        // No structured designations available. Use the source's configured language
+        // rather than hard-coding 'en' to avoid mislabeling non-English displays as English.
+        const defaultLang = this.meta?.codeSystem?.jsonObj?.language || '';
+        displays.addDesignation(true, 'active', defaultLang, CodeSystem.makeUseForDisplay(), ctxt.display);
+        // Also provide a no-language fallback for graceful language resolution.
+        if (defaultLang) {
+          displays.addDesignation(true, 'active', '', CodeSystem.makeUseForDisplay(), ctxt.display);
+        }
       }
       this._listSupplementDesignations(ctxt.code, displays);
     }
@@ -914,7 +952,7 @@ class OCLSourceCodeSystemProvider extends CodeSystemProvider {
     if (!this.meta.conceptsUrl) {
       return [];
     }
-    const cacheKey = `${this.meta.conceptsUrl}|p=${page}|l=${CONCEPT_PAGE_SIZE}`;
+    const cacheKey = `${this.meta.conceptsUrl}|p=${page}|l=${CONCEPT_PAGE_SIZE}|verbose=1`;
     if (this.pageCache.has(cacheKey)) {
       const cached = this.pageCache.get(cacheKey);
       return Array.isArray(cached)
@@ -939,7 +977,7 @@ class OCLSourceCodeSystemProvider extends CodeSystemProvider {
     const pending = (async () => {
       let response;
       try {
-        response = await this.httpClient.get(this.meta.conceptsUrl, { params: { page, limit: CONCEPT_PAGE_SIZE } });
+        response = await this.httpClient.get(this.meta.conceptsUrl, { params: { page, limit: CONCEPT_PAGE_SIZE, verbose: true } });
       } catch (error) {
         // Some OCL instances return 404 for sources without concept listing endpoints.
         // Treat this as an empty page so terminology operations degrade gracefully.
@@ -998,7 +1036,7 @@ class OCLSourceCodeSystemProvider extends CodeSystemProvider {
     const pending = (async () => {
       let response;
       try {
-        response = await this.httpClient.get(url);
+        response = await this.httpClient.get(url, { params: { verbose: true } });
       } catch (error) {
         // Missing concept should be treated as not-found, not as an internal server failure.
         if (error && error.response && error.response.status === 404) {
@@ -1302,7 +1340,6 @@ class OCLSourceCodeSystemFactory extends CodeSystemFactoryProvider {
 
       this.#applyConceptsToCodeSystemResource(this.meta?.codeSystem || null);
 
-      console.log(`[OCL] Loaded CodeSystem from cold cache: ${canonicalUrl} (${cached.concepts.length} concepts, fingerprint=${this.customFingerprint?.substring(0, 8)})`);
     } catch (error) {
       if (error.code !== 'ENOENT') {
         console.error(`[OCL] Failed to load cold cache for CodeSystem ${canonicalUrl}:`, error.message);
@@ -1329,7 +1366,6 @@ class OCLSourceCodeSystemFactory extends CodeSystemFactoryProvider {
       };
 
       await fs.writeFile(cacheFilePath, JSON.stringify(cacheData, null, 2), 'utf-8');
-      console.log(`[OCL] Saved CodeSystem to cold cache: ${canonicalUrl} (${concepts.length} concepts, fingerprint=${fingerprint?.substring(0, 8)})`);
       
       return fingerprint;
     } catch (error) {
@@ -1343,7 +1379,6 @@ class OCLSourceCodeSystemFactory extends CodeSystemFactoryProvider {
     const key = `${normalizedSystem}|${version || ''}`;
     const factory = OCLSourceCodeSystemFactory.#findFactory(normalizedSystem, version);
     if (!factory) {
-      console.log(`[OCL] CodeSystem load not scheduled (factory unavailable): ${key}`);
       return false;
     }
     factory.scheduleBackgroundLoad(reason);
@@ -1412,7 +1447,6 @@ class OCLSourceCodeSystemFactory extends CodeSystemFactoryProvider {
     }
 
     if (cacheAgeMs != null && cacheAgeMs < COLD_CACHE_FRESHNESS_MS) {
-      console.log(`[OCL] Skipping warm-up for CodeSystem ${this.system()} (cold cache age: ${formatCacheAgeMinutes(cacheAgeMs)})`);
       return;
     }
 
@@ -1420,12 +1454,10 @@ class OCLSourceCodeSystemFactory extends CodeSystemFactoryProvider {
     const jobKey = `cs:${key}`;
 
     if (OCLBackgroundJobQueue.isQueuedOrRunning(jobKey)) {
-      console.log(`[OCL] CodeSystem load already queued or running: ${key}`);
       return;
     }
 
     let queuedJobSize = null;
-    console.log(`[OCL] CodeSystem load enqueued: ${key} (${reason})`);
     OCLBackgroundJobQueue.enqueue(
       jobKey,
       'CodeSystem load',
@@ -1444,7 +1476,6 @@ class OCLSourceCodeSystemFactory extends CodeSystemFactoryProvider {
   }
 
   async #runBackgroundLoad(key, knownConceptCount = null) {
-    console.log(`[OCL] CodeSystem load started: ${key}`);
     try {
       this.backgroundLoadProgress = { processed: 0, total: null };
       const resolvedTotal = Number.isFinite(knownConceptCount) && knownConceptCount >= 0
@@ -1470,16 +1501,7 @@ class OCLSourceCodeSystemFactory extends CodeSystemFactoryProvider {
       const allConcepts = Array.from(this.sharedConceptCache.values());
       const newFingerprint = computeCodeSystemFingerprint(allConcepts);
       
-      if (this.customFingerprint && newFingerprint === this.customFingerprint) {
-        console.log(`[OCL] CodeSystem fingerprint unchanged: ${key} (fingerprint=${newFingerprint?.substring(0, 8)})`);
-      } else {
-        if (this.customFingerprint) {
-          console.log(`[OCL] CodeSystem fingerprint changed: ${key} (${this.customFingerprint?.substring(0, 8)} -> ${newFingerprint?.substring(0, 8)})`);
-          console.log(`[OCL] Replacing cold cache with new hot cache: ${key}`);
-        } else {
-          console.log(`[OCL] Computed fingerprint for CodeSystem: ${key} (fingerprint=${newFingerprint?.substring(0, 8)})`);
-        }
-        
+      if (!this.customFingerprint || newFingerprint !== this.customFingerprint) {
         // Save to cold cache
         const savedFingerprint = await this.#saveColdCache(allConcepts);
         if (savedFingerprint) {
@@ -1487,10 +1509,7 @@ class OCLSourceCodeSystemFactory extends CodeSystemFactoryProvider {
         }
       }
 
-      console.log(`[OCL] CodeSystem load completed, marked content=complete: ${key}`);
-      const progress = OCLSourceCodeSystemFactory.loadProgress();
-      console.log(`[OCL] CodeSystem load completed: ${this.system()}. Loaded ${progress.loaded}/${progress.total} CodeSystems (${progress.percentage.toFixed(2)}%)`);
-      console.log(`[OCL] CodeSystem now available in cache: ${key} (${count} concepts)`);
+      console.log(`[OCL] CodeSystem loaded: ${this.system()} (${count} concepts)`);
     } catch (error) {
       console.error(`[OCL] CodeSystem background load failed: ${key}: ${error.message}`);
     }
@@ -1525,7 +1544,7 @@ class OCLSourceCodeSystemFactory extends CodeSystemFactoryProvider {
   }
 
   async #fetchAndCacheConceptPage(page) {
-    const cacheKey = `${this.meta.conceptsUrl}|p=${page}|l=${CONCEPT_PAGE_SIZE}`;
+    const cacheKey = `${this.meta.conceptsUrl}|p=${page}|l=${CONCEPT_PAGE_SIZE}|verbose=1`;
     if (this.sharedPageCache.has(cacheKey)) {
       const cached = this.sharedPageCache.get(cacheKey);
       const concepts = Array.isArray(cached)
@@ -1544,7 +1563,7 @@ class OCLSourceCodeSystemFactory extends CodeSystemFactoryProvider {
     const pending = (async () => {
       let response;
       try {
-        response = await this.httpClient.get(this.meta.conceptsUrl, { params: { page, limit: CONCEPT_PAGE_SIZE } });
+        response = await this.httpClient.get(this.meta.conceptsUrl, { params: { page, limit: CONCEPT_PAGE_SIZE, verbose: true } });
       } catch (error) {
         if (error && error.response && error.response.status === 404) {
           this.sharedPageCache.set(cacheKey, []);

@@ -35,7 +35,8 @@ class SearchWorker extends TerminologyWorker {
     '_offset', '_count', '_elements', '_sort', '_summary', '_total', '_format',
     'url', 'version', 'content-mode', 'date', 'description',
     'supplements', 'identifier', 'jurisdiction', 'name',
-    'publisher', 'status', 'system', 'title', 'text'
+    'publisher', 'status', 'system', 'title', 'text',
+    'source-system', 'target-system'
   ];
 
   // Summary elements for _summary=true (marked elements per resource type)
