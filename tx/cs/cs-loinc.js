@@ -5,6 +5,7 @@ const { Language, Languages} = require('../../library/languages');
 const { CodeSystemFactoryProvider} = require('./cs-api');
 const { validateOptionalParameter, validateArrayParameter} = require("../../library/utilities");
 const {BaseCSServices} = require("./cs-base");
+const {sqlEscapeString} = require("../../xig/xig");
 
 // Context kinds matching Pascal enum
 const LoincProviderContextKind = {
@@ -657,10 +658,14 @@ class LoincServices extends BaseCSServices {
   }
 
   async filter(filterContext, prop, op, value) {
-
-
     const filter = new LoincFilterHolder();
     await this.#executeFilterQuery(prop, op, value, filter);
+    filterContext.filters.push(filter);
+  }
+
+  async searchFilter(filterContext, filterText, sort) {
+    const filter = new LoincFilterHolder();
+    await this.#executeFilterQuery('$text', (sort ? '>' : '<'), filterText.filter, filter);
     filterContext.filters.push(filter);
   }
 
@@ -913,6 +918,13 @@ class LoincServices extends BaseCSServices {
                 WHERE CodeKey IN (SELECT CodeKey FROM Properties WHERE PropertyTypeKey = 9)
                   AND CodeKey = `;
       }
+    } else if (prop === '$text' && (op === '>' || op === '<')) {
+      sql = `SELECT CodeKey as Key FROM Codes
+             WHERE Description like '%${sqlEscapeString(value)}%'
+             ORDER BY Description `+(op === '<' ? 'ASC' : 'DESC');
+      lsql = `SELECT COUNT(CodeKey) as Key FROM Codes
+             WHERE Codes.Description like '%${sqlEscapeString(value)}%'
+             AND TargetKey = `;
     }
 
     if (sql) {
