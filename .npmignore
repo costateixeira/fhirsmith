@@ -19,7 +19,7 @@ coverage/
 tx/fixtures/
 
 # Data and runtime files
-data/
+/data/
 logs/
 *.log
 *.sqlite
