@@ -579,7 +579,7 @@ app.get('/dashboard', async (req, res) => {
       processingTime: Date.now() - startTime
     };
 
-    const title = (config.server?.hostName ? escape(config.server.hostName) : 'FHIRsmith Server')+' v'+packageJson.version;
+    const title = (config.hostName ? escape(config.hostName) : 'FHIRsmith Server')+' v'+packageJson.version;
     const html = htmlServer.renderPage('root-bare', title, content, pageStats);
     res.setHeader('Content-Type', 'text/html');
     res.send(html);
