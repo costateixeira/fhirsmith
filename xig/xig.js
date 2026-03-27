@@ -966,6 +966,129 @@ async function buildResourceTable(queryParams, resourceCount, offset = 0) {
   }
 }
 
+async function fetchResourceRows(queryParams, offset = 0, limit = 200) {
+  const { query: resourceQuery, params: qp } = buildSecureResourceQuery(queryParams, offset, limit);
+  return new Promise((resolve, reject) => {
+    xigDb.all(resourceQuery, qp, (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows || []);
+    });
+  });
+}
+
+function rowToObject(row, queryParams) {
+  const { ver, realm, auth, type, rt } = queryParams;
+  const packageObj = getPackage(row.PackageKey);
+
+  const obj = {
+    package: packageObj ? packageObj.Id : `Package ${row.PackageKey}`,
+    packageWeb: packageObj?.Web || null,
+    resourceType: row.ResourceType,
+    id: row.Id,
+    url: row.Url || null,
+    name: row.Name || null,
+    title: row.Title || null,
+    status: row.StandardsStatus || row.Status || null,
+    fmm: row.FMM || null,
+    wg: row.WG || null,
+    date: formatDate(row.Date),
+    realm: row.Realm || null,
+    authority: row.Authority || null,
+    versions: showVersion(row),
+    usageCount: row.UsageCount || 0
+  };
+
+  // Type-specific fields
+  switch (type) {
+    case 'cs':
+      obj.content = row.Supplements ? `Suppl: ${row.Supplements}` : (row.Content || null);
+      break;
+    case 'rp':
+    case 'dp':
+      obj.type = row.Type || null;
+      break;
+    case 'ext': {
+      const parts = (row.Details || '').split('|');
+      obj.context = parts[0] || null;
+      obj.modifier = parts[1] || null;
+      obj.extensionType = parts[2] || null;
+      break;
+    }
+    case 'vs':
+    case 'cm':
+      obj.sources = (row.Details || '').replace(/,/g, ' ') || null;
+      break;
+    case 'lm': {
+      const packageCanonical = packageObj ? packageObj.Canonical : '';
+      obj.type = (row.Type || '').replace(packageCanonical + 'StructureDefinition/', '');
+      break;
+    }
+  }
+
+  return obj;
+}
+
+async function buildResourceJson(queryParams) {
+  if (!xigDb) return [];
+  const rows = await fetchResourceRows(queryParams, 0, 1000000);
+  return rows.map(row => rowToObject(row, queryParams));
+}
+
+async function buildResourceCsv(queryParams) {
+  if (!xigDb) return '';
+  const { type, ver, realm, auth, rt } = queryParams;
+
+  // Build headers
+  const headers = ['Package'];
+  if (!ver || ver === '') headers.push('Versions');
+  headers.push('ResourceType', 'Id', 'Name/Title', 'Status', 'FMM', 'WG', 'Date');
+  if (!realm || realm === '') headers.push('Realm');
+  if (!auth || auth === '') headers.push('Authority');
+
+  switch (type) {
+    case 'cs': headers.push('Content'); break;
+    case 'rp': if (!rt || rt === '') headers.push('Resource'); break;
+    case 'dp': if (!rt || rt === '') headers.push('DataType'); break;
+    case 'ext': headers.push('Context', 'Modifier', 'Type'); break;
+    case 'vs': case 'cm': headers.push('Sources'); break;
+    case 'lm': headers.push('Type'); break;
+  }
+  headers.push('UsageCount');
+
+  const csvEscape = v => {
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    return s.includes(',') || s.includes('"') || s.includes('\n')
+      ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+
+  const rows = await fetchResourceRows(queryParams, 0, 1000000);
+  const lines = [headers.join(',')];
+
+  for (const row of rows) {
+    const obj = rowToObject(row, queryParams);
+    const cells = [obj.package];
+    if (!ver || ver === '') cells.push(obj.versions);
+    cells.push(obj.resourceType, obj.id, obj.title || obj.name || '', obj.status || '',
+      obj.fmm || '', obj.wg || '', obj.date || '');
+    if (!realm || realm === '') cells.push(obj.realm || '');
+    if (!auth || auth === '') cells.push(obj.authority || '');
+
+    switch (type) {
+      case 'cs': cells.push(obj.content || ''); break;
+      case 'rp': case 'dp': if (!rt || rt === '') cells.push(obj.type || ''); break;
+      case 'ext': cells.push(obj.context || '', obj.modifier || '', obj.extensionType || ''); break;
+      case 'vs': case 'cm': cells.push(obj.sources || ''); break;
+      case 'lm': cells.push(obj.type || ''); break;
+    }
+    cells.push(obj.usageCount);
+
+    lines.push(cells.map(csvEscape).join(','));
+  }
+
+  return lines.join('\r\n');
+}
+
 // Summary Statistics Functions
 
 async function buildSummaryStats(queryParams, baseUrl) {
@@ -1214,7 +1337,7 @@ function buildAdditionalForm(queryParams) {
       if (Object.keys(txSources).length > 0) {
         // Convert txSources map to "code=display" format
         const sourceOptions = Object.keys(txSources).map(code => `${code}=${txSources[code]}`);
-        html += 'Source: ' + makeSelect(rt, sourceOptions) + ' ';
+        html += 'Source: ' + makeSelect(rt, sourceOptions, 'rt') + ' ';
         html += '<br/>';
       }
       break;
@@ -1225,7 +1348,7 @@ function buildAdditionalForm(queryParams) {
       if (Object.keys(txSourcesCM).length > 0) {
         // Convert txSources map to "code=display" format
         const sourceOptionsCM = Object.keys(txSourcesCM).map(code => `${code}=${txSourcesCM[code]}`);
-        html += 'Source: ' + makeSelect(rt, sourceOptionsCM) + ' ';
+        html += 'Source: ' + makeSelect(rt, sourceOptionsCM, 'source') + ' ';
         html += '<br/>';
       }
       break;
@@ -1501,6 +1624,9 @@ function hasCachedValue(tableName, value) {
 
   const cache = configCache.maps[tableName];
   if (cache instanceof Set) {
+    return cache.has(value);
+  }
+  if (cache instanceof Map) {
     return cache.has(value);
   }
   return false;
@@ -2258,6 +2384,16 @@ function getDatabaseInfo() {
   });
 }
 
+function getRequestedFormat(req) {
+  const fmt = req.query._fmt;
+  if (fmt === 'json') return 'json';
+  if (fmt === 'csv') return 'csv';
+  const accept = req.headers['accept'] || '';
+  if (accept.includes('application/json')) return 'json';
+  if (accept.includes('text/csv')) return 'csv';
+  return 'html';
+}
+
 // Routes
 router.get('/:packagePid/:resourceType/:resourceId', async (req, res) => {
   const start = Date.now();
@@ -2310,6 +2446,22 @@ router.get('/', async (req, res) => {
       // Parse offset for pagination
       const offset = parseInt(queryParams.offset) || 0;
 
+      // ── Format negotiation ──────────────────────────────────────
+      const fmt = getRequestedFormat(req);
+
+      if (fmt === 'json') {
+        const data = await buildResourceJson(queryParams, offset);
+        res.setHeader('Content-Type', 'application/json');
+        return res.send(JSON.stringify(data, null, 2));
+      }
+
+      if (fmt === 'csv') {
+        const csv = await buildResourceCsv(queryParams, offset);
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename="xig-resources.csv"');
+        return res.send(csv);
+      }
+
       // Build control panel
       const controlPanel = buildControlPanel('/xig', queryParams);
 
@@ -2345,6 +2497,16 @@ router.get('/', async (req, res) => {
       } else {
         countParagraph += `${resourceCount.toLocaleString()} resources`;
       }
+      const downloadParams = { ...queryParams };
+      delete downloadParams.offset;
+      const downloadQs = Object.keys(downloadParams)
+        .filter(key => downloadParams[key] && downloadParams[key] !== '')
+        .map(key => `${key}=${encodeURIComponent(downloadParams[key])}`)
+        .join('&');
+      const downloadBase = '/xig' + (downloadQs ? '?' + downloadQs + '&' : '?');
+      countParagraph += ` (<a href="${downloadBase}_fmt=json">JSON</a>`;
+      countParagraph += ` | <a href="${downloadBase}_fmt=csv">CSV</a>)`;
+
       countParagraph += '</p>';
 
       // Build additional form
