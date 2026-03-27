@@ -548,8 +548,8 @@ app.get('/dashboard', async (req, res) => {
     const fstats = fs.statfsSync(folders.logsDir());
     const diskPCT = (fstats.bavail * 100) / fstats.blocks;
 
-    let content = '';
-    content += '<table border="1">';
+    let content = '<style>table.grid{margin-bottom:10px;border:1px solid black;margin-right:auto}table.grid th,table.grid td{border:1px solid silver;padding:3px 7px 2px;font-size:12px;line-height:1.4em;font-family:verdana;vertical-align:top}table.grid th{font-weight:bold}table.grid td{font-weight:normal}</style>';
+    content += '<table class="grid">';
     content += '<tr>';
     content += `<td><strong>Uptime:</strong> ${escape(uptimeStr)}</td>`;
     content += `<td><strong>Request Count:</strong> ${stats.requestCount} (static: ${stats.staticRequestCount})</td>`;
