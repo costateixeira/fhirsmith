@@ -5,6 +5,32 @@ All notable changes to the Health Intersections Node Server will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.0] - 2026-03-27
+
+### Added
+
+- XIG: add JSON and CSV downloads
+- TX: Add snomed filter support for inactive, moduleId, and properties
+
+### Changed
+
+- Improve Dashboard Presentation
+- Make docker image platform compatible with apple silicon (arm)
+- TX: update rxnorm version for tx.fhir.org
+- TX: Improve VSAC information page
+
+### Fixed
+
+- XIG: fix valueset source filter
+- TX: Fix bug in language processing looking up country codes
+- TX: Fix up terminology search for LOINC and generally 
+- TX: fix rxnorm property support and search performance
+- Publisher: fix status display when building draft IG
+
+### Tx Conformance Statement
+
+FHIRsmith passed all 1498 HL7 terminology service tests (modes tx.fhir.org+omop+general+snomed, tests v1.9.1, runner v6.9.4)
+
 ## [v0.7.6] - 2026-03-25
 
 ### Added
