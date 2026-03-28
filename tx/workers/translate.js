@@ -295,7 +295,13 @@ class TranslateWorker extends TerminologyWorker {
         const g = match.group;
         const em = match.match;
         for (const map of em.target || []) {
-          if (['null', 'equivalent', 'equal', 'wider', 'subsumes', 'narrower', 'specializes', 'inexact'].includes(map.relationship)) {
+          let ok = false;
+          if (map.equivalence) { // R4 mode
+            ok = ['null', 'equivalent', 'equal', 'wider', 'subsumes', 'narrower', 'specializes', 'inexact'].includes(map.equivalence);
+          } else {
+            ok = ['null', 'related-to', 'equivalent',  'source-is-narrower-than-target', 'source-is-broader-than-target'].includes(map.relationship);
+          }
+          if (ok) {
             result = true;
 
             const outcome = {
@@ -313,6 +319,13 @@ class TranslateWorker extends TerminologyWorker {
                 name: 'relationship',
                 valueCode: map.relationship
               });
+              // equivalence vs relationship will be sorted out in the version transform for parameters
+              if (map.equivalence) {
+                matchParts.push({
+                  name: 'equivalence',
+                  valueCode: map.equivalence
+                });
+              }
               if (map.comments) {
                 matchParts.push({
                   name: 'message',
