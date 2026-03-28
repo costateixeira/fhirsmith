@@ -332,7 +332,7 @@ class TranslateWorker extends TerminologyWorker {
                   valueString: map.comment
                 });
               }
-              for (const prod of map.products || []) {
+              for (const prod of map.product || []) {
                 const productParts = [];
                 productParts.push({
                   name: 'element',
