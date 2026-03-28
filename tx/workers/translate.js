@@ -326,10 +326,10 @@ class TranslateWorker extends TerminologyWorker {
                   valueCode: map.equivalence
                 });
               }
-              if (map.comments) {
+              if (map.comment) {
                 matchParts.push({
                   name: 'message',
-                  valueString: map.comments
+                  valueString: map.comment
                 });
               }
               for (const prod of map.products || []) {
