@@ -303,43 +303,45 @@ class TranslateWorker extends TerminologyWorker {
               code: map.code
             };
 
-            const matchParts = [];
-            matchParts.push({
-              name: 'concept',
-              valueCoding: outcome
-            });
-            matchParts.push({
-              name: 'relationship',
-              valueCode: map.relationship
-            });
-            if (map.comments) {
+            if (!this.hasMatch(output, outcome)) {
+              const matchParts = [];
               matchParts.push({
-                name: 'message',
-                valueString: map.comments
-              });
-            }
-            for (const prod of map.products || []) {
-              const productParts = [];
-              productParts.push({
-                name: 'element',
-                valueString: prod.property
-              });
-              productParts.push({
                 name: 'concept',
-                valueCoding: {
-                  system: prod.system,
-                  code: prod.value
-                }
+                valueCoding: outcome
               });
               matchParts.push({
-                name: 'product',
-                part: productParts
+                name: 'relationship',
+                valueCode: map.relationship
+              });
+              if (map.comments) {
+                matchParts.push({
+                  name: 'message',
+                  valueString: map.comments
+                });
+              }
+              for (const prod of map.products || []) {
+                const productParts = [];
+                productParts.push({
+                  name: 'element',
+                  valueString: prod.property
+                });
+                productParts.push({
+                  name: 'concept',
+                  valueCoding: {
+                    system: prod.system,
+                    code: prod.value
+                  }
+                });
+                matchParts.push({
+                  name: 'product',
+                  part: productParts
+                });
+              }
+              output.push({
+                name: 'match',
+                part: matchParts
               });
             }
-            output.push({
-              name: 'match',
-              part: matchParts
-            });
           }
         }
       }
@@ -516,6 +518,16 @@ class TranslateWorker extends TerminologyWorker {
         }
       }
     }
+  }
+
+  hasMatch(output, outcome) {
+    for (let o of output) {
+      let c = o.part.find(x => x.name === 'concept');
+      if (c.valueCoding.code === outcome.code && c.valueCoding.system === outcome.system) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 
