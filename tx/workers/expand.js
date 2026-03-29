@@ -604,7 +604,7 @@ class ValueSetExpander {
 
   async checkSource(cset, exp, filter, srcURL, ts, vsInfo) {
     this.worker.deadCheck('checkSource');
-    Extensions.checkNoModifiers(cset, 'ValueSetExpander.checkSource', 'set');
+    Extensions.checkNoModifiers(cset, 'ValueSetExpander.checkSource', 'set', srcURL);
     let imp = false;
     for (const u of cset.valueSet || []) {
       this.worker.deadCheck('checkSource');
@@ -682,7 +682,7 @@ class ValueSetExpander {
     this.worker.deadCheck('processCodes#1');
     const valueSets = [];
 
-    Extensions.checkNoModifiers(cset, 'ValueSetExpander.processCodes', 'set');
+    Extensions.checkNoModifiers(cset, 'ValueSetExpander.processCodes', 'set', vsSrc.vurl);
 
     if (cset.valueSet || cset.concept || (cset.filter || []).length > 1) {
       this.canBeHierarchy = false;
@@ -792,7 +792,7 @@ class ValueSetExpander {
           for (const cc of cset.concept) {
             this.worker.deadCheck('processCodes#3');
             cds.clear();
-            Extensions.checkNoModifiers(cc, 'ValueSetExpander.processCodes', 'set concept reference');
+            Extensions.checkNoModifiers(cc, 'ValueSetExpander.processCodes', 'set concept reference', vsSrc.vurl);
             const cctxt = await cs.locate(cc.code, this.allAltCodes);
             if (cctxt && cctxt.context && (!this.params.activeOnly || !await cs.isInactive(cctxt.context)) && await this.passesFilters(cs, cctxt.context, prep, filters, 0)) {
               await this.listDisplaysFromProvider(cds, cs, cctxt.context);
@@ -834,7 +834,7 @@ class ValueSetExpander {
             if (!fc.value) {
               throw new Issue('error', 'invalid', path + ".filter[" + i + "]", 'UNABLE_TO_HANDLE_SYSTEM_FILTER_WITH_NO_VALUE', this.worker.i18n.translate('UNABLE_TO_HANDLE_SYSTEM_FILTER_WITH_NO_VALUE', this.params.httpLanguages, [cs.system(), fc.property, fc.op]), 'vs-invalid', 400);
             }
-            Extensions.checkNoModifiers(fc, 'ValueSetExpander.processCodes', 'filter');
+            Extensions.checkNoModifiers(fc, 'ValueSetExpander.processCodes', 'filter', vsSrc.vurl);
             await cs.filter(prep, fc.property, fc.op, fc.value);
           }
 
@@ -891,7 +891,7 @@ class ValueSetExpander {
     this.worker.deadCheck('processCodes#1');
     const valueSets = [];
 
-    Extensions.checkNoModifiers(cset, 'ValueSetExpander.processCodes', 'set');
+    Extensions.checkNoModifiers(cset, 'ValueSetExpander.processCodes', 'set', vsSrc.vurl);
 
     if (cset.valueSet || cset.concept || (cset.filter || []).length > 1) {
       this.canBeHierarchy = false;
@@ -978,7 +978,7 @@ class ValueSetExpander {
         for (const cc of cset.concept) {
           this.worker.deadCheck('processCodes#3');
           cds.clear();
-          Extensions.checkNoModifiers(cc, 'ValueSetExpander.processCodes', 'set concept reference');
+          Extensions.checkNoModifiers(cc, 'ValueSetExpander.processCodes', 'set concept reference', vsSrc.vurl);
           const cctxt = await cs.locate(cc.code, this.allAltCodes);
           if (cctxt && cctxt.context && (!this.params.activeOnly || !await cs.isInactive(cctxt)) && await this.passesFilters(cs, cctxt, prep, filters, 0)) {
             if (filter.passesDesignations(cds) || filter.passes(cc.code)) {
@@ -1007,7 +1007,7 @@ class ValueSetExpander {
 
         for (let fc of cset.filter) {
           this.worker.deadCheck('processCodes#4a');
-          Extensions.checkNoModifiers(fc, 'ValueSetExpander.processCodes', 'filter');
+          Extensions.checkNoModifiers(fc, 'ValueSetExpander.processCodes', 'filter', vsSrc.vurl);
           await cs.filter(prep, fc.property, fc.op, fc.value);
         }
 
@@ -1157,8 +1157,8 @@ class ValueSetExpander {
     this.totalStatus = 'uninitialised';
     this.total = 0;
 
-    Extensions.checkNoImplicitRules(source,'ValueSetExpander.Expand', 'ValueSet');
-    Extensions.checkNoModifiers(source,'ValueSetExpander.Expand', 'ValueSet');
+    Extensions.checkNoImplicitRules(source,'ValueSetExpander.Expand', 'ValueSet', source.vurl);
+    Extensions.checkNoModifiers(source,'ValueSetExpander.Expand', 'ValueSet', source.vurl);
     this.worker.seeValueSet(source, this.params);
     this.valueSet = source;
 
@@ -1272,7 +1272,7 @@ class ValueSetExpander {
 
     let vsInfo = this.scanValueSet(source.jsonObj.compose);
     try {
-      if (source.jsonObj.compose && Extensions.checkNoModifiers(source.jsonObj.compose, 'ValueSetExpander.Expand', 'compose')
+      if (source.jsonObj.compose && Extensions.checkNoModifiers(source.jsonObj.compose, 'ValueSetExpander.Expand', 'compose', source.vurl)
           && this.worker.checkNoLockedDate(source.url, source.jsonObj.compose)) {
         await this.handleCompose(source, filter, exp, notClosed, vsInfo);
       }

@@ -114,11 +114,11 @@ class TxParameters {
           break;
         }
         case 'force-valueset-version': {
-          this.seeVersionRule().push(getValuePrimitive(p), true, 'override');
+          this.seeVersionRule(getValuePrimitive(p), true, 'override');
           break;
         }
         case 'check-valueset-version': {
-          this.seeVersionRule().push(getValuePrimitive(p), true, 'check');
+          this.seeVersionRule(getValuePrimitive(p), true, 'check');
           break;
         }
 

@@ -673,11 +673,13 @@ class CodeSystemProvider {
   /**
    * register the concept maps that are implicitly defined as part of the code system
    *
+   * @param {ConceptMap} map the map (this will have been returned from findImplicitConceptMap)
    * @param {Coding} coding the coding to translate
-   * @param {String} target
-   * @returns {CodeTranslation[]} the list of translations
+   * @param {String} target the target code system
+   * @param {boolean} reverse - if the translation is being run backwards
+   * @returns {CodeTranslation[]} the list of translations, each CodeTranslation has map, code, system, version, display, and relationship
    */
-  async getTranslations(coding, target) { return null;}
+  async getTranslations(map, coding, target, reverse) { return null;}
 
   // ==== Parameter checking methods =========
   _ensureLanguages(param) {
@@ -853,7 +855,7 @@ class CodeSystemFactoryProvider {
   }
 
   /**
-   * see comemnts for registerSupplements()
+   * see comments for registerSupplements()
    *
    * @param {CodeSystem} supplement - the supplement to flesh out
    * @returns void
@@ -865,6 +867,8 @@ class CodeSystemFactoryProvider {
   /**
    * build and return a known concept map from the URL, if there is one.
    *
+   * the conceptmap is never visible to a user; if it has an implicitSource, then
+   * provider.getTranslations will be called when it's actually used
    * @param url
    * @param version
    * @returns {ConceptMap}

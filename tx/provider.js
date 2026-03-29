@@ -228,7 +228,10 @@ class Provider {
     for (let csp of this.codeSystemFactories.values()) {
       if (!uris.has(csp.system())) {
         uris.add(csp.system());
-        await csp.findImplicitConceptMap(url, version);
+        let cm = await csp.findImplicitConceptMap(url, version);
+        if (cm) {
+          return cm;
+        }
       }
     }
   }

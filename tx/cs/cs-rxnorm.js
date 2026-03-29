@@ -395,24 +395,24 @@ class RxNormServices extends CodeSystemProvider {
       } else if (this.rels.includes(prop)) {
         if (value.startsWith('CUI:')) {
           const cui = value.substring(4);
-          sql = `AND (${this.getCodeField()} IN (SELECT ${this.getCodeField()} FROM rxnconso WHERE RXCUI IN (SELECT RXCUI1 FROM rxnrel WHERE REL = $rel AND RXCUI2 = $cui2)))`;
+          sql = `AND (${this.getCodeField()} IN (SELECT ${this.getCodeField()} FROM rxnconso WHERE RXCUI IN (SELECT RXCUI2 FROM rxnrel WHERE REL = $rel AND RXCUI1 = $cui2)))`;
           params.rel = this.#sqlWrapString(prop);
           params.cui2 = this.#sqlWrapString(cui);
         } else if (value.startsWith('AUI:')) {
           const aui = value.substring(4);
-          sql = `AND (${this.getCodeField()} IN (SELECT ${this.getCodeField()} FROM rxnconso WHERE RXAUI IN (SELECT RXAUI1 FROM rxnrel WHERE REL = $rel AND RXAUI2 = $aui2)))`;
+          sql = `AND (${this.getCodeField()} IN (SELECT ${this.getCodeField()} FROM rxnconso WHERE RXAUI IN (SELECT RXAUI2 FROM rxnrel WHERE REL = $rel AND RXAUI1 = $aui2)))`;
           params.rel = this.#sqlWrapString(prop);
           params.aui2 = this.#sqlWrapString(aui);
         }
       } else if (this.reltypes.includes(prop)) {
         if (value.startsWith('CUI:')) {
           const cui = value.substring(4);
-          sql = `AND (${this.getCodeField()} IN (SELECT ${this.getCodeField()} FROM rxnconso WHERE RXCUI IN (SELECT RXCUI1 FROM rxnrel WHERE RELA = $rela AND RXCUI2 = $cui2)))`;
+          sql = `AND (${this.getCodeField()} IN (SELECT ${this.getCodeField()} FROM rxnconso WHERE RXCUI IN (SELECT RXCUI2 FROM rxnrel WHERE RELA = $rela AND RXCUI1 = $cui2)))`;
           params.rela = this.#sqlWrapString(prop);
           params.cui2 = this.#sqlWrapString(cui);
         } else if (value.startsWith('AUI:')) {
           const aui = value.substring(4);
-          sql = `AND (${this.getCodeField()} IN (SELECT ${this.getCodeField()} FROM rxnconso WHERE RXAUI IN (SELECT RXAUI1 FROM rxnrel WHERE RELA = $rela AND RXAUI2 = $aui2)))`;
+          sql = `AND (${this.getCodeField()} IN (SELECT ${this.getCodeField()} FROM rxnconso WHERE RXAUI IN (SELECT RXAUI2 FROM rxnrel WHERE RELA = $rela AND RXAUI1 = $aui2)))`;
           params.rela = this.#sqlWrapString(prop);
           params.aui2 = this.#sqlWrapString(aui);
         }
@@ -498,8 +498,6 @@ class RxNormServices extends CodeSystemProvider {
   }
 
   async filterSize(filterContext, set) {
-    
-
     if (!set.executed) {
       await this.#executeFilter(set);
     }

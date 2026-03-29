@@ -10,7 +10,11 @@ const {VersionUtilities} = require("../../library/version-utilities");
 
 function parametersToR5(jsonObj, sourceVersion) {
   if (VersionUtilities.isR5Ver(sourceVersion)) {
-    return jsonObj; // No conversion needed
+    if (jsonObj.parameter && jsonObj.parameter.find(p => p.name == 'match')) {
+      return convertResourceWithinR5(JSON.parse(JSON.stringify(jsonObj)));
+    } else {
+      return jsonObj; // No conversion needed
+    }
   }
 
   const {convertResourceFromR5} = require("./xv-resource");
@@ -59,8 +63,57 @@ function parametersR5ToR4(r5Obj) {
     if (p.resource) {
       p.resource = convertResourceFromR5(p.resource, "R4");
     }
+    if (p.name == 'match') {
+      fixMatchParameterfor4(p);
+    }
   }
   return r5Obj;
+}
+
+function convertResourceWithinR5(r5Obj) {
+  for (let p of r5Obj.parameter) {
+    if (p.name == 'match') {
+      fixMatchParameterfor5(p);
+    }
+  }
+  return r5Obj;
+
+}
+
+function fixMatchParameterfor5(p) {
+  if (p.part) {
+    p.part = p.part.filter(pp => pp.name !== 'equivalence');
+  }
+}
+
+function fixMatchParameterfor4(p) {
+  if (p.part) {
+    if (!p.part.find(pp => pp.name === 'equivalence')) {
+      let rel = p.part.find(pp => pp.name === 'relationship');
+      if (rel && rel.valueCode) {
+        let pp = {name: "equivalence"};
+        switch (rel.valueCode) {
+          case 'related-to':
+            pp.valueCode = 'relatedto';
+            break;
+          case 'equivalent':
+            pp.valueCode = 'equivalent';
+            break;
+          case 'source-is-narrower-than-target':
+            pp.valueCode = 'wider';
+            break;
+          case 'source-is-broader-than-target':
+            pp.valueCode = 'narrower';
+            break;
+          case 'not-related-to':
+            pp.valueCode = 'unmatched';
+            break;
+        }
+        p.part.push(pp);
+      }
+    }
+    p.part = p.part.filter(pp => pp.name !== 'relationship');
+  }
 }
 
 function convertParameterR5ToR3(p) {

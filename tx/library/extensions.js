@@ -29,7 +29,7 @@ const Extensions = {
     }
   },
 
-  checkNoModifiers(element, place, name) {
+  checkNoModifiers(element, place, name, resource) {
     if (!element) {
       return;
     }
@@ -41,11 +41,12 @@ const Extensions = {
       for (const extension of element.modifierExtension) {
         urls.add(extension.url);
       }
+      const resId = resource ? resource : "";
       const urlList = [...urls].join('\', \'');
       if (urls.size > 1) {
-        throw new Issue("error", "business-rule", null, null, 'Cannot process resource at "' + name + '" due to the presence of modifier extensions '+urlList);
+        throw new Issue("error", "business-rule", null, null, 'Cannot process resource '+resId+' at "' + name + '" due to the presence of modifier extensions '+urlList);
       } else {
-        throw new Issue("error", "business-rule", null, null, 'Cannot process resource at "' + name + '" due to the presence of the modifier extension '+urlList);
+        throw new Issue("error", "business-rule", null, null, 'Cannot process resource '+resId+' at "' + name + '" due to the presence of the modifier extension '+urlList);
       }
     }
     return true;
