@@ -4064,10 +4064,6 @@ describe('translate', () => {
     await runTest({"suite":"translate","test":"translate-1"}, "5.0");
   });
 
-  it('translate-1R4', async () => {
-    await runTest({"suite":"translate","test":"translate-1"}, "4.0");
-  });
-
 });
 
 describe('tho', () => {
@@ -4851,6 +4847,14 @@ describe('tx.fhir.org', () => {
 
   it('snomed-validate-property-goodR4', async () => {
     await runTest({"suite":"tx.fhir.org","test":"snomed-validate-property-good"}, "4.0");
+  });
+
+  it('snomed-translateR5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-translate"}, "5.0");
+  });
+
+  it('snomed-translateR4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-translate"}, "4.0");
   });
 
 });
