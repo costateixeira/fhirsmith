@@ -10,7 +10,7 @@ const {VersionUtilities} = require("../../library/version-utilities");
 
 function parametersToR5(jsonObj, sourceVersion) {
   if (VersionUtilities.isR5Ver(sourceVersion)) {
-    if (jsonObj.parameter.find(p => p.name == 'match')) {
+    if (jsonObj.parameter && jsonObj.parameter.find(p => p.name == 'match')) {
       return convertResourceWithinR5(JSON.parse(JSON.stringify(jsonObj)));
     } else {
       return jsonObj; // No conversion needed
@@ -88,6 +88,30 @@ function fixMatchParameterfor5(p) {
 
 function fixMatchParameterfor4(p) {
   if (p.part) {
+    if (!p.part.find(pp => pp.name === 'equivalence')) {
+      let rel = p.part.find(pp => pp.name === 'relationship');
+      if (rel && rel.valueCode) {
+        let pp = {name: "equivalence"};
+        switch (rel.valueCode) {
+          case 'related-to':
+            pp.valueCode = 'relatedto';
+            break;
+          case 'equivalent':
+            pp.valueCode = 'equivalent';
+            break;
+          case 'source-is-narrower-than-target':
+            pp.valueCode = 'wider';
+            break;
+          case 'source-is-broader-than-target':
+            pp.valueCode = 'narrower';
+            break;
+          case 'not-related-to':
+            pp.valueCode = 'unmatched';
+            break;
+        }
+        p.part.push(pp);
+      }
+    }
     p.part = p.part.filter(pp => pp.name !== 'relationship');
   }
 }

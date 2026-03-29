@@ -12,6 +12,7 @@ const {
 const {DesignationUse} = require("../library/designations");
 const {BaseCSServices} = require("./cs-base");
 const {formatDateMMDDYYYY} = require("../../library/utilities");
+const {ConceptMap} = require("../library/conceptmap");
 
 // Context kinds matching Pascal enum
 const SnomedProviderContextKind = {
@@ -1213,6 +1214,64 @@ class SnomedProvider extends BaseCSServices {
            (cd.use.code === '900000000000013009' || cd.use.code === '900000000000003001');
   }
 
+  async getTranslations(map, coding, target, reverse) {
+    if (!map || (target && target !== this.system()) || reverse) {
+      return [];
+    }
+    let ref = this.sct.concepts.findConcept(map.id);
+    if (!ref.found) {
+      return [];
+    }
+    let rref = this.sct.refSetIndex.getRefSetByConcept(ref.index);
+    if (rref == -1) {
+      return [];
+    }
+    let refSetRecord = this.sct.refSetIndex.getReferenceSet(rref);
+    let members = this.sct.refSetMembers.getMembers(refSetRecord.membersByRef);
+    let srcConcept = this.sct.concepts.findConcept(coding.code);
+    if (!srcConcept.found) {
+      return [];
+    }
+
+    let result = [];
+    let L = 0;
+    let H = members.length - 1;
+    while (L <= H) {
+      const I = Math.floor((L + H) / 2);
+      const ref = members[I].ref;
+      if (ref < srcConcept.index) {
+        L = I + 1;
+      } else if (ref > srcConcept.index) {
+        H = I - 1;
+      } else {
+        // Found — but scan left for first match in case of duplicates
+        let first = I;
+        while (first > 0 && members[first - 1].ref === srcConcept.index) {
+          first--;
+        }
+        // Process all matching members
+        for (let i = first; i < members.length && members[i].ref === srcConcept.index; i++) {
+          let values = this.sct.refs.getReferences(members[i].values);
+          if (values && values.length >= 1) {
+            let tgtId = String(this.sct.concepts.getConceptId(values[0]));
+            let ct = {
+              map: map.vurl,
+              code: tgtId,
+              system: this.system(),
+              version : this.version(),
+              display: await this.display(tgtId),
+              relationship: map.jsonObj.relationship
+            }
+            result.push(ct);
+          }
+        }
+        break;
+      }
+    }
+
+    return result;
+  }
+
 }
 
 /**
@@ -1339,7 +1398,7 @@ class SnomedServicesFactory extends CodeSystemFactoryProvider {
         return null;
       }
       let rref = this.snomedServices.refSetIndex.getRefSetByConcept(ref.index);
-      if (rref == 0) {
+      if (rref == -1) {
         return null;
       }
       return {
@@ -1447,6 +1506,59 @@ class SnomedServicesFactory extends CodeSystemFactoryProvider {
     if (!match[2]) return edition;
 
     return edition + ' ' + formatDateMMDDYYYY(match[2].substring(4, 6) + match[2].substring(6, 8) + match[2].substring(0, 4));
+  }
+
+  async findImplicitConceptMap(url, version) {
+    if (version && (version !== this.version())) {
+      return null;
+    }
+    if (!url || !url.startsWith(this.system()+"?fhir_cm=")) {
+      return null;
+    }
+    let id = url.substring(url.indexOf("=")+1);
+    if (['900000000000523009', '900000000000526001', '900000000000527005', '900000000000530003'].includes(id)) {
+      let name = '';
+      let relationship = '';
+      switch (id) {
+        case '900000000000523009':
+          name = 'POSSIBLY EQUIVALENT TO';
+          relationship = 'inexact';
+          break;
+        case '900000000000526001':
+          name = 'REPLACED BY';
+          relationship = 'equivalent';
+          break;
+        case '900000000000527005':
+          name = 'SAME AS';
+          relationship = 'equal';
+          break;
+        case '900000000000530003':
+          name = 'ALTERNATIVE';
+          relationship = 'inexact';
+          break;
+      }
+      let cm = {
+        resourceType: 'ConceptMap',
+        internalSource : this,
+        relationship: relationship,
+        id : id,
+        url: `${this.system}?fhir_cm=${id}`,
+        version: this.version(),
+        name: `SNOMED CT ${name} Concept Map`,
+        description: `The concept map implicitly defined by the ${name} Association Reference Set`,
+        copyright: 'This value set includes content from SNOMED CT, which is copyright © 2002+ International Health Terminology Standards Development Organisation (SNOMED International), and distributed by agreement between SNOMED International and HL7',
+        status: 'active',
+        sourceUri: `${this.system}?fhir_vs`,
+        targetUri: `${this.system}?fhir_vs`,
+        group: [{
+          source: 'http://snomed.info/sct',
+          target: 'http://snomed.info/sct'
+        }]
+      }
+      return new ConceptMap(cm);
+    } else {
+      return null;
+    }
   }
 }
 

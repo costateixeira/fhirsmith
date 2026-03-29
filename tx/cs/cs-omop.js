@@ -660,8 +660,10 @@ class OMOPServices extends BaseCSServices {
   }
 
   // Translation support
-  async getTranslations(coding, target) {
-    
+  async getTranslations(map, coding, target) {
+    if (map == null) {
+      return;
+    }
 
     const vocabId = getVocabId(target);
     if (vocabId === -1) {
@@ -680,7 +682,7 @@ class OMOPServices extends BaseCSServices {
           reject(err);
         } else {
           const translations = rows.map(row => ({
-            uri: target,
+            system: target,
             code: row.concept_code,
             display: row.concept_name,
             relationship: 'equivalent',

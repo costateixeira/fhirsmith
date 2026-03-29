@@ -1177,7 +1177,7 @@ class SnomedReferenceSetIndex {
       }
     }
 
-    return 0; // Not found
+    return -1; // Not found
   }
 
   count() {
