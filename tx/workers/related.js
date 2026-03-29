@@ -205,12 +205,12 @@ class RelatedWorker extends TerminologyWorker {
     if (!thisC) {
       return this.makeOutcome("indeterminate", `The ValueSet ${thisVS.vurl} has no compose`);
     }
-    Extensions.checkNoModifiers(thisC, 'RelatedWorker.doRelated', 'compose')
+    Extensions.checkNoModifiers(thisC, 'RelatedWorker.doRelated', 'compose', thisVS.vurl)
     this.checkNoLockedDate(thisVS.vurl, thisC);
     if (!otherC) {
       return this.makeOutcome("indeterminate", `The ValueSet ${otherVS.vurl} has no compose`);
     }
-    Extensions.checkNoModifiers(otherC, 'RelatedWorker.doRelated', 'compose')
+    Extensions.checkNoModifiers(otherC, 'RelatedWorker.doRelated', 'compose', otherVS.vurl)
     this.checkNoLockedDate(otherVS.vurl, otherC);
 
     let systems = new Map(); // tracks whether they are version dependent or not

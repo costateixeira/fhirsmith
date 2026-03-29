@@ -316,21 +316,21 @@ class ValueSetChecker {
       }
 
       Extensions.checkNoImplicitRules(this.valueSet, 'ValueSetChecker.prepare', 'ValueSet');
-      Extensions.checkNoModifiers(this.valueSet, 'ValueSetChecker.prepare', 'ValueSet');
+      Extensions.checkNoModifiers(this.valueSet, 'ValueSetChecker.prepare', 'ValueSet', this.valueSet.vurl);
 
       this.allValueSet = this.valueSet.url === 'http://hl7.org/fhir/ValueSet/@all';
 
       if (this.valueSet.jsonObj.compose) {
-        Extensions.checkNoModifiers(this.valueSet.jsonObj.compose, 'ValueSetChecker.prepare', 'ValueSet.compose');
-        this.worker.checkNoLockedDate(this.valueSet.url, this.valueSet.jsonObj.compose)
+        Extensions.checkNoModifiers(this.valueSet.jsonObj.compose, 'ValueSetChecker.prepare', 'ValueSet.compose', this.valueSet.vurl);
+        this.worker.checkNoLockedDate(this.valueSet.vurl, this.valueSet.jsonObj.compose)
         let i = 0;
         for (let cc of this.valueSet.jsonObj.compose.include || []) {
-          await this.prepareConceptSet('include['+i+']', cc);
+          await this.prepareConceptSet('include['+i+']', cc, this.valueSet);
           i++;
         }
         i = 0;
         for (let cc of this.valueSet.jsonObj.compose.exclude || []) {
-          await this.prepareConceptSet('exclude['+i+']', cc);
+          await this.prepareConceptSet('exclude['+i+']', cc, this.valueSet);
           i++;
         }
       }
@@ -342,9 +342,9 @@ class ValueSetChecker {
     }
   }
 
-  async prepareConceptSet(desc, cc) {
+  async prepareConceptSet(desc, cc, vs) {
     this.worker.deadCheck('prepareConceptSet');
-    Extensions.checkNoModifiers(cc, 'ValueSetChecker.prepare', desc);
+    Extensions.checkNoModifiers(cc, 'ValueSetChecker.prepare', desc, vs.vurl);
     this.worker.opContext.addNote(this.valueSet, 'Prepare ' + desc + ': "' + this.worker.renderer.displayValueSetInclude(cc) + '"', this.indentCount);
     if (cc.valueSet) {
       for (let u of cc.valueSet) {
@@ -374,7 +374,7 @@ class ValueSetChecker {
       let i = 0;
       for (let ccf of cc.filter || []) {
         this.worker.deadCheck('prepareConceptSet#2');
-        Extensions.checkNoModifiers(ccf, 'ValueSetChecker.prepare', desc + '.filter');
+        Extensions.checkNoModifiers(ccf, 'ValueSetChecker.prepare', desc + '.filter', this.valueSet.vurl);
         if (!ccf.value) {
           throw new Issue('error', 'invalid', "ValueSet.compose."+desc+".filter["+i+"]", 'UNABLE_TO_HANDLE_SYSTEM_FILTER_WITH_NO_VALUE',
             this.worker.i18n.translate('UNABLE_TO_HANDLE_SYSTEM_FILTER_WITH_NO_VALUE', this.params.HTTPLanguages, [cs.system(), ccf.property, ccf.op]), "vs-invalid").handleAsOO(400);
@@ -677,7 +677,7 @@ class ValueSetChecker {
         throw new Issue('error', 'not-found', null, 'VALUESET_SUPPLEMENT_MISSING', this.worker.i18n.translatePlural(unused.size, 'VALUESET_SUPPLEMENT_MISSING', this.params.HTTPLanguages, [[...unused].join(',')]), 'not-found').handleAsOO(422);
       }
 
-      if (Extensions.checkNoModifiers(this.valueSet.jsonObj.compose, 'ValueSetChecker.prepare', 'ValueSet.compose')) {
+      if (Extensions.checkNoModifiers(this.valueSet.jsonObj.compose, 'ValueSetChecker.prepare', 'ValueSet.compose', this.valueSet.vurl)) {
         result = false;
         let determinedVersion = undefined;
         if (!version) {
@@ -807,7 +807,7 @@ class ValueSetChecker {
             }
           }
         }
-      } else if (Extensions.checkNoModifiers(this.valueSet.jsonObj.expansion, 'ValueSetChecker.prepare', 'ValueSet.expansion')) {
+      } else if (Extensions.checkNoModifiers(this.valueSet.jsonObj.expansion, 'ValueSetChecker.prepare', 'ValueSet.expansion', this.valueSet.vurl)) {
         let ccc = this.valueSet.findContains(system, version, code);
         if (ccc === null) {
           result = false;
