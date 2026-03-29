@@ -29,4 +29,7 @@ A typical NGINX configuration would be:
   limit_conn perip 50;
   limit_conn perserver 500;
 ```
+## SSL
+
+This server doesn't provide SSL support - use an NGINX reverse proxy for that.
 

@@ -10,7 +10,7 @@ This server provides a set of server-side services that are useful for the FHIR 
 
 ## Services useful the community as a whole
 
-* [TX Registry](registry/readme.md) - **Terminology System Registry** as [described by the terminology ecosystem specification](https://build.fhir.org/ig/HL7/fhir-tx-ecosystem-ig)(as running at http://tx.fhir.org/tx-reg)
+* [TX Registry](registry/readme.md) - **Terminology System Registry** as [described by the terminology ecosystem specification](https://build.fhir.org/ig/HL7/fhir-tx-ecosystem-ig) (as running at http://tx.fhir.org/tx-reg)
 * [Package server](packages/readme.md) - **NPM-style FHIR package registry** with search, versioning, and downloads, consistent with the FHIR NPM Specification (as running at http://packages2.fhir.org/packages)
 * [XIG server](xig/readme.md) -  **Comprehensive FHIR IG analytics** with resource breakdowns by version, authority, and realm (as running at http://packages2.fhir.org/packages)
 * [Publisher](publisher/readme.md) - FHIR publishing services (coming)
@@ -42,6 +42,10 @@ There are 4 executable programs:
 * the test cases generater (`node tx/tests/testcases-generator.js`)
 
 Unless you're developing, you only need the first two
+
+FHIRsmith is open source - see below, and you're welcome to use it for any kind of use. Note,
+though, that if you support FHIRsmith commercially as part of a managed service or product, you 
+are required to be a Commercial Partner of HL7 - see (link to be provided).
 
 ### Quick Start
 
