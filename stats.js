@@ -118,7 +118,7 @@ class ServerStats {
     if (this.taskMap.size == 0) {
       return "";
     }
-    let html = '<table class="grid">';
+    let html = '<table class="grid" >';
     html += "<tr><th>Background Task</th><th>Status</th><th>Frequency</th><th>Last Seen</th></tr>";
     for (let m of this.taskMap.keys()) {
       let mm = this.taskMap.get(m);
