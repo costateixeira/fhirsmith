@@ -268,7 +268,7 @@ class PublisherModule {
     this.router.get('/tasks', this.renderTasks.bind(this));
     this.router.post('/tasks', this.requireAuth.bind(this), this.createTask.bind(this));
     this.router.post('/tasks/:id/approve', this.requireAuth.bind(this), this.approveTask.bind(this));
-    this.router.post('/tasks/:id/delete', this.requireAdmin.bind(this), this.deleteTask.bind(this));
+    this.router.post('/tasks/:id/delete', this.requireAuth.bind(this), this.deleteTask.bind(this));
     this.router.post('/tasks/:id/retry', this.requireAuth.bind(this), this.retryTask.bind(this));
     this.router.get('/tasks/:id/output', this.getTaskOutput.bind(this));
     this.router.get('/tasks/:id/history', this.getTaskHistory.bind(this));
@@ -1282,8 +1282,22 @@ class PublisherModule {
           return res.status(404).send('Task not found');
         }
 
-        if (task.status !== 'waiting for approval' && task.status !== 'failed') {
-          return res.status(400).send('Only tasks waiting for approval or failed can be deleted');
+        if (task.status !== 'waiting for approval' && task.status !== 'failed' && task.status !== 'queued') {
+          return res.status(400).send('Only tasks that are queued, waiting for approval, or failed can be deleted');
+        }
+
+        // Pre-approval statuses: any user with queue rights on this website can delete
+        // Post-approval (failed after publishing started): admin only
+        const isPostApproval = task.status === 'failed' && task.approved_by;
+        if (isPostApproval) {
+          if (!req.session.isAdmin) {
+            return res.status(403).send('Admin access required to delete a task that has been approved');
+          }
+        } else {
+          const canQueue = await this.userCanQueue(req.session.userId, task.website_id);
+          if (!canQueue) {
+            return res.status(403).send('You do not have permission to delete tasks for this website');
+          }
         }
 
         // Remove build output directory
@@ -1312,7 +1326,7 @@ class PublisherModule {
         });
 
         this.logUserAction(req.session.userId, 'delete_task', taskId, req.ip);
-        this.logger.info('Task deleted: ' + taskId + ' by admin ' + req.session.userId);
+        this.logger.info('Task deleted: ' + taskId + ' by user ' + req.session.userId);
         res.redirect('/publisher/tasks');
       } catch (error) {
         this.logger.error('Error deleting task:', error);
