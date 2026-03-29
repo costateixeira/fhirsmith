@@ -6,6 +6,7 @@ const bcrypt = require('bcrypt');
 const session = require('express-session');
 const folders = require('../library/folder-setup');
 const escape = require('escape-html');
+const {Utilities} = require("../library/utilities");
 
 
 class PublisherModule {
@@ -301,6 +302,8 @@ class PublisherModule {
     this.logger.info('Starting task processor with ' + pollInterval + 'ms poll interval');
     this.isProcessingStarted = null;
 
+    this.stats.addTask('Publisher', Utilities.formatDuration(pollInterval));  // or however you want to display the frequency
+
     this.taskProcessor = setInterval(async () => {
       if (this.shutdownRequested) return;
 
@@ -326,20 +329,25 @@ class PublisherModule {
       // Look for queued tasks first (draft builds)
       let task = await this.getNextQueuedTask();
       if (task) {
+        this.stats.task('Publisher', 'Building ' + task.npm_package_id + '#' + task.version);
         await this.processDraftBuild(task);
+        this.stats.taskDone('Publisher', 'Built ' + task.npm_package_id + '#' + task.version);
         return;
       }
 
       // Then look for approved tasks (publishing)
       task = await this.getNextApprovedTask();
       if (task) {
+        this.stats.task('Publisher', 'Publishing ' + task.npm_package_id + '#' + task.version);
         await this.processPublication(task);
+        this.stats.taskDone('Publisher', 'Published ' + task.npm_package_id + '#' + task.version);
         return;
       }
 
       // No tasks to process
     } catch (error) {
       this.logger.error('Error in task processor:', error);
+      this.stats.taskError('Publisher', 'Error: ' + error.message);
     } finally {
       this.isProcessing = false;
     }
