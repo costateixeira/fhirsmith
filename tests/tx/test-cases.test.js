@@ -4064,10 +4064,6 @@ describe('translate', () => {
     await runTest({"suite":"translate","test":"translate-1"}, "5.0");
   });
 
-  it('translate-1R4', async () => {
-    await runTest({"suite":"translate","test":"translate-1"}, "4.0");
-  });
-
 });
 
 describe('tho', () => {

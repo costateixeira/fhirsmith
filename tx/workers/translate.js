@@ -332,7 +332,7 @@ class TranslateWorker extends TerminologyWorker {
         for (const map of em.target || []) {
           let ok = false;
           if (map.equivalence) { // R4 mode
-            ok = ['null', 'equivalent', 'equal', 'wider', 'subsumes', 'narrower', 'specializes', 'inexact'].includes(map.equivalence);
+            ok = ['null', 'relatedto', 'equivalent', 'equal', 'wider', 'subsumes', 'narrower', 'specializes', 'inexact'].includes(map.equivalence);
           } else {
             ok = ['null', 'related-to', 'equivalent',  'source-is-narrower-than-target', 'source-is-broader-than-target'].includes(map.relationship);
           }
@@ -413,7 +413,7 @@ class TranslateWorker extends TerminologyWorker {
         const map = match.target;
         let ok = false;
         if (map.equivalence) { // R4 mode
-          ok = ['null', 'equivalent', 'equal', 'wider', 'subsumes', 'narrower', 'specializes', 'inexact'].includes(map.equivalence);
+          ok = ['null', 'relatedto', 'equivalent', 'equal', 'wider', 'subsumes', 'narrower', 'specializes', 'inexact'].includes(map.equivalence);
         } else {
           ok = ['null', 'related-to', 'equivalent',  'source-is-narrower-than-target', 'source-is-broader-than-target'].includes(map.relationship);
         }
