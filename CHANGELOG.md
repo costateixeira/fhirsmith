@@ -5,6 +5,28 @@ All notable changes to the Health Intersections Node Server will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.1] - 2026-03-29
+
+### Added
+
+- Support for implicit snomed concept maps
+
+### Changed
+
+- Reverse the [interpretation of RxNorm [rel] and [rela] value sets](https://chat.fhir.org/#narrow/channel/179202-terminology/topic/Inverted.20query.20for.20RELA.20in.20using.20RxNorm.20page/with/582270767)
+- Improve modifier extension message
+- 
+### Fixed
+
+- fix missing files from npm package
+- Add missing styles to dashboard
+- $translate fixes: don't return duplicate matches, handle R4/R5 issues properly, fix missed comments and products
+- fix handling force-value-set version parameter
+
+### Tx Conformance Statement
+
+FHIRsmith passed all 1498 HL7 terminology service tests (modes tx.fhir.org+omop+general+snomed, tests v1.9.1, runner v6.9.4
+
 ## [v0.8.0] - 2026-03-27
 
 ### Added
