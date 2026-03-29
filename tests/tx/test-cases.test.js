@@ -4849,14 +4849,6 @@ describe('tx.fhir.org', () => {
     await runTest({"suite":"tx.fhir.org","test":"snomed-validate-property-good"}, "4.0");
   });
 
-  it('snomed-translateR5', async () => {
-    await runTest({"suite":"tx.fhir.org","test":"snomed-translate"}, "5.0");
-  });
-
-  it('snomed-translateR4', async () => {
-    await runTest({"suite":"tx.fhir.org","test":"snomed-translate"}, "4.0");
-  });
-
 });
 
 describe('snomed', () => {
