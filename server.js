@@ -592,7 +592,7 @@ app.get('/dashboard', async (req, res) => {
 function pctColor(pct) {
   const r = Math.round(pct * 2.55);
   const g = Math.round((100 - pct) * 2.55);
-  return `rgb(${r}, ${g}, 100)`;  // the 100 keeps it pastel/light
+  return `rgb(${r}, ${g}, 180)`;  // higher blue floor = lighter reds
 }
 
 // Health check endpoint
