@@ -396,14 +396,8 @@ class SHLModule {
 
   loadCertificates() {
     try {
-      const certPath = path.resolve(__dirname, this.config.certificates.certFile);
-      const keyPath = path.resolve(__dirname, this.config.certificates.keyFile);
-
-      // Validate paths to prevent directory traversal
-      if (!certPath.startsWith(path.resolve(__dirname)) ||
-        !keyPath.startsWith(path.resolve(__dirname))) {
-        throw new Error('Certificate paths outside allowed directory');
-      }
+      const certPath = folders.filePath('shl', this.config.certificates.certFile);
+      const keyPath = folders.filePath('shl', this.config.certificates.keyFile);
 
       const certPem = fs.readFileSync(certPath, 'utf8');
       const keyPem = fs.readFileSync(keyPath, 'utf8');
