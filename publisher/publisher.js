@@ -894,7 +894,7 @@ class PublisherModule {
             content += '<a href="/publisher/admin/users" class="btn btn-secondary">Manage Users</a>';
           }
           content += '<form style="display: inline-block; margin-left: 10px;" method="post" action="/publisher/logout">';
-          content += '<button type="submit" class="btn btn-outline-secondary">Logout</button>';
+          content += '<button type="submit" class="btn btn-outline-secondary">' + escape(req.session.userName) + ' \u2014 Logout</button>';
           content += '</form>';
           content += '</div>';
         } else {
@@ -932,7 +932,7 @@ class PublisherModule {
         const html = htmlServer.renderPage('publisher', 'FHIR Publisher', content, {
           taskCount: tasks.length,
           templateVars: {
-            loginTitle: req.session.userId ? "Logout" : 'Login',
+            loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
             loginPath: req.session.userId ? "logout" : 'login',
             loginAction: req.session.userId ? "POST" : 'GET'
           }
@@ -974,7 +974,7 @@ class PublisherModule {
 
       const html = htmlServer.renderPage('publisher', 'Login - FHIR Publisher', content, {
         templateVars: {
-          loginTitle: req.session.userId ? "Logout" : 'Login',
+          loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
           loginPath: req.session.userId ? "logout" : 'login',
           loginAction: req.session.userId ? "POST" : 'GET'
         }});
@@ -1175,7 +1175,7 @@ class PublisherModule {
 
         const html = htmlServer.renderPage('publisher', 'Tasks - FHIR Publisher', content, {
           templateVars: {
-            loginTitle: req.session.userId ? "Logout" : 'Login',
+            loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
             loginPath: req.session.userId ? "logout" : 'login',
             loginAction: req.session.userId ? "POST" : 'GET'
           }});
@@ -1479,7 +1479,7 @@ class PublisherModule {
 
           const html = htmlServer.renderPage('publisher', 'Task Output - FHIR Publisher', content, {
             templateVars: {
-              loginTitle: req.session.userId ? "Logout" : 'Login',
+              loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
               loginPath: req.session.userId ? "logout" : 'login',
               loginAction: req.session.userId ? "POST" : 'GET'
             }});
@@ -1718,7 +1718,7 @@ class PublisherModule {
 
         const html = htmlServer.renderPage('publisher', 'Task History - FHIR Publisher', content, {
           templateVars: {
-            loginTitle: req.session.userId ? "Logout" : 'Login',
+            loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
             loginPath: req.session.userId ? "logout" : 'login',
             loginAction: req.session.userId ? "POST" : 'GET'
           }});
@@ -1761,7 +1761,7 @@ class PublisherModule {
       content += '</form>';
 
       const html = htmlServer.renderPage('publisher', 'Edit Website - FHIR Publisher', content, {
-        templateVars: { loginTitle: 'Logout', loginPath: 'logout', loginAction: 'POST' }
+        templateVars: { loginTitle: (req.session.userName || '') + ' \u2014 Logout', loginPath: 'logout', loginAction: 'POST' }
       });
       res.setHeader('Content-Type', 'text/html');
       res.send(html);
@@ -1879,7 +1879,7 @@ class PublisherModule {
 
         const html = htmlServer.renderPage('publisher', 'Websites - FHIR Publisher', content, {
           templateVars: {
-            loginTitle: req.session.userId ? "Logout" : 'Login',
+            loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
             loginPath: req.session.userId ? "logout" : 'login',
             loginAction: req.session.userId ? "POST" : 'GET'
           }});
@@ -2021,7 +2021,7 @@ class PublisherModule {
 
         const html = htmlServer.renderPage('publisher', 'Users - FHIR Publisher', content, {
           templateVars: {
-            loginTitle: req.session.userId ? "Logout" : 'Login',
+            loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
             loginPath: req.session.userId ? "logout" : 'login',
             loginAction: req.session.userId ? "POST" : 'GET'
           }});
