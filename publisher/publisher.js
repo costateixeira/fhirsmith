@@ -1691,7 +1691,7 @@ class PublisherModule {
           content += '<button type="submit" class="btn btn-warning">Retry</button>';
           content += '</form>';
         }
-        if (req.session.isAdmin && task.status === 'failed') {
+        if (req.session.userId && task.status === 'failed') {
           content += '<form method="post" action="/publisher/tasks/' + task.id + '/delete" style="display: inline;" class="me-2" onsubmit="return confirm(\'Delete task #' + task.id + ' and all its build output? This cannot be undone.\')">';
           content += '<button type="submit" class="btn btn-danger">Delete</button>';
           content += '</form>';
