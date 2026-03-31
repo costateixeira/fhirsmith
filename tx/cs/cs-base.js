@@ -41,6 +41,19 @@ class BaseCSServices extends CodeSystemProvider {
     return property;
   }
 
+  _addDateTimeProperty(params, type, name, value) {
+
+    const property = {
+      name: type,
+      part: [
+        {name: 'code', valueCode: name},
+        {name: 'value', valueDateTime: value}
+      ]
+    };
+    params.push(property);
+    return property;
+  }
+
   _addStringProperty(params, type, name, value, language = null) {
 
     const property = {
