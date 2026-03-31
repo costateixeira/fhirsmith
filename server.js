@@ -11,6 +11,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const v8 = require('v8');
 const folders = require('./library/folder-setup');  // <-- ADD: load early
 const { statSync, readdirSync } = require('fs');
 const escape = require('escape-html');
@@ -41,8 +42,8 @@ serverLog.info(`Data directory: ${folders.dataDir()}`);
 serverLog.info(`========================================`);
 
 const activeModules = config.modules ? Object.keys(config.modules)
-  .filter(mod => config.modules[mod].enabled)
-  .join(', ') : [];
+    .filter(mod => config.modules[mod].enabled)
+    .join(', ') : [];
 serverLog.info(`Loaded Configuration. Active modules = ${activeModules}`);
 
 // Import modules
@@ -541,20 +542,21 @@ app.get('/dashboard', async (req, res) => {
 
     // Memory usage
     const memUsage = process.memoryUsage();
-    const heapUsedPCT =  (memUsage.heapUsed * 100) / memUsage.heapTotal;
-    const freeMemMB = (os.freemem() / 1024 / 1024).toFixed(0);
-    const totalMemMB = (os.totalmem() / 1024 / 1024).toFixed(0);
-    const usedMemPCT = 100 - ((freeMemMB * 100) / totalMemMB);
+    const heapStats = v8.getHeapStatistics();
+    const nodeMemPCT = (memUsage.heapUsed * 100) / heapStats.heap_size_limit;  // % of Node.js memory limit used
+    const totalMemBytes = os.totalmem();
+    const freeMemBytes = os.freemem();
+    const sysMemPCT = ((totalMemBytes - freeMemBytes) * 100) / totalMemBytes;  // % of system memory used
     const fstats = fs.statfsSync(folders.logsDir());
-    const diskPCT = (fstats.bavail * 100) / fstats.blocks;
+    const diskPCT = 100 - ((fstats.bavail * 100) / fstats.blocks);  // % of disk used
 
     let content = '<style>table.grid{margin-bottom:10px;border:1px solid black;margin-right:auto}table.grid th,table.grid td{border:1px solid silver;padding:3px 7px 2px;font-size:12px;line-height:1.4em;font-family:verdana;vertical-align:top}table.grid th{font-weight:bold}table.grid td{font-weight:normal}</style>';
     content += '<table class="grid">';
     content += '<tr>';
     content += `<td><strong>Uptime:</strong> ${escape(uptimeStr)}</td>`;
     content += `<td><strong>Request Count:</strong> ${stats.requestCount} (static: ${stats.staticRequestCount})</td>`;
-    content += `<td style="background-color:${pctColor(usedMemPCT)}"><strong>Memory:</strong> ${usedMemPCT.toFixed(0)}%</td>`;
-    content += `<td style="background-color:${pctColor(heapUsedPCT)}"><strong>Heap:</strong> ${heapUsedPCT.toFixed(0)}%</td>`;
+    content += `<td style="background-color:${pctColor(nodeMemPCT)}"><strong>Node Memory:</strong> ${nodeMemPCT.toFixed(0)}%</td>`;
+    content += `<td style="background-color:${pctColor(sysMemPCT)}"><strong>System Memory:</strong> ${sysMemPCT.toFixed(0)}%</td>`;
     content += `<td style="background-color:${pctColor(diskPCT)}"><strong>Disk:</strong> ${diskPCT.toFixed(0)}%</td>`;
     content += '</tr>';
     content += '</table>';
@@ -590,9 +592,12 @@ app.get('/dashboard', async (req, res) => {
 });
 
 function pctColor(pct) {
-  const r = Math.round(pct * 2.55);
-  const g = Math.round((100 - pct) * 2.55);
-  return `rgb(${r}, ${g}, 180)`;  // higher blue floor = lighter reds
+  // Gradient from green (#deffe0) at 0% to red (#ffd3d1) at 100%
+  const t = Math.max(0, Math.min(100, pct)) / 100;
+  const r = Math.round(222 + 33 * t);   // 222 -> 255
+  const g = Math.round(255 - 44 * t);   // 255 -> 211
+  const b = Math.round(224 - 15 * t);   // 224 -> 209
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
 // Health check endpoint
@@ -659,10 +664,10 @@ function getLogStats() {
     const limitInfo = `${maxFiles} files × ${maxSize} each`;
 
     return '<tr>'
-      + `<td><strong>Existing Logs:</strong> ${files.length} (${sizeMB} MB)</td>`
-      + `<td><strong>Retention Policy:</strong> ${limitInfo}</td>`
-      + diskInfo
-      + '</tr>';
+        + `<td><strong>Existing Logs:</strong> ${files.length} (${sizeMB} MB)</td>`
+        + `<td><strong>Retention Policy:</strong> ${limitInfo}</td>`
+        + diskInfo
+        + '</tr>';
   } catch (e) {
     return `<tr><td colspan="3"><strong>Logs:</strong> unable to read (${e.message})</td></tr>`;
   }
@@ -793,12 +798,12 @@ async function serveFhirsmithHome(req, res) {
       endpoints: {
         health: '/health',
         ...Object.fromEntries(
-          Object.keys(enabledModules)
-            .filter(m => m !== 'tx')
-            .map(m => [
-              m,
-              m === 'vcl' ? '/VCL' : `/${m}`
-            ])
+            Object.keys(enabledModules)
+                .filter(m => m !== 'tx')
+                .map(m => [
+                  m,
+                  m === 'vcl' ? '/VCL' : `/${m}`
+                ])
         ),
         // Add TX endpoints separately
         ...(enabledModules.tx ? {
