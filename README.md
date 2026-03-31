@@ -5,16 +5,16 @@ This server provides a set of server-side services that are useful for the FHIR 
 ## Modules useful to anyone in the community
 
 * (Coming) R4/R6 interconverter
-* [tx.fhir.org](tx/README.md) server
-* [SHL Server](shl/readme.md) - SHL/VHL support services
+* [terminology](tx/README.md) server (as running on [tx.fhir.org](http://tx.fhir.org/r4))
+* [SHL Server](shl/readme.md) - SHL/VHL support services (running on [healthintersections.com.au](http://www.healthintersections.com.au), supporting the ICVP demo and and the Patient Document Generator)
 
 ## Services useful the community as a whole
 
 * [TX Registry](registry/readme.md) - **Terminology System Registry** as [described by the terminology ecosystem specification](https://build.fhir.org/ig/HL7/fhir-tx-ecosystem-ig) (as running at http://tx.fhir.org/tx-reg)
 * [Package server](packages/readme.md) - **NPM-style FHIR package registry** with search, versioning, and downloads, consistent with the FHIR NPM Specification (as running at http://packages2.fhir.org/packages)
 * [XIG server](xig/readme.md) -  **Comprehensive FHIR IG analytics** with resource breakdowns by version, authority, and realm (as running at http://packages2.fhir.org/packages)
-* [Publisher](publisher/readme.md) - FHIR publishing services (coming)
-* [VCL](vcl/readme.md) - **Parse VCL expressions** into FHIR ValueSet resources for http://fhir.org/vcl
+* [Publisher](publisher/readme.md) - FHIR publishing services (as running at [healthintersections.com.au](http://www.healthintersections.com.au/publisher))
+* [VCL](vcl/readme.md) - **Parse VCL expressions** into FHIR ValueSet resources (as running at http://fhir.org/vcl) 
 * (Coming) Token services
 
 ## Summary Statement
