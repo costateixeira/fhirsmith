@@ -9,11 +9,11 @@ const {VersionUtilities} = require("../../library/version-utilities");
  */
 
 function codeSystemToR5(jsonObj, version) {
-  if (version === 'R5') {
+  if (VersionUtilities.isR5Ver(version)) {
     return jsonObj; // Already R5, no conversion needed
   }
 
-  if (version === 'R3') {
+  if (VersionUtilities.isR3Ver(version)) {
     // R3 to R5: Convert identifier from single object to array
     if (jsonObj.identifier && !Array.isArray(jsonObj.identifier)) {
       jsonObj.identifier = [jsonObj.identifier];
@@ -21,7 +21,7 @@ function codeSystemToR5(jsonObj, version) {
     return jsonObj;
   }
 
-  if (version === 'R4') {
+  if (VersionUtilities.isR4Ver(version)) {
     // R4 to R5: identifier is already an array, no conversion needed
     return jsonObj;
   }

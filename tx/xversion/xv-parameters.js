@@ -17,10 +17,10 @@ function parametersToR5(jsonObj, sourceVersion) {
     }
   }
 
-  const {convertResourceFromR5} = require("./xv-resource");
+  const {convertResourceToR5} = require("./xv-resource");
   for (let p of jsonObj.parameter) {
     if (p.resource) {
-      p.resource = convertResourceFromR5(p.resource, sourceVersion);
+      p.resource = convertResourceToR5(p.resource, sourceVersion);
     }
   }
   return jsonObj;
