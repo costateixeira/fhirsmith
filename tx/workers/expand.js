@@ -813,7 +813,7 @@ class ValueSetExpander {
           this.worker.opContext.log('iterate concepts done');
         }
 
-        if (cset.filter) {
+        if (cset.filter && cset.filter.length > 0) {
           this.worker.opContext.log('prepare filters');
           const fcl = cset.filter;
           const prep = await cs.getPrepContext(true);
