@@ -555,7 +555,7 @@ class PackageCrawler {
       if (npmPackage.hasInstallScripts) {
         throw new Error(`Package ${idver} rejected: contains install scripts (preinstall/install/postinstall)`);
       }
-      if (npmPackage.hasJavaScript && !isTemplate) {
+      if (npmPackage.hasJavaScript && !isTemplate && id !== 'hl7.fhir.pubpack') {
         throw new Error(`Package ${idver} rejected: contains JavaScript files but is not a template package`);
       }
 
