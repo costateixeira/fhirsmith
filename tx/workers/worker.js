@@ -252,6 +252,7 @@ class TerminologyWorker {
   loadSupplements(url, version = '', statedSupplements) {
     const supplements = [];
 
+    supplements.push(...this.provider.loadSupplements(url, version, statedSupplements));
     // todo: look in provider for supplements
 
     if (!this.additionalResources) {
@@ -306,7 +307,7 @@ class TerminologyWorker {
    * @param {CodeSystemProvider} cs - Code system provider
    * @param {Object} src - Source element (for extensions)
    */
-  checkSupplements(cs, src, requiredSupplements, usedSupplements = null) {
+  checkSupplements(cs, src, requiredSupplements, usedSupplements = null, reportedSupplements = null) {
     // Check for required supplements in extensions
     if (src && src.extension) {
       const supplementExtensions = src.extension.filter(x => x.url == 'http://hl7.org/fhir/StructureDefinition/valueset-supplement');
@@ -318,7 +319,12 @@ class TerminologyWorker {
       }
     }
 
-    // Note required supplements that are satisfied
+    if (reportedSupplements) {
+      for (let s of cs.listSupplements(true)) {
+        reportedSupplements.add(s);
+      }
+    }
+    // Note required supplements that are satisfied - and might be version independent
     if (usedSupplements) {
       for (const s of requiredSupplements) {
         if (cs.hasSupplement(s)) {

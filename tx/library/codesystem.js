@@ -2,6 +2,7 @@ const { Language } = require("../../library/languages");
 const {CanonicalResource} = require("./canonical-resource");
 const {codeSystemFromR5, codeSystemToR5} = require("../xversion/xv-codesystem");
 const {getValuePrimitive} = require("../../library/utilities");
+const {VersionUtilities} = require("../../library/version-utilities");
 
 const CodeSystemContentMode = Object.freeze({
   Complete: 'complete',
@@ -614,11 +615,30 @@ class CodeSystem extends CanonicalResource {
   }
 
   isLangPack() {
+    // todo: this is a temporary work around until fhir.tx.support.r4#0.37.0 is released that properly marks this as a language pack
+    if (this.jsonObj.url === 'https://terminology.dhp.uz/fhir/CodeSystem/loinc-supplement-uz') {
+      return true;
+    }
     return (this.jsonObj.extension || []).find(x => x.url == 'http://hl7.org/fhir/StructureDefinition/codesystem-supplement-type' && getValuePrimitive(x) == 'lang-pack');
   }
 
   isPropUri(code, uri) {
     return (this.jsonObj.property || []).find(x => x.code == code && x.uri == uri);
+  }
+
+  isSupplementFor(url, version) {
+    if (this.jsonObj.content !== 'supplement') {
+      return false;
+    }
+    let suppU = this.jsonObj.supplements;
+    if (suppU == url) {
+      return true;
+    }
+    if (suppU.startsWith(url + '|')) {
+      let suppV = suppU.substring(suppU.indexOf('|') + 1);
+      return VersionUtilities.versionMatchesByAlgorithm(suppV, version, VersionUtilities.guessVersionAlgorithmFromVersion(version));
+    }
+    return false;
   }
 }
 

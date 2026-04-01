@@ -69,7 +69,10 @@ const mockProvider = {
       };
     }
     return null;
-  })
+  }),
+  loadSupplements() {
+    return [];
+  }
 };
 
 // Helper to create mock request/response

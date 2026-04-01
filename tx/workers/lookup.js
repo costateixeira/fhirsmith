@@ -149,14 +149,15 @@ class LookupWorker extends TerminologyWorker {
 
       // check supplements
       const used = new Set();
-      this.checkSupplements(csProvider, null, txp.supplements, used);
+      const reported = new Set();
+      this.checkSupplements(csProvider, null, txp.supplements, used, reported);
       const unused = new Set([...txp.supplements].filter(s => !used.has(s)));
       if (unused.size > 0) {
         throw new Issue('error', 'not-found', null, 'VALUESET_SUPPLEMENT_MISSING', this.i18n.translatePlural(unused.size, 'VALUESET_SUPPLEMENT_MISSING', txp.HTTPLanguages, [[...unused].join(',')]), 'not-found').handleAsOO(400);
       }
 
       // Perform the lookup
-      const result = await this.doLookup(csProvider, code, txp);
+      const result = await this.doLookup(csProvider, code, txp, reported);
       return res.status(200).json(result);
     } catch (error) {
       this.log.error(error);
@@ -242,9 +243,10 @@ class LookupWorker extends TerminologyWorker {
    * @param {CodeSystemProvider} csProvider - CodeSystem provider
    * @param {string} code - Code to look up
    * @param {Object} params - Parsed parameters
+   * @param {Set} reportedSupplements - Set of supplements that are to be reported
    * @returns {Object} Parameters resource with lookup result
    */
-  async doLookup(csProvider, code, params) {
+  async doLookup(csProvider, code, params, reportedSupplements) {
     this.deadCheck('doLookup');
 
     await this.checkSupplements(csProvider, null, params.supplements);
@@ -352,6 +354,12 @@ class LookupWorker extends TerminologyWorker {
           this.deadCheck('doLookup-designations');
           const designationParts = [];
 
+          if (designation.supplement) {
+            designationParts.push({
+              name: 'source',
+              valueCanonical: designation.supplement.vurl
+            });
+          }
           if (designation.language) {
             designationParts.push({
               name: 'language',
@@ -382,6 +390,14 @@ class LookupWorker extends TerminologyWorker {
     // Let the provider add additional properties
     await csProvider.extendLookup(ctxt, params.properties || [], responseParams);
 
+    if (reportedSupplements) {
+      for (const supplement of reportedSupplements) {
+        responseParams.push({
+          name: 'used-supplement',
+          valueCanonical: supplement
+        });
+      }
+    }
     return {
       resourceType: 'Parameters',
       parameter: responseParams

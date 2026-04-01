@@ -355,6 +355,52 @@ class SnomedServices {
     return result;
   }
 
+  filterChildOf(id = true) {
+    const result = new SnomedFilterContext();
+    const conceptResult = this.concepts.findConcept(id);
+
+    if (!conceptResult.found) {
+      throw new Error(`The SNOMED CT Concept ${id} is not known`);
+    }
+
+    const descendants = this.getConceptChildren(conceptResult.index);
+
+    result.descendants = descendants;
+
+    return result;
+  }
+
+
+  filterGeneralizes(id = true) {
+    const result = new SnomedFilterContext();
+    const conceptResult = this.concepts.findConcept(id);
+
+    if (!conceptResult.found) {
+      throw new Error(`The SNOMED CT Concept ${id} is not known`);
+    }
+
+    let ancestors = new Set();
+    let parents = this.getConceptParents(conceptResult.index);
+    let isNew = true;
+    while (isNew) {
+      isNew = false;
+      let np = [];
+      for (let parent of parents) {
+        if (!ancestors.has(parent)) {
+          isNew = true;
+          ancestors.add(parent);
+          np.push(...this.getConceptParents(parent));
+        }
+      }
+      parents = np;
+    }
+
+    result.descendants = [...ancestors];
+
+    return result;
+  }
+
+
   filterIn(id) {
     const result = new SnomedFilterContext();
     const conceptResult = this.concepts.findConcept(id);
@@ -775,6 +821,13 @@ class SnomedProvider extends BaseCSServices {
     const ctxt = await this.#ensureContext(context);
     if (ctxt) {
       if (!(ctxt instanceof SnomedExpressionContext) || ctxt.expression?.concepts.length == 1) {
+        const time = this.sct.concepts.getConcept(ctxt.getReference()).effectiveTime;
+        const pascalEpoch = new Date(1899, 11, 30);
+        const date = new Date(pascalEpoch.getTime() + time * 86400000);
+        const dateStr = date.toISOString().slice(0, 10);
+        this._addDateTimeProperty(params, 'property', 'effectiveTime', dateStr);
+
+
         const parents = this.sct.getConceptParents(ctxt.getReference());
         for (let parentRef of parents) {
           const code = this.sct.getConceptId(parentRef);
@@ -792,7 +845,7 @@ class SnomedProvider extends BaseCSServices {
         const moduleId = this.sct.concepts.getModuleId(ctxt.getReference());
         if (moduleId) {
           const code = this.sct.getConceptId(moduleId);
-          this._addCodeProperty(params, 'property', 'module', code, null, null);
+          this._addCodeProperty(params, 'property', 'module', code, null, this.sct.getDisplayName(moduleId));
         }
 
         const relationships = this.sct.getConceptRelationships(ctxt.getReference());
@@ -838,7 +891,7 @@ class SnomedProvider extends BaseCSServices {
   async doesFilter(prop, op, value) {
     if (prop === 'concept') {
       const id = this.sct.stringToIdOrZero(value);
-      if (id !== 0n && ['=', 'is-a', 'descendent-of', 'in'].includes(op)) {
+      if (id !== 0n && ['=', 'is-a', 'descendent-of', 'in', 'generalizes', 'child-of'].includes(op)) {
         return this.sct.conceptExists(value);
       }
     }
@@ -889,6 +942,14 @@ class SnomedProvider extends BaseCSServices {
         }
         case 'descendent-of': {
           filterContext.filters.push(this.sct.filterIsA(id, false));
+          return null;
+        }
+        case 'child-of': {
+          filterContext.filters.push(this.sct.filterChildOf(id));
+          return null;
+        }
+        case 'generalizes': {
+          filterContext.filters.push(this.sct.filterGeneralizes(id, false));
           return null;
         }
         case 'in': {
@@ -1121,7 +1182,7 @@ class SnomedProvider extends BaseCSServices {
     if (set.propProp || set.propValue) {
       for (let i = 0; i < this.sct.concepts.count(); i++) {
         let concept = this.sct.concepts.getConceptByCount(i);
-        const relationships = this.sct.getConceptRelationships(concept.getReference());
+        const relationships = this.sct.getConceptRelationships(concept.index);
         for (let relationshipRef of relationships) {
           const relationship = this.sct.relationships.getRelationship(relationshipRef);
           if (set.propProp === relationship.relType && set.propValue === relationship.target) {

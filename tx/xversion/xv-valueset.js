@@ -203,8 +203,7 @@ function convertContainsPropertyR5ToR4(containsList) {
  */
 function isR5OnlyFilterOperator(operator) {
   const r5OnlyOperators = [
-    'generalizes',  // Added in R5
-    // Add other R5-only operators as they're identified
+    'child-of', ' descendent-leaf' // Added in R5
   ];
   return r5OnlyOperators.includes(operator);
 }
