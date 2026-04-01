@@ -5,6 +5,29 @@ All notable changes to the Health Intersections Node Server will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+
+## [v0.8.4] - 2026-04-01
+
+### Added
+
+- add .npmrc to defend against supply chain attacks
+
+### Changed
+
+- Rework extension handling to make sure uzbek loinc works - load supplements from store
+
+### Fixed
+
+- tx/expand: fix for bug where filter array is present but empty
+- tx/SCT: support filters generalizes and child-of
+- tx/SCT: fix bug evaluating property filters
+- Fix version conversion issues
+
+### Tx Conformance Statement
+
+FHIRsmith passed all 1497 HL7 terminology service tests (modes tx.fhir.org+omop+general+snomed, tests v1.9.1, runner v6.9.4)
+
 ## [v0.8.3] - 2026-03-31
 
 ### Changed
@@ -15,14 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Publisher: Allow non-admin users to delete non-approved tasks
 
 ### Fixed
- 
+
 - Publisher: fix task logging
-- SHL: path fixes 
+- SHL: path fixes
 
 ### Tx Conformance Statement
 
 FHIRsmith passed all 1497 HL7 terminology service tests (modes tx.fhir.org+omop+general+snomed, tests v1.9.1, runner v6.9.4)
-
 
 ## [v0.8.2] - 2026-03-29
 
