@@ -404,6 +404,15 @@ class Designations {
     // }
   }
 
+  hasAnyDisplay(value) {
+    for (let designation of this.designations) {
+      if (designation.value === value) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /**
    * Check if a display value exists with specified matching criteria
    */
@@ -551,7 +560,7 @@ class Designations {
   /**
    * Find the preferred designation for given language preferences
    */
-  preferredDesignation(langList = null) {
+  preferredDesignation(langList = null, supplements = null) {
     if (this.designations.length === 0) {
       return null;
     }
@@ -560,23 +569,38 @@ class Designations {
       // No language list, prefer base designations
       for (const cd of this.designations) {
         if (this._isPreferred(cd) && cd.isActive()) {
+          if (supplements && cd.source) {
+            supplements.add(cd.source);
+          }
           return cd;
         }
       }
       for (const cd of this.designations) {
         if (this.isDisplay(cd) && cd.isActive()) {
+          if (supplements && cd.source) {
+            supplements.add(cd.source);
+          }
           return cd;
         }
       }
       for (const cd of this.designations) {
         if (this.isDisplay(cd)) {
+          if (supplements && cd.source) {
+            supplements.add(cd.source);
+          }
           return cd;
         }
       }
       for (const cd of this.designations) {
         if (this._isPreferred(cd)) {
+          if (supplements && cd.source) {
+            supplements.add(cd.source);
+          }
           return cd;
         }
+      }
+      if (supplements && this.designations[0].source) {
+        supplements.add(this.designations[0].source);
       }
       return this.designations[0];
     }
@@ -589,16 +613,25 @@ class Designations {
       for (const matchType of matchTypes) {
         for (const cd of this.designations) {
           if (this._langMatches(lang, cd.language, matchType) && this.isDisplay(cd)) {
+            if (supplements && cd.source) {
+              supplements.add(cd.source);
+            }
             return cd;
           }
         }
         for (const cd of this.designations) {
           if (this._langMatches(lang, cd.language, matchType) && this._isPreferred(cd)) {
+            if (supplements && cd.source) {
+              supplements.add(cd.source);
+            }
             return cd;
           }
         }
         for (const cd of this.designations) {
           if (this._langMatches(lang, cd.language, matchType)) {
+            if (supplements && cd.source) {
+              supplements.add(cd.source);
+            }
             return cd;
           }
         }
@@ -606,6 +639,9 @@ class Designations {
     }
     for (const cd of this.designations) {
       if (!cd.language && this.isDisplay(cd)) {
+        if (supplements && cd.source) {
+          supplements.add(cd.source);
+        }
         return cd;
       }
     }

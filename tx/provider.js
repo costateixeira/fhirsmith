@@ -107,6 +107,36 @@ class Provider {
     return null;
   }
 
+  loadSupplements(url, version, statedSupplements) {
+    let supplements = new Map();
+    for (let csp of this.codeSystemFactories.values()) {
+      csp.listSupplements(supplements, url, version, statedSupplements);
+    }
+    for (let cs of this.codeSystems.values()) {
+      if (cs.isSupplementFor(url, version)) {
+        if (cs.isLangPack() || this.isStatedSupplement(cs, statedSupplements)) {
+          supplements.set(cs.vurl, cs);
+        }
+      }
+    }
+    return [...supplements.values()];
+  }
+
+  isStatedSupplement(cs, statedSupplements) {
+    if (statedSupplements == null) {
+      return false;
+    }
+    for (let suppU of statedSupplements) {
+      if (suppU === cs.url) {
+        return true;
+      }
+      if (suppU.startsWith(cs.url+"|")) {
+        let suppV = suppU.substring(suppU.indexOf('|') + 1);
+        return VersionUtilities.versionMatchesByAlgorithm(suppV, cs.version, VersionUtilities.guessVersionAlgorithmFromVersion(cs.version));
+      }
+    }
+    return false;
+  }
   /**
    * Create a code system provider from a CodeSystem resource
    * @param {OperationContext} opContext - The code system resource

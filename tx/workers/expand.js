@@ -204,6 +204,7 @@ class ValueSetExpander {
   hasExclusions = false;
   requiredSupplements = new Set();
   usedSupplements = new Set();
+  reportedSupplements = new Set();
   internalLimit = INTERNAL_DEFAULT_LIMIT;
   externalLimit = EXTERNAL_DEFAULT_LIMIT;
 
@@ -339,9 +340,9 @@ class ValueSetExpander {
       const s = this.canonical(system, version);
       this.addParamUri(expansion, 'used-codesystem', s);
       if (cs != null) {
-        const ts = cs.listSupplements();
+        const ts = cs.listSupplements(false);
         for (const vs of ts) {
-          this.addParamUri(expansion, 'used-supplement', vs);
+          this.reportedSupplements.add(vs);
         }
       }
     }
@@ -415,7 +416,7 @@ class ValueSetExpander {
       }
 
       // display and designations
-      const pref = displays.preferredDesignation(this.params.workingLanguages());
+      const pref = displays.preferredDesignation(this.params.workingLanguages(), this.reportedSupplements);
       if (pref && pref.value) {
         n.display = pref.value;
       }
@@ -425,6 +426,9 @@ class ValueSetExpander {
           if (t !== pref && this.useDesignation(t) && t.value != null && !this.redundantDisplay(n, t.language, t.use, t.value)) {
             if (!n.designation) {
               n.designation = [];
+            }
+            if (t.source) {
+              this.reportedSupplements.add(t.source);
             }
             n.designation.push(t.asObject());
           }
@@ -490,9 +494,9 @@ class ValueSetExpander {
       const s = this.canonical(system, version);
       this.addParamUri(expansion, 'used-codesystem', s);
       if (cs) {
-        const ts= cs.listSupplements();
+        const ts= cs.listSupplements(false);
         for (const vs of ts) {
-          this.addParamUri(expansion, 'used-supplement', vs);
+          this.reportedSupplements.add(vs);
         }
       }
     }
@@ -1040,10 +1044,9 @@ class ValueSetExpander {
     if (expansion) {
       const vs = this.canonical(await cs.system(), await cs.version());
       this.addParamUri(expansion, 'used-codesystem', vs);
-      const ts = cs.listSupplements();
+      const ts = cs.listSupplements(false);
       for (const v of ts) {
-        this.worker.deadCheck('processCodeAndDescendants');
-        this.addParamUri(expansion, 'used-supplement', v);
+        this.reportedSupplements.add(v);
       }
     }
 
@@ -1081,10 +1084,9 @@ class ValueSetExpander {
     if (expansion) {
       const vs = this.canonical(await cs.system(), await cs.version());
       this.addParamUri(expansion, 'used-codesystem', vs);
-      const ts= cs.listSupplements();
+      const ts= cs.listSupplements(false);
       for (const v of ts) {
-        this.worker.deadCheck('processCodeAndDescendants');
-        this.addParamUri(expansion, 'used-supplement', v);
+        this.reportedSupplements.add(v);
       }
     }
 
@@ -1301,6 +1303,11 @@ class ValueSetExpander {
       } else {
         throw e;
       }
+    }
+
+    const ts = this.reportedSupplements;
+    for (const v of ts) {
+      this.addParamUri(exp, 'used-supplement', v);
     }
 
     this.worker.opContext.log('finish up');
