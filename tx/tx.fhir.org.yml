@@ -12,7 +12,7 @@ sources:
   - internal:hgvs
   - ucum:tx/data/ucum-essence.xml
   - loinc:loinc-2.77-a.db
-  - loinc!:loinc-2.81-b.db
+  - loinc!:Loinc_2.82.db
   - rxnorm:rxnorm_03022026.db
   - ndc:ndc-20211101.db
   - unii:unii_20240622.db
