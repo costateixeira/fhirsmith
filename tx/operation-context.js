@@ -15,7 +15,7 @@ function isDebugging() {
   }
   // Also check for debug flags in case inspector not yet attached
   return process.execArgv.some(arg =>
-    arg.includes('--inspect') || arg.includes('--debug')
+      arg.includes('--inspect') || arg.includes('--debug')
   );
 }
 
@@ -233,16 +233,16 @@ class ExpansionCache {
     // Resources are now CodeSystem/ValueSet wrappers, not raw JSON
     if (additionalResources && additionalResources.length > 0) {
       const resourceHashes = additionalResources
-        .map(r => {
-          // Get the JSON object from wrapper or use directly
-          const json = r.jsonObj || r;
-          // Create a content hash for this resource
-          return crypto.createHash('sha256')
-            .update(JSON.stringify(json))
-            .digest('hex')
-            .substring(0, 16); // Use first 16 chars for brevity
-        })
-        .sort();
+          .map(r => {
+            // Get the JSON object from wrapper or use directly
+            const json = r.jsonObj || r;
+            // Create a content hash for this resource
+            return crypto.createHash('sha256')
+                .update(JSON.stringify(json))
+                .digest('hex')
+                .substring(0, 16); // Use first 16 chars for brevity
+          })
+          .sort();
       keyParts.push(`additional:${resourceHashes.join(',')}`);
     }
 
@@ -314,7 +314,7 @@ class ExpansionCache {
 
     // Get entries sorted by lastUsed (oldest first)
     const entries = Array.from(this.cache.entries())
-      .sort((a, b) => a[1].lastUsed - b[1].lastUsed);
+        .sort((a, b) => a[1].lastUsed - b[1].lastUsed);
 
     const toEvict = Math.min(count, entries.length);
     for (let i = 0; i < toEvict; i++) {
@@ -413,7 +413,29 @@ class ExpansionCache {
 }
 
 
+/**
+ * Read the cgroup memory limit once at startup.
+ * Returns the byte limit, or 0 if unavailable (disables the check).
+ */
+function readMemoryLimit() {
+  try {
+    const raw = require('fs').readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim();
+    if (raw === 'max') return 0; // no cgroup limit
+    return parseInt(raw);
+  } catch {
+    return 0; // not on Linux / no cgroup
+  }
+}
+
+const MEMORY_LIMIT = readMemoryLimit();
+const MEMORY_FRACTION = 0.98;
+const MEMORY_THRESHOLD = MEMORY_LIMIT > 0 ? MEMORY_LIMIT * MEMORY_FRACTION : 0; // 90% of cgroup limit
+const CHECK_FREQUENCY = 100;
+
 class OperationContext {
+  // Shared counter across all instances — only check RSS every CHECK_FREQUENCY calls
+  static _checkCounter = 0;
+
   constructor(langs, i18n = null, id = null, timeLimit = 30, resourceCache = null, expansionCache = null) {
     this.i18n = i18n;
     this.langs = this._ensureLanguages(langs);
@@ -445,8 +467,8 @@ class OperationContext {
    */
   copy() {
     const newContext = new OperationContext(
-      this.langs, this.i18n, this.id, this.timeLimit / 1000,
-      this.resourceCache, this.expansionCache
+        this.langs, this.i18n, this.id, this.timeLimit / 1000,
+        this.resourceCache, this.expansionCache
     );
     newContext.contexts = [...this.contexts];
     newContext.startTime = this.startTime;
@@ -458,26 +480,55 @@ class OperationContext {
   }
 
   /**
-   * Check if operation has exceeded time limit
+   * Check if operation has exceeded time limit, or is pushing is over the memory limit
    * Skipped when running under debugger
+   *
+   * note: if the server pushes over the memory limit for the process, the process is terminated.
+   * the memory check here is intended to prevent process termination on the grounds that some
+   * big operation is pushing the limit. It might not be the big operation that is terminated first,
+   * but eventually it'll get terminated.
+   *
+   * this is called a *lot* so it's important to be efficient. Only check every CHECK_FREQUENCY
+   * times means that there could be a small overrun, but it's called often enough that the
+   * overrun won't be that signiifcant
+   *
    * @param {string} place - Location identifier for debugging
    * @returns {boolean} true if operation should be terminated
    */
   deadCheck(place = 'unknown') {
-    // Skip time limit checks when debugging
     if (this.debugging) {
       return false;
     }
 
-    const elapsed = performance.now() - this.startTime;
+    OperationContext._checkCounter++;
+    if (OperationContext._checkCounter < CHECK_FREQUENCY) {
+      return false;
+    }
+    OperationContext._checkCounter = 0;
 
+    // Time check
+    const elapsed = performance.now() - this.startTime;
     if (elapsed > this.timeLimit) {
       const timeInSeconds = Math.round(this.timeLimit / 1000);
       this.log(`Operation took too long @ ${place} (${this.constructor.name})`);
-
-      const error = new Issue("error", "too-costly", null, `Operation exceeded time limit of ${timeInSeconds} seconds at ${place}`);
+      const error = new Issue("error", "too-costly", null,
+          `Operation exceeded time limit of ${timeInSeconds} seconds at ${place}`);
       error.diagnostics = this.diagnostics();
       throw error;
+    }
+
+    // Memory check (piggyback on same sample)
+    if (MEMORY_THRESHOLD > 0) {
+      const rss = process.memoryUsage.rss();
+      if (rss > MEMORY_THRESHOLD) {
+        const usedGB = (rss / 1024 / 1024 / 1024).toFixed(1);
+        const limitGB = (MEMORY_LIMIT / 1024 / 1024 / 1024).toFixed(1);
+        this.log(`Memory Limit: ${usedGB} GB of ${limitGB} GB limit @ ${place}`);
+        const error = new Issue("error", "too-costly", null,
+            `Operation aborted: server memory usage (${usedGB} GB) exceeds safe threshold (${MEMORY_FRACTION * 100}% of ${limitGB} GB limit) at ${place}`);
+        error.diagnostics = this.diagnostics();
+        throw error;
+      }
     }
 
     return false;
