@@ -386,22 +386,44 @@ async function buildRootPageContent() {
 
   // Memory usage
   const memUsage = process.memoryUsage();
-  const heapUsedMB = (memUsage.heapUsed / 1024 / 1024).toFixed(2);
-  const heapAvailableMB = ((memUsage.heapTotal - memUsage.heapUsed) / 1024 / 1024).toFixed(2);
-  const rssMB = (memUsage.rss / 1024 / 1024).toFixed(2);
-  const freeMemMB = (os.freemem() / 1024 / 1024).toFixed(0);
+  const heapStats = v8.getHeapStatistics();
+
+  // V8 heap: used vs limit
+  const v8UsedMB = (memUsage.heapUsed / 1024 / 1024).toFixed(0);
+  const v8LimitMB = (heapStats.heap_size_limit / 1024 / 1024).toFixed(0);
+  const v8PCT = (memUsage.heapUsed * 100) / heapStats.heap_size_limit;
+
+  // Process RSS vs cgroup limit (or system total)
+  const rssMB = (memUsage.rss / 1024 / 1024).toFixed(0);
+  let memLimit;
+  try {
+    const raw = fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim();
+    memLimit = raw === 'max' ? os.totalmem() : parseInt(raw);
+  } catch {
+    memLimit = os.totalmem();
+  }
+  const memLimitMB = (memLimit / 1024 / 1024).toFixed(0);
+  const processPCT = (memUsage.rss * 100) / memLimit;
+
+  // System memory
   const totalMemMB = (os.totalmem() / 1024 / 1024).toFixed(0);
+  const usedMemMB = ((os.totalmem() - os.freemem()) / 1024 / 1024).toFixed(0);
+  const sysMemPCT = ((os.totalmem() - os.freemem()) * 100) / os.totalmem();
+
+  // Average requests per minute
+  const uptimeMinutesTotal = uptimeMs / 60000;
+  const avgReqPerMin = uptimeMinutesTotal > 0 ? (stats.requestCount / uptimeMinutesTotal).toFixed(1) : '0.0';
 
   content += '<table class="grid">';
   content += '<tr>';
   content += `<td><strong>Uptime:</strong> ${escape(uptimeStr)}</td>`;
   content += `<td><strong>Request Count:</strong> ${stats.requestCount} (static: ${stats.staticRequestCount})</td>`;
-  content += `<td><strong>Free Memory:</strong> ${freeMemMB} MB of ${totalMemMB} MB</td>`;
+  content += `<td><strong>Avg Requests/min:</strong> ${avgReqPerMin}</td>`;
   content += '</tr>';
   content += '<tr>';
-  content += `<td><strong>Heap Used:</strong> ${heapUsedMB} MB</td>`;
-  content += `<td><strong>Heap Available:</strong> ${heapAvailableMB} MB</td>`;
-  content += `<td><strong>Process Memory:</strong> ${rssMB} MB</td>`;
+  content += `<td style="background-color:${pctColor(v8PCT)}"><strong>V8 Memory:</strong> ${v8UsedMB} MB of ${v8LimitMB} MB (${v8PCT.toFixed(0)}%)</td>`;
+  content += `<td style="background-color:${pctColor(processPCT)}"><strong>Process Memory:</strong> ${rssMB} MB of ${memLimitMB} MB (${processPCT.toFixed(0)}%)</td>`;
+  content += `<td style="background-color:${pctColor(sysMemPCT)}"><strong>System Memory:</strong> ${usedMemMB} MB of ${totalMemMB} MB (${sysMemPCT.toFixed(0)}%)</td>`;
   content += '</tr>';
   content += getLogStats();
   content += '</table>';
@@ -543,10 +565,24 @@ app.get('/dashboard', async (req, res) => {
     // Memory usage
     const memUsage = process.memoryUsage();
     const heapStats = v8.getHeapStatistics();
-    const nodeMemPCT = (memUsage.heapUsed * 100) / heapStats.heap_size_limit;  // % of Node.js memory limit used
+    const v8PCT = (memUsage.heapUsed * 100) / heapStats.heap_size_limit;  // % of V8 heap limit used
+
+    // Process RSS as % of cgroup memory limit (or system total as fallback)
+    let memLimit;
+    try {
+      const raw = fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim();
+      memLimit = raw === 'max' ? os.totalmem() : parseInt(raw);
+    } catch {
+      memLimit = os.totalmem();
+    }
+    const processPCT = (memUsage.rss * 100) / memLimit;
+
     const totalMemBytes = os.totalmem();
     const freeMemBytes = os.freemem();
     const sysMemPCT = ((totalMemBytes - freeMemBytes) * 100) / totalMemBytes;  // % of system memory used
+
+    const memMaxPCT = Math.max(v8PCT, processPCT, sysMemPCT);
+
     const fstats = fs.statfsSync(folders.logsDir());
     const diskPCT = 100 - ((fstats.bavail * 100) / fstats.blocks);  // % of disk used
 
@@ -555,8 +591,7 @@ app.get('/dashboard', async (req, res) => {
     content += '<tr>';
     content += `<td><strong>Uptime:</strong> ${escape(uptimeStr)}</td>`;
     content += `<td><strong>Request Count:</strong> ${stats.requestCount} (static: ${stats.staticRequestCount})</td>`;
-    content += `<td style="background-color:${pctColor(nodeMemPCT)}"><strong>Node Memory:</strong> ${nodeMemPCT.toFixed(0)}%</td>`;
-    content += `<td style="background-color:${pctColor(sysMemPCT)}"><strong>System Memory:</strong> ${sysMemPCT.toFixed(0)}%</td>`;
+    content += `<td style="background-color:${pctColor(memMaxPCT)}"><strong>Memory:</strong> ${v8PCT.toFixed(0)}% V8, ${processPCT.toFixed(0)}% Process, ${sysMemPCT.toFixed(0)}% System</td>`;
     content += `<td style="background-color:${pctColor(diskPCT)}"><strong>Disk:</strong> ${diskPCT.toFixed(0)}%</td>`;
     content += '</tr>';
     content += '</table>';
