@@ -173,6 +173,7 @@ class TXModule {
     this.metadataHandler = new MetadataHandler({
       baseUrl: config.baseUrl,
       serverVersion: packageJson.version,
+      txVersion: packageJson.txVersion,
       softwareName: config.softwareName || 'FHIRsmith',
       name: config.name || 'FHIRTerminologyServer',
       title: config.title || 'FHIR Terminology Server',
