@@ -919,6 +919,14 @@ class CodeSystemFactoryProvider {
   async close() {
 
   }
+
+  /**
+   * if known, the right place to point to on the web for the code system
+   * @returns {String}
+   */
+  webSource() {
+    return undefined;
+  }
 }
 
 module.exports = {
