@@ -401,20 +401,24 @@ class SnomedServices {
   }
 
 
-  filterIn(id) {
+  filterIn(idList) {
     const result = new SnomedFilterContext();
-    const conceptResult = this.concepts.findConcept(id);
+    let members = [];
+    for (let id of idList.split(',')) {
+      const conceptResult = this.concepts.findConcept(id);
 
-    if (!conceptResult.found) {
-      throw new Error(`The SNOMED CT Concept ${id} is not known`);
+      if (!conceptResult.found) {
+        throw new Error(`The SNOMED CT Concept ${id} is not known`);
+      }
+
+      const refSetIndex = this.getConceptRefSet(conceptResult.index, false);
+      if (refSetIndex === 0) {
+        members.push(conceptResult.index);
+      } else {
+        members.push(...this.refSetMembers.getMembers(refSetIndex));
+      }
     }
-
-    const refSetIndex = this.getConceptRefSet(conceptResult.index, false);
-    if (refSetIndex === 0) {
-      throw new Error(`The SNOMED CT Concept ${id} is not a reference set`);
-    }
-
-    result.members = this.refSetMembers.getMembers(refSetIndex) || [];
+    result.members = members;
     return result;
   }
 
@@ -894,6 +898,17 @@ class SnomedProvider extends BaseCSServices {
       if (id !== 0n && ['=', 'is-a', 'descendent-of', 'in', 'generalizes', 'child-of'].includes(op)) {
         return this.sct.conceptExists(value);
       }
+      if (op === 'in' && value.includes(',')) {
+        let ok = true;
+        for (const idStr of value.split(',')) {
+          const id = this.sct.stringToIdOrZero(idStr);
+          if (id === 0n) {
+            ok = false;
+            break;
+          }
+        }
+        return ok;
+      }
     }
     if (prop === 'inactive') {
       return op === '=' && ['true', 'false'].includes(value);
@@ -927,7 +942,7 @@ class SnomedProvider extends BaseCSServices {
 
     if (prop === 'concept') {
       const id = this.sct.stringToIdOrZero(value);
-      if (id === 0n) {
+      if (id === 0n && op !== 'in') {
         throw new Error(`Invalid concept ID: ${value}`);
       }
 
@@ -953,7 +968,7 @@ class SnomedProvider extends BaseCSServices {
           return null;
         }
         case 'in': {
-          filterContext.filters.push(this.sct.filterIn(id));
+          filterContext.filters.push(this.sct.filterIn(value));
           return null;
         }
         default:
@@ -1621,6 +1636,11 @@ class SnomedServicesFactory extends CodeSystemFactoryProvider {
       return null;
     }
   }
+
+  webSource() {
+    return this.version();
+  }
+
 }
 
 function getEditionName(edition) {
