@@ -387,7 +387,7 @@ class TranslateWorker extends TerminologyWorker {
               }
               if (!explicit) {
                 matchParts.push({
-                  name: 'sourceMap',
+                  name: 'originMap',
                   valueCanonical: cm.vurl
                 });
               }
@@ -476,7 +476,7 @@ class TranslateWorker extends TerminologyWorker {
             }
             if (!explicit) {
               matchParts.push({
-                name: 'sourceMap',
+                name: 'originMap',
                 valueCanonical: cm.vurl
               });
             }
@@ -538,7 +538,7 @@ class TranslateWorker extends TerminologyWorker {
         }
         if (!explicit) {
           matchParts.push({
-            name: 'sourceMap',
+            name: 'originMap',
             valueCanonical: cm.vurl
           });
         }

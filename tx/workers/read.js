@@ -90,10 +90,14 @@ class ReadWorker extends TerminologyWorker {
           resourceType: "CodeSystem",
           id: "x-" + cs.id(),
           url: cs.system(),
+          version: cs.version(),
           name: cs.name(),
           status: "active",
           description: "This is a place holder for the code system which is fully supported through internal means (not by this code system)",
           content: "not-present"
+        }
+        if (cs.webSource()) {
+          json.extension = [{ url: "http://hl7.org/fhir/StructureDefinition/web-source", valueUrl : cs.webSource()}];
         }
         if (cs.version()) {
           json.version = cs.version();

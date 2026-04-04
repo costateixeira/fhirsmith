@@ -149,57 +149,8 @@ class SearchWorker extends TerminologyWorker {
     // If no search params, return all
     const hasSearchParams = Object.keys(searchParams).length > 0;
 
-    for (const [key, cs] of this.provider.codeSystems) {
-      this.deadCheck('searchCodeSystems');
-
-      if (key == cs.vurl) {
-        const json = cs.jsonObj;
-
-        if (!hasSearchParams) {
-          matches.push(json);
-          continue;
-        }
-
-        // Check each search parameter for partial match
-        let isMatch = true;
-        for (const [param, searchValue] of Object.entries(searchParams)) {
-
-          // Map content-mode to content property
-          const jsonProp = param === 'content-mode' ? 'content' : param;
-
-          if (param === 'jurisdiction') {
-            // Special handling for jurisdiction - array of CodeableConcept
-            if (!this.matchJurisdiction(json.jurisdiction, searchValue)) {
-              isMatch = false;
-              break;
-            }
-          } else if (param === 'text') {
-            const propValue = json.title + json.description;
-            if (!this.matchValue(propValue, searchValue)) {
-              isMatch = false;
-              break;
-            }
-          } else if (param === 'url' || param === 'system') { // exact match
-            const propValue = json.url;
-            if (propValue !== searchValue) {
-              isMatch = false;
-              break;
-            }
-          } else {
-            // Standard partial text match
-            const propValue = json[jsonProp];
-            if (!this.matchValue(propValue, searchValue)) {
-              isMatch = false;
-              break;
-            }
-          }
-        }
-
-        if (isMatch) {
-          matches.push(json);
-        }
-      }
-    }
+    this.searchCodeSystemResources(searchParams, hasSearchParams, matches);
+    this.searchCodeSystemProviders(searchParams, hasSearchParams, matches);
 
     return matches;
   }
@@ -472,6 +423,130 @@ class SearchWorker extends TerminologyWorker {
     ];
 
     return filtered;
+  }
+
+  searchCodeSystemResources(searchParams, hasSearchParams, matches) {
+    for (const [key, cs] of this.provider.codeSystems) {
+      this.deadCheck('searchCodeSystems');
+
+      if (key == cs.vurl) {
+        const json = cs.jsonObj;
+
+        if (!hasSearchParams) {
+          matches.push(json);
+          continue;
+        }
+
+        // Check each search parameter for partial match
+        let isMatch = true;
+        for (const [param, searchValue] of Object.entries(searchParams)) {
+
+          // Map content-mode to content property
+          const jsonProp = param === 'content-mode' ? 'content' : param;
+
+          if (param === 'jurisdiction') {
+            // Special handling for jurisdiction - array of CodeableConcept
+            if (!this.matchJurisdiction(json.jurisdiction, searchValue)) {
+              isMatch = false;
+              break;
+            }
+          } else if (param === 'text') {
+            const propValue = json.title + json.description;
+            if (!this.matchValue(propValue, searchValue)) {
+              isMatch = false;
+              break;
+            }
+          } else if (param === 'url' || param === 'system') { // exact match
+            const propValue = json.url;
+            if (propValue !== searchValue) {
+              isMatch = false;
+              break;
+            }
+          } else {
+            // Standard partial text match
+            const propValue = json[jsonProp];
+            if (!this.matchValue(propValue, searchValue)) {
+              isMatch = false;
+              break;
+            }
+          }
+        }
+
+        if (isMatch) {
+          matches.push(json);
+        }
+      }
+    }
+  }
+
+  searchCodeSystemProviders(searchParams, hasSearchParams, matches) {
+    let seen = new Set();
+    for (const csp of this.provider.codeSystemFactories.values()) {
+      this.deadCheck('searchCodeSystems');
+
+      if (seen.has(csp.id())) {
+        continue;
+      }
+      seen.add(csp.id());
+
+      let json = {
+        resourceType: "CodeSystem",
+        id: "x-" + csp.id(),
+        url: csp.system(),
+        version: csp.version(),
+        name: csp.name(),
+        status: "active",
+        description: "This is a place holder for the code system which is fully supported through internal means (not by this code system)",
+        content: "not-present"
+      }
+      if (csp.webSource()) {
+        json.extension = [{ url: "http://hl7.org/fhir/StructureDefinition/web-source", valueUrl : csp.webSource()}];
+      }
+
+      if (!hasSearchParams) {
+        matches.push(json);
+        continue;
+      }
+
+      // Check each search parameter for partial match
+      let isMatch = true;
+      for (const [param, searchValue] of Object.entries(searchParams)) {
+
+        // Map content-mode to content property
+        const jsonProp = param === 'content-mode' ? 'content' : param;
+
+        if (param === 'jurisdiction') {
+          // Special handling for jurisdiction - array of CodeableConcept
+          if (!this.matchJurisdiction(json.jurisdiction, searchValue)) {
+            isMatch = false;
+            break;
+          }
+        } else if (param === 'text') {
+          const propValue = json.title + json.description;
+          if (!this.matchValue(propValue, searchValue)) {
+            isMatch = false;
+            break;
+          }
+        } else if (param === 'url' || param === 'system') { // exact match
+          const propValue = json.url;
+          if (propValue !== searchValue) {
+            isMatch = false;
+            break;
+          }
+        } else {
+          // Standard partial text match
+          const propValue = json[jsonProp];
+          if (!this.matchValue(propValue, searchValue)) {
+            isMatch = false;
+            break;
+          }
+        }
+      }
+
+      if (isMatch) {
+        matches.push(json);
+      }
+    }
   }
 }
 

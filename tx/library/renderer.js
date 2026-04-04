@@ -141,8 +141,8 @@ class Renderer {
     this.renderMetadataLastUpdated(res, tbl);
     this.renderMetadataSource(res, tbl);
     this.renderProperty(tbl, 'TEST_PLAN_LANG', res.language);
-    this.renderProperty(tbl, 'GENERAL_DEFINING_URL', res.url);
-    this.renderProperty(tbl, 'GENERAL_VER', res.version);
+    this.renderPropertyCopy(tbl, 'GENERAL_DEFINING_URL', res.url);
+    this.renderPropertyCopy(tbl, 'GENERAL_VER', res.version);
     this.renderProperty(tbl, 'GENERAL_NAME', res.name);
     this.renderProperty(tbl, 'GENERAL_TITLE', res.title);
     this.renderProperty(tbl, 'GENERAL_STATUS', res.status);
@@ -150,9 +150,10 @@ class Renderer {
     this.renderPropertyMD(tbl, 'GENERAL_PURPOSE', res.purpose);
     this.renderProperty(tbl, 'CANON_REND_PUBLISHER', res.publisher);
     this.renderProperty(tbl, 'CANON_REND_COMMITTEE', Extensions.readString(res, 'http://hl7.org/fhir/StructureDefinition/structuredefinition-wg'));
-    this.renderProperty(tbl, 'GENERAL_COPYRIGHT', res.copyright);
+    this.renderPropertyCopy(tbl, 'GENERAL_COPYRIGHT', res.copyright);
     this.renderProperty(tbl, 'EXT_FMM_LEVEL', Extensions.readString(res, 'http://hl7.org/fhir/StructureDefinition/structuredefinition-fmm'));
     this.renderProperty(tbl, 'PAT_PERIOD', res.effectivePeriod);
+    this.renderPropertyLink(tbl, 'WEB_SOURCE', Extensions.readString(res, 'http://hl7.org/fhir/StructureDefinition/web-source'));
 
     // capability statement things
     this.renderProperty(tbl, 'Kind', res.kind);
@@ -253,15 +254,32 @@ class Renderer {
     }
   }
 
-  async renderPropertyLink(tbl, msgId, value) {
+  renderPropertyCopy(tbl, msgId, value) {
     if (value) {
       let tr = tbl.tr();
       tr.td().b().tx(this.translate(msgId));
-      const linkinfo = await this.linkResolver.resolveURL(this.opContext, value);
-      if (linkinfo) {
-        tr.td().ah(linkinfo.link).tx(linkinfo.description);
+      if (value instanceof Object) {
+        tr.td().tx("todo");
       } else {
-        tr.td().tx(value);
+        let td = tr.td();
+        let span = td.span("copy-text");
+        span.tx(value);
+        let btn = span.button();
+        btn.attr("class", "btn-copy");
+        btn.attr("data-clipboard-text", value);
+        btn.attr("data-original-title", this.translate('GENERAL_COPY'));
+      }
+    }
+  }
+
+  renderPropertyLink(tbl, msgId, value) {
+    if (value) {
+      let tr = tbl.tr();
+      tr.td().b().tx(this.translate(msgId));
+      if (value instanceof Object) {
+        tr.td().tx("todo");
+      } else {
+        tr.td().ah(value).tx(value);
       }
     }
   }

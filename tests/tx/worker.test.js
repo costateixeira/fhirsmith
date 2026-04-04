@@ -15,6 +15,10 @@ class MockProvider {
   async listCodeSystemVersions(url) {
     return []; // Override in specific tests
   }
+
+  loadSupplements() {
+    return [];
+  }
 }
 
 class MockLanguageDefinitions {

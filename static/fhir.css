@@ -624,3 +624,22 @@ div.warning {
   border: 1px silver solid;
   padding: 5px;
 }
+
+
+.copy-text .btn-copy{
+	visibility: hidden;
+}
+
+.copy-text:hover .btn-copy {
+	visibility: visible;
+}
+
+.btn-copy {
+	height: 14px;
+	width: 17px;
+	background-image: url('images/noun_copy to clipboard_1669410.png');
+	background-size: 22px;
+	padding: 0px 0px;
+	border-width: 0px;
+	background-color: transparent;
+}

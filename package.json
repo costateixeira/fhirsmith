@@ -1,6 +1,6 @@
 {
   "name": "fhirsmith",
-  "version": "0.8.2",
+  "version": "0.8.5",
   "description": "A Node.js server that provides a collection of tools to serve the FHIR ecosystem",
   "main": "server.js",
   "engines": {
@@ -104,7 +104,10 @@
   "license": "BSD-3",
   "overrides": {
     "tar": "^7.5.7",
-    "fast-xml-parser": "^5.3.4"
+    "fast-xml-parser": "^5.3.4",
+    "inquirer": {
+      "lodash": "4.18.1"
+    }
   },
   "bin": {
     "tx-import": "./tx/importers/tx-import.js",

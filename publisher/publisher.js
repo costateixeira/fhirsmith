@@ -6,6 +6,7 @@ const bcrypt = require('bcrypt');
 const session = require('express-session');
 const folders = require('../library/folder-setup');
 const escape = require('escape-html');
+const {Utilities} = require("../library/utilities");
 
 
 class PublisherModule {
@@ -51,8 +52,8 @@ class PublisherModule {
   async initializeDatabase() {
     // Ensure database directory exists
     const dbPath = path.isAbsolute(this.config.database)
-      ? this.config.database
-      : folders.filePath('publisher', this.config.database);
+        ? this.config.database
+        : folders.filePath('publisher', this.config.database);
     const dbDir = path.dirname(dbPath);
     const fs = require('fs');
     if (!fs.existsSync(dbDir)) {
@@ -78,84 +79,84 @@ class PublisherModule {
     const tables = [
       // Users table
       `CREATE TABLE IF NOT EXISTS users (
-                                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                            name TEXT NOT NULL,
-                                            login TEXT UNIQUE NOT NULL,
-                                            password_hash TEXT NOT NULL,
-                                            is_admin BOOLEAN DEFAULT 0,
-                                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                                          id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                          name TEXT NOT NULL,
+                                          login TEXT UNIQUE NOT NULL,
+                                          password_hash TEXT NOT NULL,
+                                          is_admin BOOLEAN DEFAULT 0,
+                                          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
        )`,
 
       // Websites table
       `CREATE TABLE IF NOT EXISTS websites (
-                                               id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                               name TEXT NOT NULL,
-                                               local_folder TEXT NOT NULL,
-                                               history_templates TEXT NOT NULL,
-                                               web_templates TEXT NOT NULL,
-                                               server_update_script TEXT NOT NULL,
-                                               is_active BOOLEAN DEFAULT 1,
-                                               created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                             name TEXT NOT NULL,
+                                             local_folder TEXT NOT NULL,
+                                             history_templates TEXT NOT NULL,
+                                             web_templates TEXT NOT NULL,
+                                             server_update_script TEXT NOT NULL,
+                                             is_active BOOLEAN DEFAULT 1,
+                                             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
        )`,
 
       // User website permissions
       `CREATE TABLE IF NOT EXISTS user_website_permissions (
-                                                               user_id INTEGER,
-                                                               website_id INTEGER,
-                                                               can_queue BOOLEAN DEFAULT 0,
-                                                               can_approve BOOLEAN DEFAULT 0,
-                                                               PRIMARY KEY (user_id, website_id),
-          FOREIGN KEY (user_id) REFERENCES users (id),
-          FOREIGN KEY (website_id) REFERENCES websites (id)
-          )`,
+                                                             user_id INTEGER,
+                                                             website_id INTEGER,
+                                                             can_queue BOOLEAN DEFAULT 0,
+                                                             can_approve BOOLEAN DEFAULT 0,
+                                                             PRIMARY KEY (user_id, website_id),
+        FOREIGN KEY (user_id) REFERENCES users (id),
+        FOREIGN KEY (website_id) REFERENCES websites (id)
+        )`,
 
       // Tasks table
       `CREATE TABLE IF NOT EXISTS tasks (
-                                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                            user_id INTEGER NOT NULL,
-                                            website_id INTEGER NOT NULL,
-                                            status TEXT DEFAULT 'queued',
-                                            github_org TEXT NOT NULL,
-                                            github_repo TEXT NOT NULL,
-                                            git_branch TEXT NOT NULL,
-                                            npm_package_id TEXT NOT NULL,
-                                            version TEXT NOT NULL,
-                                            local_folder TEXT,
-                                            build_output_path TEXT,
-                                            failure_reason TEXT,
-                                            announcement TEXT,
-                                            approved_by INTEGER,
-                                            queued_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                                            building_at DATETIME,
-                                            waiting_approval_at DATETIME,
-                                            publishing_at DATETIME,
-                                            completed_at DATETIME,
-                                            failed_at DATETIME,
-                                            FOREIGN KEY (user_id) REFERENCES users (id),
-          FOREIGN KEY (website_id) REFERENCES websites (id),
-          FOREIGN KEY (approved_by) REFERENCES users (id)
-          )`,
+                                          id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                          user_id INTEGER NOT NULL,
+                                          website_id INTEGER NOT NULL,
+                                          status TEXT DEFAULT 'queued',
+                                          github_org TEXT NOT NULL,
+                                          github_repo TEXT NOT NULL,
+                                          git_branch TEXT NOT NULL,
+                                          npm_package_id TEXT NOT NULL,
+                                          version TEXT NOT NULL,
+                                          local_folder TEXT,
+                                          build_output_path TEXT,
+                                          failure_reason TEXT,
+                                          announcement TEXT,
+                                          approved_by INTEGER,
+                                          queued_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                          building_at DATETIME,
+                                          waiting_approval_at DATETIME,
+                                          publishing_at DATETIME,
+                                          completed_at DATETIME,
+                                          failed_at DATETIME,
+                                          FOREIGN KEY (user_id) REFERENCES users (id),
+        FOREIGN KEY (website_id) REFERENCES websites (id),
+        FOREIGN KEY (approved_by) REFERENCES users (id)
+        )`,
 
       // Task logs
       `CREATE TABLE IF NOT EXISTS task_logs (
-                                                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                                task_id TEXT NOT NULL,
-                                                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                                                level TEXT NOT NULL,
-                                                message TEXT NOT NULL,
-                                                FOREIGN KEY (task_id) REFERENCES tasks (id)
-          )`,
+                                              id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                              task_id TEXT NOT NULL,
+                                              timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                              level TEXT NOT NULL,
+                                              message TEXT NOT NULL,
+                                              FOREIGN KEY (task_id) REFERENCES tasks (id)
+        )`,
 
       // User actions audit
       `CREATE TABLE IF NOT EXISTS user_actions (
-                                                   id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                                   user_id INTEGER,
-                                                   action TEXT NOT NULL,
-                                                   target_id TEXT,
-                                                   timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                                                   ip_address TEXT,
-                                                   FOREIGN KEY (user_id) REFERENCES users (id)
-          )`
+                                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                 user_id INTEGER,
+                                                 action TEXT NOT NULL,
+                                                 target_id TEXT,
+                                                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                                 ip_address TEXT,
+                                                 FOREIGN KEY (user_id) REFERENCES users (id)
+        )`
     ];
 
     for (const sql of tables) {
@@ -235,17 +236,17 @@ class PublisherModule {
             }
 
             this.db.run(
-              'INSERT INTO users (name, login, password_hash, is_admin) VALUES (?, ?, ?, ?)',
-              ['Administrator', 'admin', hash, 1],
-              (err) => {
-                if (err) {
-                  this.logger.error('Failed to create default admin:', err);
-                  reject(err);
-                } else {
-                  this.logger.warn('Created default admin user - login: admin, password: admin123 - CHANGE THIS!');
-                  resolve();
+                'INSERT INTO users (name, login, password_hash, is_admin) VALUES (?, ?, ?, ?)',
+                ['Administrator', 'admin', hash, 1],
+                (err) => {
+                  if (err) {
+                    this.logger.error('Failed to create default admin:', err);
+                    reject(err);
+                  } else {
+                    this.logger.warn('Created default admin user - login: admin, password: admin123 - CHANGE THIS!');
+                    resolve();
+                  }
                 }
-              }
             );
           });
         } else {
@@ -301,6 +302,8 @@ class PublisherModule {
     this.logger.info('Starting task processor with ' + pollInterval + 'ms poll interval');
     this.isProcessingStarted = null;
 
+    this.stats.addTask('Publisher', Utilities.formatDuration(pollInterval));  // or however you want to display the frequency
+
     this.taskProcessor = setInterval(async () => {
       if (this.shutdownRequested) return;
 
@@ -326,20 +329,25 @@ class PublisherModule {
       // Look for queued tasks first (draft builds)
       let task = await this.getNextQueuedTask();
       if (task) {
+        this.stats.task('Publisher', 'Building ' + task.npm_package_id + '#' + task.version);
         await this.processDraftBuild(task);
+        this.stats.taskDone('Publisher', 'Built ' + task.npm_package_id + '#' + task.version);
         return;
       }
 
       // Then look for approved tasks (publishing)
       task = await this.getNextApprovedTask();
       if (task) {
+        this.stats.task('Publisher', 'Publishing ' + task.npm_package_id + '#' + task.version);
         await this.processPublication(task);
+        this.stats.taskDone('Publisher', 'Published ' + task.npm_package_id + '#' + task.version);
         return;
       }
 
       // No tasks to process
     } catch (error) {
       this.logger.error('Error in task processor:', error);
+      this.stats.taskError('Publisher', 'Error: ' + error.message);
     } finally {
       this.isProcessing = false;
     }
@@ -348,12 +356,12 @@ class PublisherModule {
   async getNextQueuedTask() {
     return new Promise((resolve, reject) => {
       this.db.get(
-        'SELECT * FROM tasks WHERE status = ? ORDER BY queued_at ASC LIMIT 1',
-        ['queued'],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
+          'SELECT * FROM tasks WHERE status = ? ORDER BY queued_at ASC LIMIT 1',
+          ['queued'],
+          (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+          }
       );
     });
   }
@@ -361,12 +369,12 @@ class PublisherModule {
   async getNextApprovedTask() {
     return new Promise((resolve, reject) => {
       this.db.get(
-        'SELECT * FROM tasks WHERE status = ? ORDER BY publishing_at ASC LIMIT 1',
-        ['publishing'],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
+          'SELECT * FROM tasks WHERE status = ? ORDER BY publishing_at ASC LIMIT 1',
+          ['publishing'],
+          (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+          }
       );
     });
   }
@@ -396,12 +404,12 @@ class PublisherModule {
 
     return new Promise((resolve, reject) => {
       this.db.run(
-        'UPDATE tasks SET ' + fields.join(', ') + ' WHERE id = ?',
-        values,
-        (err) => {
-          if (err) reject(err);
-          else resolve();
-        }
+          'UPDATE tasks SET ' + fields.join(', ') + ' WHERE id = ?',
+          values,
+          (err) => {
+            if (err) reject(err);
+            else resolve();
+          }
       );
     });
   }
@@ -409,9 +417,9 @@ class PublisherModule {
   async logTaskMessage(taskId, level, message) {
     return new Promise((resolve) => {
       this.db.run(
-        'INSERT INTO task_logs (task_id, level, message) VALUES (?, ?, ?)',
-        [taskId.toString(), level, message],
-        () => resolve() // Don't fail if logging fails
+          'INSERT INTO task_logs (task_id, level, message) VALUES (?, ?, ?)',
+          [taskId.toString(), level, message],
+          () => resolve() // Don't fail if logging fails
       );
     });
   }
@@ -467,8 +475,8 @@ class PublisherModule {
 
   async runDraftBuild(task) {
     const workspaceRoot = path.isAbsolute(this.config.workspaceRoot)
-      ? this.config.workspaceRoot
-      : folders.filePath('publisher', this.config.workspaceRoot);
+        ? this.config.workspaceRoot
+        : folders.filePath('publisher', this.config.workspaceRoot);
 
     const taskDir = path.join(workspaceRoot, 'task-' + task.id);
     const draftDir = path.join(taskDir, 'draft');
@@ -521,7 +529,7 @@ class PublisherModule {
       // Get latest release info from GitHub API
       const releaseResponse = await axios.get('https://api.github.com/repos/HL7/fhir-ig-publisher/releases/latest');
       const downloadUrl = releaseResponse.data.assets.find(asset =>
-        asset.name === 'publisher.jar'
+          asset.name === 'publisher.jar'
       )?.browser_download_url;
 
       if (!downloadUrl) {
@@ -710,13 +718,13 @@ class PublisherModule {
     const templatesDir = path.join(taskDir, 'fhir-web-templates');
 
     await this.runCommand('git', ['clone', 'git@github.com:FHIR/ig-registry.git', registryDir],
-      {}, task.id, 'Cloning ig-registry');
+        {}, task.id, 'Cloning ig-registry');
 
     await this.runCommand('git', ['clone', 'https://github.com/HL7/fhir-ig-history-template.git', historyDir],
-      {}, task.id, 'Cloning fhir-ig-history-template');
+        {}, task.id, 'Cloning fhir-ig-history-template');
 
     await this.runCommand('git', ['clone', 'https://github.com/HL7/fhir-web-templates.git', templatesDir],
-      {}, task.id, 'Cloning fhir-web-templates');
+        {}, task.id, 'Cloning fhir-web-templates');
 
     // Step 2: Reuse the publisher.jar from the draft build
     const publisherJar = path.join(taskDir, 'publisher.jar');
@@ -729,7 +737,7 @@ class PublisherModule {
 
     // Step 4: Run the IG publisher in go-publish mode
     await this.runPublisherGoPublish(task.id, publisherJar, draftDir, website.local_folder,
-      registryDir, historyDir, templatesDir, zipsDir, publishLogFile);
+        registryDir, historyDir, templatesDir, zipsDir, publishLogFile);
 
     // Step 5: Verify publication succeeded by checking for the log file
     const pubLogName = task.npm_package_id + '#' + task.version + '.log';
@@ -886,7 +894,7 @@ class PublisherModule {
             content += '<a href="/publisher/admin/users" class="btn btn-secondary">Manage Users</a>';
           }
           content += '<form style="display: inline-block; margin-left: 10px;" method="post" action="/publisher/logout">';
-          content += '<button type="submit" class="btn btn-outline-secondary">Logout</button>';
+          content += '<button type="submit" class="btn btn-outline-secondary">' + escape(req.session.userName) + ' \u2014 Logout</button>';
           content += '</form>';
           content += '</div>';
         } else {
@@ -924,7 +932,7 @@ class PublisherModule {
         const html = htmlServer.renderPage('publisher', 'FHIR Publisher', content, {
           taskCount: tasks.length,
           templateVars: {
-            loginTitle: req.session.userId ? "Logout" : 'Login',
+            loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
             loginPath: req.session.userId ? "logout" : 'login',
             loginAction: req.session.userId ? "POST" : 'GET'
           }
@@ -966,7 +974,7 @@ class PublisherModule {
 
       const html = htmlServer.renderPage('publisher', 'Login - FHIR Publisher', content, {
         templateVars: {
-          loginTitle: req.session.userId ? "Logout" : 'Login',
+          loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
           loginPath: req.session.userId ? "logout" : 'login',
           loginAction: req.session.userId ? "POST" : 'GET'
         }});
@@ -986,12 +994,12 @@ class PublisherModule {
 
         const user = await new Promise((resolve, reject) => {
           this.db.get(
-            'SELECT * FROM users WHERE login = ?',
-            [login],
-            (err, row) => {
-              if (err) reject(err);
-              else resolve(row);
-            }
+              'SELECT * FROM users WHERE login = ?',
+              [login],
+              (err, row) => {
+                if (err) reject(err);
+                else resolve(row);
+              }
           );
         });
 
@@ -1100,7 +1108,15 @@ class PublisherModule {
 
           for (const task of tasks) {
             const canApprove = req.session.userId && task.status === 'waiting for approval' &&
-              await this.userCanApprove(req.session.userId, task.website_id);
+                await this.userCanApprove(req.session.userId, task.website_id);
+
+            // Determine if the current user can delete this task (mirrors deleteTask backend logic)
+            const isPreApprovalStatus = task.status === 'waiting for approval' || task.status === 'queued' || (task.status === 'failed' && !task.approved_by);
+            const isPostApprovalFailed = task.status === 'failed' && task.approved_by;
+            const canDelete = req.session.userId && (
+                (isPreApprovalStatus && await this.userCanQueue(req.session.userId, task.website_id)) ||
+                (isPostApprovalFailed && req.session.isAdmin)
+            );
 
             content += '<tr>';
             content += '<td><strong>#' + task.id + '</strong></td>';
@@ -1134,7 +1150,7 @@ class PublisherModule {
               }
             }
 
-            if (req.session.isAdmin && (task.status === 'waiting for approval' || task.status === 'failed')) {
+            if (canDelete) {
               content += '<form method="post" action="/publisher/tasks/' + task.id + '/delete" style="display: inline;" onsubmit="return confirm(\'Delete task #' + task.id + ' and all its build output? This cannot be undone.\')">';
               content += '<button type="submit" class="btn btn-sm btn-danger">Delete</button>';
               content += '</form>';
@@ -1159,7 +1175,7 @@ class PublisherModule {
 
         const html = htmlServer.renderPage('publisher', 'Tasks - FHIR Publisher', content, {
           templateVars: {
-            loginTitle: req.session.userId ? "Logout" : 'Login',
+            loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
             loginPath: req.session.userId ? "logout" : 'login',
             loginAction: req.session.userId ? "POST" : 'GET'
           }});
@@ -1198,12 +1214,12 @@ class PublisherModule {
         // Insert task (ID will be auto-generated)
         const result = await new Promise((resolve, reject) => {
           this.db.run(
-            'INSERT INTO tasks (user_id, website_id, github_org, github_repo, git_branch, npm_package_id, version) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [req.session.userId, website_id, github_org, github_repo, git_branch, npm_package_id, version],
-            function (err) {
-              if (err) reject(err);
-              else resolve(this.lastID);
-            }
+              'INSERT INTO tasks (user_id, website_id, github_org, github_repo, git_branch, npm_package_id, version) VALUES (?, ?, ?, ?, ?, ?, ?)',
+              [req.session.userId, website_id, github_org, github_repo, git_branch, npm_package_id, version],
+              function (err) {
+                if (err) reject(err);
+                else resolve(this.lastID);
+              }
           );
         });
 
@@ -1248,12 +1264,12 @@ class PublisherModule {
         // Update task status
         await new Promise((resolve, reject) => {
           this.db.run(
-            'UPDATE tasks SET status = ?, approved_by = ?, publishing_at = CURRENT_TIMESTAMP WHERE id = ?',
-            ['publishing', req.session.userId, taskId],
-            (err) => {
-              if (err) reject(err);
-              else resolve();
-            }
+              'UPDATE tasks SET status = ?, approved_by = ?, publishing_at = CURRENT_TIMESTAMP WHERE id = ?',
+              ['publishing', req.session.userId, taskId],
+              (err) => {
+                if (err) reject(err);
+                else resolve();
+              }
           );
         });
 
@@ -1351,9 +1367,9 @@ class PublisherModule {
         if (existingTask) return res.status(400).send('An active task for this package and version is already in progress.');
         const newTaskId = await new Promise((resolve, reject) => {
           this.db.run(
-            'INSERT INTO tasks (user_id, website_id, github_org, github_repo, git_branch, npm_package_id, version) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [req.session.userId, task.website_id, task.github_org, task.github_repo, task.git_branch, task.npm_package_id, task.version],
-            function (err) { if (err) reject(err); else resolve(this.lastID); }
+              'INSERT INTO tasks (user_id, website_id, github_org, github_repo, git_branch, npm_package_id, version) VALUES (?, ?, ?, ?, ?, ?, ?)',
+              [req.session.userId, task.website_id, task.github_org, task.github_repo, task.git_branch, task.npm_package_id, task.version],
+              function (err) { if (err) reject(err); else resolve(this.lastID); }
           );
         });
         this.logUserAction(req.session.userId, 'retry_task', newTaskId.toString(), req.ip);
@@ -1463,7 +1479,7 @@ class PublisherModule {
 
           const html = htmlServer.renderPage('publisher', 'Task Output - FHIR Publisher', content, {
             templateVars: {
-              loginTitle: req.session.userId ? "Logout" : 'Login',
+              loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
               loginPath: req.session.userId ? "logout" : 'login',
               loginAction: req.session.userId ? "POST" : 'GET'
             }});
@@ -1654,8 +1670,8 @@ class PublisherModule {
           for (const evt of events) {
             const ts = new Date(evt.timestamp).toLocaleString();
             const typeBadge = evt.type === 'status' ? '<span class="badge bg-primary">status</span>'
-              : evt.type === 'action' ? '<span class="badge bg-info">user</span>'
-                : '<span class="badge bg-secondary">log</span>';
+                : evt.type === 'action' ? '<span class="badge bg-info">user</span>'
+                    : '<span class="badge bg-secondary">log</span>';
             content += '<tr>';
             content += '<td class="text-nowrap"><small>' + ts + '</small></td>';
             content += '<td>' + evt.icon + '</td>';
@@ -1683,7 +1699,16 @@ class PublisherModule {
           content += '<button type="submit" class="btn btn-warning">Retry</button>';
           content += '</form>';
         }
-        if (req.session.isAdmin && task.status === 'failed') {
+        // Show delete button using same logic as backend deleteTask:
+        // Pre-approval (queued, waiting for approval, or failed without approval): user with queue rights can delete
+        // Post-approval (failed after approval): admin only
+        const detailIsPreApproval = task.status === 'waiting for approval' || task.status === 'queued' || (task.status === 'failed' && !task.approved_by);
+        const detailIsPostApprovalFailed = task.status === 'failed' && task.approved_by;
+        const detailCanDelete = req.session.userId && (
+            (detailIsPreApproval && await this.userCanQueue(req.session.userId, task.website_id)) ||
+            (detailIsPostApprovalFailed && req.session.isAdmin)
+        );
+        if (detailCanDelete) {
           content += '<form method="post" action="/publisher/tasks/' + task.id + '/delete" style="display: inline;" class="me-2" onsubmit="return confirm(\'Delete task #' + task.id + ' and all its build output? This cannot be undone.\')">';
           content += '<button type="submit" class="btn btn-danger">Delete</button>';
           content += '</form>';
@@ -1693,7 +1718,7 @@ class PublisherModule {
 
         const html = htmlServer.renderPage('publisher', 'Task History - FHIR Publisher', content, {
           templateVars: {
-            loginTitle: req.session.userId ? "Logout" : 'Login',
+            loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
             loginPath: req.session.userId ? "logout" : 'login',
             loginAction: req.session.userId ? "POST" : 'GET'
           }});
@@ -1736,7 +1761,7 @@ class PublisherModule {
       content += '</form>';
 
       const html = htmlServer.renderPage('publisher', 'Edit Website - FHIR Publisher', content, {
-        templateVars: { loginTitle: 'Logout', loginPath: 'logout', loginAction: 'POST' }
+        templateVars: { loginTitle: (req.session.userName || '') + ' \u2014 Logout', loginPath: 'logout', loginAction: 'POST' }
       });
       res.setHeader('Content-Type', 'text/html');
       res.send(html);
@@ -1756,9 +1781,9 @@ class PublisherModule {
 
       await new Promise((resolve, reject) => {
         this.db.run(
-          'UPDATE websites SET name=?, local_folder=?,  git_root = ?, history_templates=?, web_templates=?, server_update_script=?, is_active=? WHERE id=?',
-          [name, local_folder,  git_root, history_templates, web_templates, server_update_script, is_active === '1' ? 1 : 0, websiteId],
-          (err) => err ? reject(err) : resolve()
+            'UPDATE websites SET name=?, local_folder=?,  git_root = ?, history_templates=?, web_templates=?, server_update_script=?, is_active=? WHERE id=?',
+            [name, local_folder,  git_root, history_templates, web_templates, server_update_script, is_active === '1' ? 1 : 0, websiteId],
+            (err) => err ? reject(err) : resolve()
         );
       });
 
@@ -1854,7 +1879,7 @@ class PublisherModule {
 
         const html = htmlServer.renderPage('publisher', 'Websites - FHIR Publisher', content, {
           templateVars: {
-            loginTitle: req.session.userId ? "Logout" : 'Login',
+            loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
             loginPath: req.session.userId ? "logout" : 'login',
             loginAction: req.session.userId ? "POST" : 'GET'
           }});
@@ -1877,12 +1902,12 @@ class PublisherModule {
 
         await new Promise((resolve, reject) => {
           this.db.run(
-            'INSERT INTO websites (name, local_folder,  git_root, history_templates, web_templates, server_update_script) VALUES (?, ?, ?, ?, ?, ?)',
-            [name, local_folder, git_root, history_templates, web_templates, server_update_script],
-            function (err) {
-              if (err) reject(err);
-              else resolve();
-            }
+              'INSERT INTO websites (name, local_folder,  git_root, history_templates, web_templates, server_update_script) VALUES (?, ?, ?, ?, ?, ?)',
+              [name, local_folder, git_root, history_templates, web_templates, server_update_script],
+              function (err) {
+                if (err) reject(err);
+                else resolve();
+              }
           );
         });
 
@@ -1996,7 +2021,7 @@ class PublisherModule {
 
         const html = htmlServer.renderPage('publisher', 'Users - FHIR Publisher', content, {
           templateVars: {
-            loginTitle: req.session.userId ? "Logout" : 'Login',
+            loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
             loginPath: req.session.userId ? "logout" : 'login',
             loginAction: req.session.userId ? "POST" : 'GET'
           }});
@@ -2021,12 +2046,12 @@ class PublisherModule {
 
         await new Promise((resolve, reject) => {
           this.db.run(
-            'INSERT INTO users (name, login, password_hash, is_admin) VALUES (?, ?, ?, ?)',
-            [name, login, passwordHash, is_admin ? 1 : 0],
-            function (err) {
-              if (err) reject(err);
-              else resolve();
-            }
+              'INSERT INTO users (name, login, password_hash, is_admin) VALUES (?, ?, ?, ?)',
+              [name, login, passwordHash, is_admin ? 1 : 0],
+              function (err) {
+                if (err) reject(err);
+                else resolve();
+              }
           );
         });
 
@@ -2071,12 +2096,12 @@ class PublisherModule {
           if (canQueue || canApprove) {
             await new Promise((resolve, reject) => {
               this.db.run(
-                'INSERT INTO user_website_permissions (user_id, website_id, can_queue, can_approve) VALUES (?, ?, ?, ?)',
-                [user_id, website.id, canQueue ? 1 : 0, canApprove ? 1 : 0],
-                (err) => {
-                  if (err) reject(err);
-                  else resolve();
-                }
+                  'INSERT INTO user_website_permissions (user_id, website_id, can_queue, can_approve) VALUES (?, ?, ?, ?)',
+                  [user_id, website.id, canQueue ? 1 : 0, canApprove ? 1 : 0],
+                  (err) => {
+                    if (err) reject(err);
+                    else resolve();
+                  }
               );
             });
           }
@@ -2112,12 +2137,12 @@ class PublisherModule {
   async getTask(taskId) {
     return new Promise((resolve, reject) => {
       this.db.get(
-        'SELECT t.*, u.name as user_name, u.login as user_login, w.name as website_name, approver.name as approved_by_name FROM tasks t JOIN users u ON t.user_id = u.id JOIN websites w ON t.website_id = w.id LEFT JOIN users approver ON t.approved_by = approver.id WHERE t.id = ?',
-        [taskId],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
+          'SELECT t.*, u.name as user_name, u.login as user_login, w.name as website_name, approver.name as approved_by_name FROM tasks t JOIN users u ON t.user_id = u.id JOIN websites w ON t.website_id = w.id LEFT JOIN users approver ON t.approved_by = approver.id WHERE t.id = ?',
+          [taskId],
+          (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+          }
       );
     });
   }
@@ -2125,12 +2150,12 @@ class PublisherModule {
   async getTaskLogs(taskId) {
     return new Promise((resolve, reject) => {
       this.db.all(
-        'SELECT * FROM task_logs WHERE task_id = ? ORDER BY timestamp ASC',
-        [taskId.toString()],
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
-        }
+          'SELECT * FROM task_logs WHERE task_id = ? ORDER BY timestamp ASC',
+          [taskId.toString()],
+          (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+          }
       );
     });
   }
@@ -2138,12 +2163,12 @@ class PublisherModule {
   async getTaskActions(taskId) {
     return new Promise((resolve, reject) => {
       this.db.all(
-        'SELECT ua.*, u.name as user_name, u.login as user_login FROM user_actions ua LEFT JOIN users u ON ua.user_id = u.id WHERE ua.target_id = ? ORDER BY ua.timestamp ASC',
-        [taskId.toString()],
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
-        }
+          'SELECT ua.*, u.name as user_name, u.login as user_login FROM user_actions ua LEFT JOIN users u ON ua.user_id = u.id WHERE ua.target_id = ? ORDER BY ua.timestamp ASC',
+          [taskId.toString()],
+          (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+          }
       );
     });
   }
@@ -2151,12 +2176,12 @@ class PublisherModule {
   async getUserWebsites(userId) {
     return new Promise((resolve, reject) => {
       this.db.all(
-        'SELECT w.* FROM websites w JOIN user_website_permissions p ON w.id = p.website_id WHERE p.user_id = ? AND p.can_queue = 1 AND w.is_active = 1',
-        [userId],
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
-        }
+          'SELECT w.* FROM websites w JOIN user_website_permissions p ON w.id = p.website_id WHERE p.user_id = ? AND p.can_queue = 1 AND w.is_active = 1',
+          [userId],
+          (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+          }
       );
     });
   }
@@ -2164,12 +2189,12 @@ class PublisherModule {
   async userCanQueue(userId, websiteId) {
     return new Promise((resolve, reject) => {
       this.db.get(
-        'SELECT can_queue FROM user_website_permissions WHERE user_id = ? AND website_id = ?',
-        [userId, websiteId],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row && row.can_queue);
-        }
+          'SELECT can_queue FROM user_website_permissions WHERE user_id = ? AND website_id = ?',
+          [userId, websiteId],
+          (err, row) => {
+            if (err) reject(err);
+            else resolve(row && row.can_queue);
+          }
       );
     });
   }
@@ -2177,12 +2202,12 @@ class PublisherModule {
   async userCanApprove(userId, websiteId) {
     return new Promise((resolve, reject) => {
       this.db.get(
-        'SELECT can_approve FROM user_website_permissions WHERE user_id = ? AND website_id = ?',
-        [userId, websiteId],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row && row.can_approve);
-        }
+          'SELECT can_approve FROM user_website_permissions WHERE user_id = ? AND website_id = ?',
+          [userId, websiteId],
+          (err, row) => {
+            if (err) reject(err);
+            else resolve(row && row.can_approve);
+          }
       );
     });
   }
@@ -2190,12 +2215,12 @@ class PublisherModule {
   async findActiveTask(packageId, version) {
     return new Promise((resolve, reject) => {
       this.db.get(
-        'SELECT * FROM tasks WHERE npm_package_id = ? AND version = ? AND status NOT IN (?, ?) ORDER BY queued_at DESC LIMIT 1',
-        [packageId, version, 'complete', 'failed'],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
+          'SELECT * FROM tasks WHERE npm_package_id = ? AND version = ? AND status NOT IN (?, ?) ORDER BY queued_at DESC LIMIT 1',
+          [packageId, version, 'complete', 'failed'],
+          (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+          }
       );
     });
   }
@@ -2203,12 +2228,12 @@ class PublisherModule {
   async findExistingTask(packageId, version) {
     return new Promise((resolve, reject) => {
       this.db.get(
-        'SELECT * FROM tasks WHERE npm_package_id = ? AND version = ? ORDER BY queued_at DESC LIMIT 1',
-        [packageId, version],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
+          'SELECT * FROM tasks WHERE npm_package_id = ? AND version = ? ORDER BY queued_at DESC LIMIT 1',
+          [packageId, version],
+          (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+          }
       );
     });
   }
@@ -2282,12 +2307,12 @@ class PublisherModule {
   async getUserPermissions(userId) {
     return new Promise((resolve, reject) => {
       this.db.all(
-        'SELECT * FROM user_website_permissions WHERE user_id = ?',
-        [userId],
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
-        }
+          'SELECT * FROM user_website_permissions WHERE user_id = ?',
+          [userId],
+          (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+          }
       );
     });
   }
@@ -2343,9 +2368,9 @@ class PublisherModule {
   async logUserAction(userId, action, targetId, ipAddress) {
     return new Promise((resolve) => {
       this.db.run(
-        'INSERT INTO user_actions (user_id, action, target_id, ip_address) VALUES (?, ?, ?, ?)',
-        [userId, action, targetId, ipAddress],
-        () => resolve() // Don't fail if logging fails
+          'INSERT INTO user_actions (user_id, action, target_id, ip_address) VALUES (?, ?, ?, ?)',
+          [userId, action, targetId, ipAddress],
+          () => resolve() // Don't fail if logging fails
       );
     });
   }

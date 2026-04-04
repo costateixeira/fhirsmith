@@ -221,10 +221,11 @@ class CodeSystemProvider {
   }
 
   /**
+   * @param {boolean} langPacks - whether to include language packs
    * @returns {string[]} all supplements in scope
    */
-  listSupplements() {
-    return this.supplements ? this.supplements.map(s => s.vurl) : [];
+  listSupplements(langPacks) {
+    return this.supplements ? this.supplements.filter(s => langPacks || !s.isLangPack()).map(s => s.vurl) : [];
   }
 
   /**
@@ -385,12 +386,15 @@ class CodeSystemProvider {
         const concept= supplement.getConceptByCode(code);
         if (concept) {
           if (concept.display) {
-            displays.addDesignation(true, 'active', supplement.jsonObj.language, CodeSystem.makeUseForDisplay(), concept.display);
+            // sometimes the display is just repeated from the base code system
+            if (!displays.hasAnyDisplay(concept.display)) {
+              displays.addDesignation(true, 'active', supplement.jsonObj.language, CodeSystem.makeUseForDisplay(), concept.display).supplement = supplement;
+            }
           }
           if (concept.designation) {
             for (const d of concept.designation) {
               let status = Extensions.readString(d, "http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status");
-              displays.addDesignation(false, status || 'active', d.language, d.use, d.value, d.extension?.length > 0 ? d.extension : []);
+              displays.addDesignation(false, status || 'active', d.language, d.use, d.value, d.extension?.length > 0 ? d.extension : []).supplement = supplement;
             }
           }
         }
@@ -855,6 +859,17 @@ class CodeSystemFactoryProvider {
   }
 
   /**
+   *
+   * @param supplements - the list of supplements to populate - fill with any supplements matching url(+version)
+   * @param url - url of code system
+   * @param version - version of codesystem
+   * @param {Map} statedSupplements - return language packs and supplements that are listed in stated supplements, by versioned URL
+   * @returns {Promise<void>}
+   */
+  async listSupplements(supplements, url, version, statedSupplements) {
+    // do nothing
+  }
+  /**
    * see comments for registerSupplements()
    *
    * @param {CodeSystem} supplement - the supplement to flesh out
@@ -903,6 +918,14 @@ class CodeSystemFactoryProvider {
   // nothing here - might be overriden
   async close() {
 
+  }
+
+  /**
+   * if known, the right place to point to on the web for the code system
+   * @returns {String}
+   */
+  webSource() {
+    return undefined;
   }
 }
 
