@@ -489,18 +489,18 @@ class Library {
   }
 
   async loadUcum(details, isDefault, mode) {
+    const ucumFN = await this.getOrDownloadFile(details);
     if (mode === "fetch" || mode === "npm") {
       return;
     }
-    const source = path.join(__dirname, '..', details);
 
-    const ucumEssenceXml = readFileSync(source, 'utf8');
+    const ucumEssenceXml = readFileSync(ucumFN, 'utf8');
     const ucumService = new UcumService();
     await ucumService.init(ucumEssenceXml);
 
     const ucum = new UcumCodeSystemFactory(this.i18n, ucumService);
     await ucum.load();
-    this.registerProvider(source, ucum, isDefault);
+    this.registerProvider(ucumFN, ucum, isDefault);
   }
 
   async loadLoinc(details, isDefault, mode) {
