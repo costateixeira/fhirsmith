@@ -8,7 +8,7 @@ sources:
   - internal:areacode
   - internal:mimetypes
   - internal:usstates
-  - ucum:tx/data/ucum-essence.xml
+  - ucum:ucum-essence.xml
   - loinc:loinc-2.81-b.db
   - snomed!:sct_intl_20250201.cache
   - snomed:sct_test_20250814.cache

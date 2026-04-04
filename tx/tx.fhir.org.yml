@@ -10,7 +10,7 @@ sources:
   - internal:usstates
   - internal:urls
   - internal:hgvs
-  - ucum:tx/data/ucum-essence.xml
+  - ucum:ucum-essence.xml
   - loinc:loinc-2.77-a.db
   - loinc!:loinc-2.81-b.db
   - rxnorm:rxnorm_03022026.db
