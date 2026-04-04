@@ -9,7 +9,7 @@ sources:
   - internal:mimetypes
   - internal:usstates
   - ucum:ucum-essence.xml
-  - loinc:loinc-2.81-b.db
+  - loinc:loinc-2.82.db
   - snomed!:sct_intl_20250201.cache
   - snomed:sct_test_20250814.cache
   - omop:omop_v20250227.db
