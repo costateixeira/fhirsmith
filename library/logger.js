@@ -140,12 +140,12 @@ class Logger {
     if (this._fd !== null && this._currentDate === dateTag) {
       if (this.maxSize <= 0 || this._currentFileSize < this.maxSize) return;
       // Size limit exceeded — close and fall through to open a new file
-      try { fs.closeSync(this._fd); } catch (_) {}
+      try { fs.closeSync(this._fd); } catch (_) { /* intentional */ }
       this._fd = null;
     }
     // Close previous (date changed)
     if (this._fd !== null) {
-      try { fs.closeSync(this._fd); } catch (_) {}
+      try { fs.closeSync(this._fd); } catch (_) { /* intentional */ }
     }
     const filename = `server-${dateTag}.log`;
     const filePath = path.join(this.logDir, filename);
@@ -155,8 +155,8 @@ class Logger {
 
     // Maintain a stable symlink so `tail -f server.log` always tracks the current file
     const linkPath = path.join(this.logDir, 'server.log');
-    try { fs.unlinkSync(linkPath); } catch (_) {}
-    try { fs.symlinkSync(filename, linkPath); } catch (_) {}
+    try { fs.unlinkSync(linkPath); } catch (_) { /* intentional */ }
+    try { fs.symlinkSync(filename, linkPath); } catch (_) { /* intentional */ }
 
     this._purgeOldFiles();
   }
@@ -170,7 +170,7 @@ class Logger {
         const old = files.shift();
         fs.unlinkSync(path.join(this.logDir, old));
       }
-    } catch (_) {}
+    } catch (_) { /* intentional */ }
   }
 
   // --- buffer + flush ---
@@ -198,7 +198,7 @@ class Logger {
           this._currentDate = null;
           this._openFile(this._dateTag());
           fs.writeSync(this._fd, buf, 0, buf.length);
-        } catch (_) {}
+        } catch (_) { /* intentional */ }
       }
     });
   }
@@ -209,7 +209,7 @@ class Logger {
     this._openFile(dateTag);
     const chunk = this._buffer.join('');
     this._buffer.length = 0;
-    try { fs.writeSync(this._fd, chunk); } catch (_) {}
+    try { fs.writeSync(this._fd, chunk); } catch (_) { /* intentional */ }
   }
 
   // --- core log ---
