@@ -28,7 +28,7 @@ try {
 }
 
 const Logger = require('./library/logger');
-const serverLog = Logger.getInstance().child({ module: 'server' });
+const serverLog = Logger.getInstance(config.logging || {}).child({ module: 'server' });
 const packageJson = require('./package.json');
 
 // Startup banner
