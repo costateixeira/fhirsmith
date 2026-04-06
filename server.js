@@ -64,6 +64,7 @@ const FolderModule = require("./folder/folder");
 const ExtensionTrackerModule = require("./extension-tracker/extension-tracker");
 
 htmlServer.useLog(serverLog);
+htmlServer.setSponsorMessage(config.sponsorMessage ? config.sponsorMessage : '');
 
 const app = express();
 
