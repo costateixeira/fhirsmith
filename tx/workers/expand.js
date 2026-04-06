@@ -207,6 +207,7 @@ class ValueSetExpander {
   reportedSupplements = new Set();
   internalLimit = INTERNAL_DEFAULT_LIMIT;
   externalLimit = EXTERNAL_DEFAULT_LIMIT;
+  noDetails = false;
 
   constructor(worker, params) {
     this.worker = worker;
@@ -336,7 +337,7 @@ class ValueSetExpander {
       }
     }
 
-    if (expansion) {
+    if (expansion && !this.noDetails) {
       const s = this.canonical(system, version);
       this.addParamUri(expansion, 'used-codesystem', s);
       if (cs != null) {
@@ -362,113 +363,115 @@ class ValueSetExpander {
       if (isInactive) {
         n.inactive = true;
       }
-
-      if (status && status.toLowerCase() !== 'active') {
-        this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#status', 'status', "valueCode", status);
-      } else if (deprecated) {
-        this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#status', 'status', "valueCode", 'deprecated');
-      }
-
-      if (Extensions.has(csExtList, 'http://hl7.org/fhir/StructureDefinition/codesystem-label')) {
-        this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#label', 'label', "valueString", Extensions.readString(csExtList, 'http://hl7.org/fhir/StructureDefinition/codesystem-label'));
-      }
-      if (Extensions.has(vsExtList, 'http://hl7.org/fhir/StructureDefinition/valueset-label')) {
-        this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#label', 'label', "valueString", Extensions.readString(vsExtList, 'http://hl7.org/fhir/StructureDefinition/valueset-label'));
-      }
-
-      if (Extensions.has(csExtList, 'http://hl7.org/fhir/StructureDefinition/codesystem-conceptOrder')) {
-        this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#order', 'order', "valueDecimal", Extensions.readNumber(csExtList, 'http://hl7.org/fhir/StructureDefinition/codesystem-conceptOrder', undefined));
-      }
-      if (Extensions.has(vsExtList, 'http://hl7.org/fhir/StructureDefinition/valueset-conceptOrder')) {
-        this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#order', 'order', "valueDecimal", Extensions.readNumber(vsExtList, 'http://hl7.org/fhir/StructureDefinition/valueset-conceptOrder', undefined));
-      }
-
-      if (Extensions.has(csExtList, 'http://hl7.org/fhir/StructureDefinition/itemWeight')) {
-        this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#itemWeight', 'weight', "valueDecimal", Extensions.readNumber(csExtList, 'http://hl7.org/fhir/StructureDefinition/itemWeight', undefined));
-      }
-      if (Extensions.has(vsExtList, 'http://hl7.org/fhir/StructureDefinition/itemWeight')) {
-        this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#itemWeight', 'weight', "valueDecimal", Extensions.readNumber(vsExtList, 'http://hl7.org/fhir/StructureDefinition/itemWeight', undefined));
-      }
-
-      if (csExtList != null) {
-        for (const ext of csExtList) {
-          if (['http://hl7.org/fhir/StructureDefinition/coding-sctdescid', 'http://hl7.org/fhir/StructureDefinition/rendering-style',
-            'http://hl7.org/fhir/StructureDefinition/rendering-xhtml', 'http://hl7.org/fhir/StructureDefinition/codesystem-alternate'].includes(ext.url)) {
-            if (!n.extension) {n.extension = []}
-            n.extension.push(ext);
-          }
-          if (['http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status'].includes(ext.url)) {
-            this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#status', 'status', "valueCode", getValuePrimitive(ext));
-          }
+      if (!this.noDetails) {
+        if (status && status.toLowerCase() !== 'active') {
+          this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#status', 'status', "valueCode", status);
+        } else if (deprecated) {
+          this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#status', 'status', "valueCode", 'deprecated');
         }
-      }
 
-      if (vsExtList != null) {
-        for (const ext of vsExtList || []) {
-          if (['http://hl7.org/fhir/StructureDefinition/valueset-supplement', 'http://hl7.org/fhir/StructureDefinition/valueset-deprecated',
-            'http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status',
-            'http://hl7.org/fhir/StructureDefinition/valueset-concept-definition', 'http://hl7.org/fhir/StructureDefinition/coding-sctdescid',
-            'http://hl7.org/fhir/StructureDefinition/rendering-style', 'http://hl7.org/fhir/StructureDefinition/rendering-xhtml'].includes(ext.url)) {
-            if (!n.extension) {n.extension = []}
-            n.extension.push(ext);
-          }
+        if (Extensions.has(csExtList, 'http://hl7.org/fhir/StructureDefinition/codesystem-label')) {
+          this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#label', 'label', "valueString", Extensions.readString(csExtList, 'http://hl7.org/fhir/StructureDefinition/codesystem-label'));
         }
-      }
+        if (Extensions.has(vsExtList, 'http://hl7.org/fhir/StructureDefinition/valueset-label')) {
+          this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#label', 'label', "valueString", Extensions.readString(vsExtList, 'http://hl7.org/fhir/StructureDefinition/valueset-label'));
+        }
 
-      // display and designations
-      const pref = displays.preferredDesignation(this.params.workingLanguages(), this.reportedSupplements);
-      if (pref && pref.value) {
-        n.display = pref.value;
-      }
+        if (Extensions.has(csExtList, 'http://hl7.org/fhir/StructureDefinition/codesystem-conceptOrder')) {
+          this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#order', 'order', "valueDecimal", Extensions.readNumber(csExtList, 'http://hl7.org/fhir/StructureDefinition/codesystem-conceptOrder', undefined));
+        }
+        if (Extensions.has(vsExtList, 'http://hl7.org/fhir/StructureDefinition/valueset-conceptOrder')) {
+          this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#order', 'order', "valueDecimal", Extensions.readNumber(vsExtList, 'http://hl7.org/fhir/StructureDefinition/valueset-conceptOrder', undefined));
+        }
 
-      if (this.params.includeDesignations) {
-        for (const t of displays.designations) {
-          if (t !== pref && this.useDesignation(t) && t.value != null && !this.redundantDisplay(n, t.language, t.use, t.value)) {
-            if (!n.designation) {
-              n.designation = [];
+        if (Extensions.has(csExtList, 'http://hl7.org/fhir/StructureDefinition/itemWeight')) {
+          this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#itemWeight', 'weight', "valueDecimal", Extensions.readNumber(csExtList, 'http://hl7.org/fhir/StructureDefinition/itemWeight', undefined));
+        }
+        if (Extensions.has(vsExtList, 'http://hl7.org/fhir/StructureDefinition/itemWeight')) {
+          this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#itemWeight', 'weight', "valueDecimal", Extensions.readNumber(vsExtList, 'http://hl7.org/fhir/StructureDefinition/itemWeight', undefined));
+        }
+
+        if (csExtList != null) {
+          for (const ext of csExtList) {
+            if (['http://hl7.org/fhir/StructureDefinition/coding-sctdescid', 'http://hl7.org/fhir/StructureDefinition/rendering-style',
+              'http://hl7.org/fhir/StructureDefinition/rendering-xhtml', 'http://hl7.org/fhir/StructureDefinition/codesystem-alternate'].includes(ext.url)) {
+              if (!n.extension) {
+                n.extension = []
+              }
+              n.extension.push(ext);
             }
-            if (t.source) {
-              this.reportedSupplements.add(t.source);
-            }
-            n.designation.push(t.asObject());
-          }
-        }
-      }
-
-      for (const pn of this.params.properties) {
-        if (pn === 'definition') {
-          if (definition) {
-            this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#definition', pn, "valueString", definition);
-          }
-        } else if (pn === 'usage-count') {
-          let counter = cs.usages().get(code);
-          this.defineProperty(expansion, n, 'http://fhir.org/FHIRsmith/CodeSystem/concept-properties#usage-count', pn, "valueInteger", counter ? counter.count : 0);
-        } else if (csProps != null && cs != null) {
-          for (const cp of csProps) {
-            if (cp.code === pn) {
-              let vn = getValueName(cp);
-              let v = cp[vn];
-              this.defineProperty(expansion, n, this.getPropUrl(cs, pn, cp), pn, vn, v);
+            if (['http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status'].includes(ext.url)) {
+              this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#status', 'status', "valueCode", getValuePrimitive(ext));
             }
           }
         }
-      }
 
-      if (!this.map.has(s)) {
-        this.fullList.push(n);
-        this.map.set(s, n);
-        if (parent != null) {
-          if (!parent.contains) {
-            parent.contains = [];
+        if (vsExtList != null) {
+          for (const ext of vsExtList || []) {
+            if (['http://hl7.org/fhir/StructureDefinition/valueset-supplement', 'http://hl7.org/fhir/StructureDefinition/valueset-deprecated',
+              'http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status',
+              'http://hl7.org/fhir/StructureDefinition/valueset-concept-definition', 'http://hl7.org/fhir/StructureDefinition/coding-sctdescid',
+              'http://hl7.org/fhir/StructureDefinition/rendering-style', 'http://hl7.org/fhir/StructureDefinition/rendering-xhtml'].includes(ext.url)) {
+              if (!n.extension) {
+                n.extension = []
+              }
+              n.extension.push(ext);
+            }
           }
-          parent.contains.push(n);
-        } else {
-          this.rootList.push(n);
         }
+
+        // display and designations
+        const pref = displays.preferredDesignation(this.params.workingLanguages(), this.reportedSupplements);
+        if (pref && pref.value) {
+          n.display = pref.value;
+        }
+
+        if (this.params.includeDesignations) {
+          for (const t of displays.designations) {
+            if (t !== pref && this.useDesignation(t) && t.value != null && !this.redundantDisplay(n, t.language, t.use, t.value)) {
+              if (!n.designation) {
+                n.designation = [];
+              }
+              if (t.source) {
+                this.reportedSupplements.add(t.source);
+              }
+              n.designation.push(t.asObject());
+            }
+          }
+        }
+
+        for (const pn of this.params.properties) {
+          if (pn === 'definition') {
+            if (definition) {
+              this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#definition', pn, "valueString", definition);
+            }
+          } else if (pn === 'usage-count') {
+            let counter = cs.usages().get(code);
+            this.defineProperty(expansion, n, 'http://fhir.org/FHIRsmith/CodeSystem/concept-properties#usage-count', pn, "valueInteger", counter ? counter.count : 0);
+          } else if (csProps != null && cs != null) {
+            for (const cp of csProps) {
+              if (cp.code === pn) {
+                let vn = getValueName(cp);
+                let v = cp[vn];
+                this.defineProperty(expansion, n, this.getPropUrl(cs, pn, cp), pn, vn, v);
+              }
+            }
+          }
+        }
+      }
+      this.fullList.push(n);
+      this.map.set(s, n);
+      if (parent != null && !this.noDetails) {
+        if (!parent.contains) {
+          parent.contains = [];
+        }
+        parent.contains.push(n);
       } else {
-        this.canBeHierarchy = false;
+        this.rootList.push(n);
       }
       result = n;
+    } else {
+      this.canBeHierarchy = false;
     }
     return result;
   }
@@ -777,9 +780,17 @@ class ValueSetExpander {
               const c = await cs.filterConcept(ctxt, set[0]);
               if (await this.passesFilters(cs, c, prep, set, 1)) {
                 const cds = new Designations(this.worker.i18n.languageDefinitions);
-                await this.listDisplaysFromProvider(cds, cs, c);
-                let added = await this.includeCode(cs, null, await cs.system(), await cs.version(), await cs.code(c), await cs.isAbstract(c), await cs.isInactive(c), await cs.isDeprecated(c), await cs.getStatus(c),
-                  cds, await cs.definition(c), await cs.itemWeight(c), expansion, valueSets, await cs.extensions(c), null, await cs.properties(c), null, excludeInactive, vsSrc.url);
+                let added;
+                if (this.noDetails) {
+                  await this.listDisplaysFromProvider(cds, cs, c);
+                  added = await this.includeCode(cs, null, await cs.system(), await cs.version(), await cs.code(c), await cs.isAbstract(c), await cs.isInactive(c), false, null,
+                      cds, null, null, expansion, valueSets, null, null, null, null, excludeInactive, vsSrc.url);
+
+                } else {
+                  await this.listDisplaysFromProvider(cds, cs, c);
+                  added = await this.includeCode(cs, null, await cs.system(), await cs.version(), await cs.code(c), await cs.isAbstract(c), await cs.isInactive(c), await cs.isDeprecated(c), await cs.getStatus(c),
+                      cds, await cs.definition(c), await cs.itemWeight(c), expansion, valueSets, await cs.extensions(c), null, await cs.properties(c), null, excludeInactive, vsSrc.url);
+                }
                 if (added) {
                   this.addToTotal();
                 }
@@ -799,15 +810,21 @@ class ValueSetExpander {
             Extensions.checkNoModifiers(cc, 'ValueSetExpander.processCodes', 'set concept reference', vsSrc.vurl);
             const cctxt = await cs.locate(cc.code, this.allAltCodes);
             if (cctxt && cctxt.context && (!this.params.activeOnly || !await cs.isInactive(cctxt.context)) && await this.passesFilters(cs, cctxt.context, prep, filters, 0)) {
-              await this.listDisplaysFromProvider(cds, cs, cctxt.context);
-              this.listDisplaysFromIncludeConcept(cds, cc, vsSrc);
-              if (filter.passesDesignations(cds) || filter.passes(cc.code)) {
-                let ov = Extensions.readString(cc, 'http://hl7.org/fhir/StructureDefinition/itemWeight');
-                if (!ov) {
-                  ov = await cs.itemWeight(cctxt.context);
+              let added;
+              if (this.noDetails) {
+                added = await this.includeCode(cs, null, cs.system(), cs.version(), cc.code, await cs.isAbstract(cctxt.context), await cs.isInactive(cctxt.context), null, null, cds,
+                    null, null, expansion, valueSets, null, null, null, null, excludeInactive, vsSrc.url);
+              } else {
+                await this.listDisplaysFromProvider(cds, cs, cctxt.context);
+                this.listDisplaysFromIncludeConcept(cds, cc, vsSrc);
+                if (filter.passesDesignations(cds) || filter.passes(cc.code)) {
+                  let ov = Extensions.readString(cc, 'http://hl7.org/fhir/StructureDefinition/itemWeight');
+                  if (!ov) {
+                    ov = await cs.itemWeight(cctxt.context);
+                  }
+                  added = await this.includeCode(cs, null, cs.system(), cs.version(), cc.code, await cs.isAbstract(cctxt.context), await cs.isInactive(cctxt.context), await cs.isDeprecated(cctxt.context), await cs.getStatus(cctxt.context), cds,
+                      await cs.definition(cctxt.context), ov, expansion, valueSets, await cs.extensions(cctxt.context), cc.extension, await cs.properties(cctxt.context), null, excludeInactive, vsSrc.url);
                 }
-                let added = await this.includeCode(cs, null, cs.system(), cs.version(), cc.code, await cs.isAbstract(cctxt.context), await cs.isInactive(cctxt.context), await cs.isDeprecated(cctxt.context), await cs.getStatus(cctxt.context), cds,
-                  await cs.definition(cctxt.context), ov, expansion, valueSets, await cs.extensions(cctxt.context), cc.extension, await cs.properties(cctxt.context), null, excludeInactive, vsSrc.url);
                 if (added) {
                   this.addToTotal();
                 }
@@ -850,24 +867,33 @@ class ValueSetExpander {
           }
 
           this.worker.opContext.log('iterate filters');
+          const cds = new Designations(this.worker.i18n.languageDefinitions);
           while (await cs.filterMore(prep, fset[0])) {
             this.worker.deadCheck('processCodes#5');
             const c = await cs.filterConcept(prep, fset[0]);
             const ok = (!this.params.activeOnly || !await cs.isInactive(c)) && (await this.passesFilters(cs, c, prep, fset, 1));
             if (ok) {
+              cds.clear();
               // count++;
-              const cds = new Designations(this.worker.i18n.languageDefinitions);
               if (this.passesImports(valueSets, cs.system(), await cs.code(c), 0)) {
-                await this.listDisplaysFromProvider(cds, cs, c);
-                let parent = null;
-                if (cs.hasParents()) {
-                  parent = this.map.get(this.keyS(cs.system(), cs.version(), await cs.parent(c)));
+                let added;
+                if (this.noDetails) {
+                  added = await this.includeCode(cs, null, await cs.system(), await cs.version(), await cs.code(c), await cs.isAbstract(c), await cs.isInactive(c),
+                      null,  null, cds, null, null,
+                      expansion, null, null, null, null, null, excludeInactive, vsSrc.url);
+
                 } else {
-                  this.canBeHierarchy = false;
+                  await this.listDisplaysFromProvider(cds, cs, c);
+                  let parent = null;
+                  if (cs.hasParents()) {
+                    parent = this.map.get(this.keyS(cs.system(), cs.version(), await cs.parent(c)));
+                  } else {
+                    this.canBeHierarchy = false;
+                  }
+                  added = await this.includeCode(cs, parent, await cs.system(), await cs.version(), await cs.code(c), await cs.isAbstract(c), await cs.isInactive(c),
+                      await cs.isDeprecated(c), await cs.getStatus(c), cds, await cs.definition(c), await cs.itemWeight(c),
+                      expansion, null, await cs.extensions(c), null, await cs.properties(c), null, excludeInactive, vsSrc.url);
                 }
-                let added = await this.includeCode(cs, parent, await cs.system(), await cs.version(), await cs.code(c), await cs.isAbstract(c), await cs.isInactive(c),
-                  await cs.isDeprecated(c), await cs.getStatus(c), cds, await cs.definition(c), await cs.itemWeight(c),
-                  expansion, null, await cs.extensions(c), null, await cs.properties(c), null, excludeInactive, vsSrc.url);
                 if (added) {
                   this.addToTotal();
                 }
@@ -1053,9 +1079,16 @@ class ValueSetExpander {
     let n = null;
     if ((!this.params.excludeNotForUI || !await cs.isAbstract(context)) && (!this.params.activeOnly || !await cs.isInactive(context))) {
       const cds = new Designations(this.worker.i18n.languageDefinitions);
-      await this.listDisplaysFromProvider(cds, cs, context);
-      const t = await this.includeCode(cs, parent, await cs.system(), await cs.version(), context.code, await cs.isAbstract(context), await cs.isInactive(context), await cs.isDeprecated(context), await cs.getStatus(context), cds, await cs.definition(context),
-        await cs.itemWeight(context), expansion, imports, await cs.extensions(context), null, await cs.properties(context), null, excludeInactive, srcUrl);
+      let t;
+      if (this.noDetails) {
+        t = await this.includeCode(cs, null, await cs.system(), await cs.version(), context.code, await cs.isAbstract(context), await cs.isInactive(context), null, null, null,
+            null, expansion, imports, null, null, null, null, excludeInactive, srcUrl);
+
+      } else {
+        await this.listDisplaysFromProvider(cds, cs, context);
+        t = await this.includeCode(cs, parent, await cs.system(), await cs.version(), context.code, await cs.isAbstract(context), await cs.isInactive(context), await cs.isDeprecated(context), await cs.getStatus(context), cds, await cs.definition(context),
+            await cs.itemWeight(context), expansion, imports, await cs.extensions(context), null, await cs.properties(context), null, excludeInactive, srcUrl);
+      }
       if (t != null) {
         result++;
       }
@@ -1189,7 +1222,7 @@ class ValueSetExpander {
       return result; // just return the expansion
     }
 
-    if (this.params.generateNarrative) {
+    if (this.params.generateNarrative && !this.noDetails) {
       div_ = div();
       table = div_.table("grid");
     } else {
@@ -1203,8 +1236,10 @@ class ValueSetExpander {
 
     if (this.params.limit <= 0) {
       this.limitCount = this.externalLimit;
-    } else {
+    } else if (this.externalLimit) {
       this.limitCount = Math.min(this.params.limit, this.externalLimit);
+    } else {
+      this.limitCount = this.params.limit;
     }
     this.offset = this.params.offset;
     this.count = this.params.count;
@@ -1321,8 +1356,10 @@ class ValueSetExpander {
         exp.total = this.total;
       }
       list = this.fullList;
-      for (const c of this.fullList) {
-        c.contains = undefined;
+      if (!this.noDetails) {
+        for (const c of this.fullList) {
+          c.contains = undefined;
+        }
       }
       if (table != null) {
         div_.addTag('p').setAttribute('style', 'color: Navy').tx('Because of the way that this value set is defined, not all the possible codes can be listed in advance');

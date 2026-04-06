@@ -719,7 +719,11 @@ class CodeSystemProvider {
     return false;
   }
 
+  hasMultiHierarchy() {
+    return false;
+  }
   /**
+   *
    * @returns {string} valueset for the code system
    */
   valueSet() {

@@ -534,6 +534,10 @@ class OperationContext {
     return false;
   }
 
+  unSeeAll() {
+    this.contexts = [];
+  }
+
   /**
    * Track a context URL and detect circular references
    * @param {string} vurl - Value set URL to track

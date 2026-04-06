@@ -1521,7 +1521,11 @@ class FhirCodeSystemProvider extends BaseCSServices {
   }
 
   versionNeeded() {
-    return this.codeSystem.jsonObj.versionNeeded;
+    return this.codeSystem.jsonObj.versionNeeded ? true : false;
+  }
+
+  hasMultiHierarchy() {
+    return this.codeSystem.hasMultiHierarchy;
   }
 
 }
