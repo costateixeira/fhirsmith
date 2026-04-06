@@ -5,6 +5,30 @@ All notable changes to the Health Intersections Node Server will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.8.6] - 2026-04-06
+
+### Added
+
+- TX: Full support for $related operation
+- Add sponsor message to footer on all pages
+
+### Changed
+
+- TX: Improve $expand efficiency slightly
+- Rework logging for efficiency and configurability
+- TX: Try to make the server more resistant to running out of memory and dying
+- Improve memory reporting on dashboard and home pages
+- improve metadata display for resources
+
+### Fixed
+
+- Fix up tx test version to be correct in capabilities statement
+- Fix security warning
+
+### Tx Conformance Statement
+
+FHIRsmith passed all 1497 HL7 terminology service tests (modes tx.fhir.org+omop+general+snomed, tests v1.9.1, runner v6.9.4)
+
 ## [v0.8.5] - 2026-04-02
 
 ### Added
