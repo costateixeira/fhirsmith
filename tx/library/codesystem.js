@@ -74,6 +74,8 @@ class CodeSystem extends CanonicalResource {
    */
   childToParentsMap = new Map();
 
+  hasMultiHierarchy = false;
+
   /**
    * Static factory method for convenience
    * @param {string} jsonString - JSON string representation of CodeSystem
@@ -326,6 +328,8 @@ class CodeSystem extends CanonicalResource {
 
     // Third pass: handle nested concept structures
     this._buildNestedHierarchy(this.jsonObj.concept);
+
+    this.hasMultiHierarchy = Array.from(this.childToParentsMap.values()).some(parents => parents.length > 1);
   }
 
   /**

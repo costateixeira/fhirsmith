@@ -319,7 +319,7 @@ class TxHtmlRenderer {
           case 'Parameters':
             return await this.renderParameters(json);
           case 'CodeSystem':
-            return await this.renderCodeSystem(json, inBundle, _fmt, op);
+            return await this.renderCodeSystem(json, inBundle, _fmt, op, req.sourcePackage);
           case 'ValueSet': {
             let exp = undefined;
             if (!inBundle && !op && (!_fmt || _fmt == 'html')) {
@@ -330,10 +330,10 @@ class TxHtmlRenderer {
                 exp = error;
               }
             }
-            return await this.renderValueSet(json, inBundle, _fmt, op, exp);
+            return await this.renderValueSet(json, inBundle, _fmt, op, exp, req.sourcePackage);
           }
           case 'ConceptMap':
-            return await this.renderConceptMap(json, inBundle, _fmt, op);
+            return await this.renderConceptMap(json, inBundle, _fmt, op, req.sourcePackage);
           case 'CapabilityStatement':
             return await this.renderCapabilityStatement(json, inBundle);
           case 'TerminologyCapabilities':
@@ -632,7 +632,7 @@ class TxHtmlRenderer {
   /**
    * Render CodeSystem resource
    */
-  async renderCodeSystem(json, inBundle, _fmt) {
+  async renderCodeSystem(json, inBundle, _fmt, op, sourcePackage) {
     if (inBundle) {
       return await this.renderResourceWithNarrative(json, await this.renderer.renderCodeSystem(json));
     } else {
@@ -645,7 +645,7 @@ class TxHtmlRenderer {
       html += `</ul>`;
 
       if (!_fmt || _fmt == 'html') {
-        html += await this.renderResourceWithNarrative(json, await this.renderer.renderCodeSystem(json));
+        html += await this.renderResourceWithNarrative(json, await this.renderer.renderCodeSystem(json, sourcePackage));
       } else if (_fmt == "html/json") {
         html += await this.renderResourceJson(json);
       } else if (_fmt == "html/xml") {

@@ -107,10 +107,11 @@ class MetadataHandler {
    * @returns {Object} CapabilityStatement resource
    */
   buildCapabilityStatement(endpoint) {
+
     const now = new Date().toISOString();
     const fhirVersion = this.mapFhirVersion(endpoint.fhirVersion);
     const baseUrl = this.config.baseUrl || `https://${this.host}${endpoint.path}`;
-    const serverVersion = this.config.serverVersion || '1.0.0';
+    const serverVersion = this.config.serverVersion;
 
     return {
       resourceType: 'CapabilityStatement',
@@ -124,7 +125,7 @@ class MetadataHandler {
             },
             {
               'url' : 'value',
-              'valueCode' : '1.8.0'
+              'valueCode' : this.config.txVersion
             },
             {
               'extension' : [

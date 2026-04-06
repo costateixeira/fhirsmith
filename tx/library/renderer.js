@@ -133,7 +133,7 @@ class Renderer {
     return result;
   }
 
-  async renderMetadataTable(res, tbl) {
+  async renderMetadataTable(res, tbl, sourcePackage) {
     this.renderMetadataVersion(res, tbl);
     await this.renderMetadataProfiles(res, tbl);
     this.renderMetadataTags(res, tbl);
@@ -154,6 +154,11 @@ class Renderer {
     this.renderProperty(tbl, 'EXT_FMM_LEVEL', Extensions.readString(res, 'http://hl7.org/fhir/StructureDefinition/structuredefinition-fmm'));
     this.renderProperty(tbl, 'PAT_PERIOD', res.effectivePeriod);
     this.renderPropertyLink(tbl, 'WEB_SOURCE', Extensions.readString(res, 'http://hl7.org/fhir/StructureDefinition/web-source'));
+    this.renderProperty(tbl, 'GENERAL_SOURCE', sourcePackage);
+    for (let ext of Extensions.list(res, 'http://hl7.org/fhir/uv/application-feature/StructureDefinition/feature')) {
+      this.renderProperty(tbl, 'FEATURE', this.featureSummary(ext));
+    }
+
 
     // capability statement things
     this.renderProperty(tbl, 'Kind', res.kind);
@@ -165,7 +170,6 @@ class Renderer {
       }
     }
     this.renderProperty(tbl, 'GENERAL_URL', res.implementation?.url);
-    this.renderProperty(tbl, 'Kind', res.kind);
     this.renderProperty(tbl, 'EX_SCEN_FVER', res.fhirVersion);
 
     if (res.content === 'supplement' && res.supplements) {
@@ -364,7 +368,7 @@ class Renderer {
     return div_.toString();
   }
 
-  async renderCodeSystem(cs) {
+  async renderCodeSystem(cs, sourcePackage) {
     if (cs.json) {
       cs = cs.json;
     }
@@ -373,7 +377,7 @@ class Renderer {
 
     // Metadata table
     div_.h3().tx("Properties");
-    await this.renderMetadataTable(cs, div_.table("grid"));
+    await this.renderMetadataTable(cs, div_.table("grid"), sourcePackage);
 
     // Code system properties
     const hasProps = this.generateProperties(div_, cs);
@@ -2227,6 +2231,18 @@ class Renderer {
     }
   }
 
+  featureSummary(ext) {
+    let defn = Extensions.readString(ext, 'definition');
+    let value = Extensions.readString(ext, 'value');
+    switch (defn) {
+      case 'http://hl7.org/fhir/uv/tx-tests/FeatureDefinition/test-version':
+        return 'Tx Test version = ' + value;
+      case 'http://hl7.org/fhir/uv/tx-ecosystem/FeatureDefinition/CodeSystemAsParameter':
+        return 'CodeSystems as parameters = ' + value;
+      default:
+        return defn+' = ' + value;
+    }
+  }
 }
 
 module.exports = { Renderer };

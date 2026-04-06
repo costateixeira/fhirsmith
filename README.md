@@ -14,17 +14,17 @@ This server provides a set of server-side services that are useful for the FHIR 
 * [Package server](packages/readme.md) - **NPM-style FHIR package registry** with search, versioning, and downloads, consistent with the FHIR NPM Specification (as running at http://packages2.fhir.org/packages)
 * [XIG server](xig/readme.md) -  **Comprehensive FHIR IG analytics** with resource breakdowns by version, authority, and realm (as running at http://packages2.fhir.org/packages)
 * [Publisher](publisher/readme.md) - FHIR publishing services (as running at [healthintersections.com.au](http://www.healthintersections.com.au/publisher))
-* [VCL](vcl/readme.md) - **Parse VCL expressions** into FHIR ValueSet resources (as running at http://fhir.org/vcl) 
+* [VCL](vcl/readme.md) - **Parse VCL expressions** into FHIR ValueSet resources (as running at http://fhir.org/vcl)
 * (Coming) Token services
 
 ## Summary Statement
 
-* Maintainers: Grahame Grieve, Italo Macêdo, Josh Mandel, Jose Costa Teixeira 
+* Maintainers: Grahame Grieve, Italo Macêdo, Josh Mandel, Jose Costa Teixeira
 * Issues / Discussion: Use github issues
 * License: BSD-3
-* Contribution Policy: Make PRs. PRs have to pass all the tests 
+* Contribution Policy: Make PRs. PRs have to pass all the tests
 * Security Information: See [security.md](security.md)
- 
+
 ## Build Status
 ![CI Build](https://github.com/HealthIntersections/fhirsmith/actions/workflows/ci.yml/badge.svg)
 [![Release](https://img.shields.io/github/v/release/HealthIntersections/fhirsmith?include_prereleases)](https://github.com/HealthIntersections/fhirsmith/releases)
@@ -44,15 +44,15 @@ There are 4 executable programs:
 Unless you're developing, you only need the first two
 
 FHIRsmith is open source - see below, and you're welcome to use it for any kind of use. Note,
-though, that if you support FHIRsmith commercially as part of a managed service or product, you 
+though, that if you support FHIRsmith commercially as part of a managed service or product, you
 are required to be a Commercial Partner of HL7 - see (link to be provided).
 
 ### Quick Start
 
 * Install FHIRSmith (using docker, or an NPM release, or just get the code by git)
-* Figure out the data directory 
+* Figure out the data directory
 * Provide a configuration to tell the server what to run (see documentation below, or use a [prebuilt configuration]/configurations/readme.md)
-* Run the server 
+* Run the server
 
 For further details of these steps, read on
 
@@ -127,6 +127,36 @@ Create a `config.json` file in your data directory (use `config-template.json` a
   }
 }
 ```
+
+### Logging Configuration
+
+Add a `logging` section to `config.json` to control log behaviour. All fields are optional and have sensible defaults:
+
+```json
+{
+  "logging": {
+    "level": "info",
+    "console": true,
+    "consoleErrors": false,
+    "maxFiles": 14,
+    "maxSize": "50m",
+    "flushInterval": 2000,
+    "flushSize": 200
+  }
+}
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `level` | `"info"` | Minimum level to log: `error`, `warn`, `info`, `debug`, or `verbose` |
+| `console` | `true` | Write log lines to stdout/stderr. Disable when running as a systemd service where console output goes to the journal and is redundant |
+| `consoleErrors` | `false` | Whether `error` and `warn` levels appear on the console. When `false`, errors and warnings are written to the log file only |
+| `maxFiles` | `14` | Number of daily log files to retain before old ones are deleted |
+| `maxSize` | `0` (unlimited) | Maximum size per log file before rotation. Accepts human-readable strings: `"20m"`, `"1g"`, or a raw byte count |
+| `flushInterval` | `2000` | Milliseconds between buffered writes to disk. Increase to reduce I/O under heavy load |
+| `flushSize` | `200` | Number of buffered log lines that trigger an immediate flush regardless of the timer |
+
+Log files are written to the `logs/` subdirectory of the data directory as `server-YYYY-MM-DD.log`. A `server.log` symlink always points to the current day's file, so `tail -f data/logs/server.log` tracks the active log without needing to know the date.
 
 ### Start the Server
 
@@ -211,8 +241,8 @@ Available tags:
 
 ### Windows Installation
 
-You can install as a windows service using [windows-install.js](utilities/windows-install.js). You might need to 
-hack that. 
+You can install as a windows service using [windows-install.js](utilities/windows-install.js). You might need to
+hack that.
 
 ## Releases
 
@@ -224,9 +254,9 @@ Each GitHub Release includes:
 - **Release notes** extracted from CHANGELOG.md
 - **Source code** archives (zip and tar.gz)
 - **Docker images** pushed to GitHub Container Registry:
-  - `ghcr.io/healthintersections/fhirsmith:latest`
-  - `ghcr.io/healthintersections/fhirsmith:vX.Y.Z`
-  - `ghcr.io/healthintersections/fhirsmith:X.Y.Z`
+    - `ghcr.io/healthintersections/fhirsmith:latest`
+    - `ghcr.io/healthintersections/fhirsmith:vX.Y.Z`
+    - `ghcr.io/healthintersections/fhirsmith:X.Y.Z`
 - **npm package** published to npmjs.org as `fhirsmith` *(if you add this)*
 
 ### Creating a Release
@@ -244,13 +274,13 @@ GitHub Actions will automatically:
 1. Update `CHANGELOG.md` with your changes under a new version section:
 ```markdown
    ## [vX.Y.Z] - YYYY-MM-DD
-   ### Added
-   - New feature description
-   ### Changed
-   - Change description
-   ### Fixed
-   - Bug fix description
-   ### Tx Conformance Statement
+### Added
+- New feature description
+### Changed
+- Change description
+### Fixed
+- Bug fix description
+### Tx Conformance Statement
      {copy content from text-cases-summary.txt}
 ```
 2. Update `package.json` to have the same release version
@@ -270,9 +300,9 @@ or do it via a PR
 ```
 
 5. Monitor the release:
-   - Check [GitHub Actions](https://github.com/HealthIntersections/fhirsmith/actions) for the Release workflow
-   - Verify the [GitHub Release](https://github.com/HealthIntersections/fhirsmith/releases) was created
-   - Confirm Docker images are available at [GHCR](https://github.com/HealthIntersections/fhirsmith/pkgs/container/fhirsmith)
+    - Check [GitHub Actions](https://github.com/HealthIntersections/fhirsmith/actions) for the Release workflow
+    - Verify the [GitHub Release](https://github.com/HealthIntersections/fhirsmith/releases) was created
+    - Confirm Docker images are available at [GHCR](https://github.com/HealthIntersections/fhirsmith/pkgs/container/fhirsmith)
 
 6. Update `package.json` to have the next release version -SNAPSHOT
 

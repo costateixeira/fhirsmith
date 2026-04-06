@@ -9,6 +9,8 @@ const fs = require('fs');
 const path = require('path');
 const escape = require('escape-html');
 
+let sponsorMessage = '';
+
 class HtmlServer {
   log;
 
@@ -18,6 +20,10 @@ class HtmlServer {
 
   useLog(logv) {
     this.log = logv;
+  }
+
+  setSponsorMessage(msg) {
+    sponsorMessage = msg;
   }
 
   // Template Management
@@ -73,6 +79,7 @@ class HtmlServer {
       .replace(/\[%endpoint-path%\]/g, escape(renderOptions.endpointpath))
       .replace(/\[%fhir-version%\]/g, escape(renderOptions.fhirversion))
       .replace(/\[%ms%\]/g, escape(renderOptions.processingTime.toString()))
+      .replace(/\[%sponsorMessage%\]/g, sponsorMessage)
       .replace(/\[%about%\]/g, renderOptions.about || '');
     
     // Handle any custom template variables

@@ -1348,6 +1348,10 @@ class SnomedProvider extends BaseCSServices {
     return result;
   }
 
+  hasMultiHierarchy() {
+    return true;
+  }
+
 }
 
 /**

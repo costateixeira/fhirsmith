@@ -18,8 +18,9 @@ const {SearchFilterText} = require("../library/designations");
 const {ArrayMatcher} = require("../../library/utilities");
 const {debugLog} = require("../operation-context");
 
-
 class RelatedWorker extends TerminologyWorker {
+  showLogic = false;
+
   /**
    * @param {OperationContext} opContext - Operation context
    * @param {Logger} log - Logger instance
@@ -115,7 +116,6 @@ class RelatedWorker extends TerminologyWorker {
     this.setupAdditionalResources(params);
     let txp = new TxParameters(this.opContext.i18n.languageDefinitions, this.opContext.i18n, false);
     txp.readParams(params);
-
     this.params = txp;
 
     let thisVS = await this.readValueSet(res, "this", params, txp);
@@ -199,6 +199,7 @@ class RelatedWorker extends TerminologyWorker {
   }
 
   async doRelated(txp, thisVS, otherVS) {
+
     // ok, we have to compare the composes. we don't care about anything else
     const thisC = thisVS.jsonObj.compose;
     const otherC = otherVS.jsonObj.compose;
@@ -213,28 +214,35 @@ class RelatedWorker extends TerminologyWorker {
     Extensions.checkNoModifiers(otherC, 'RelatedWorker.doRelated', 'compose', otherVS.vurl)
     this.checkNoLockedDate(otherVS.vurl, otherC);
 
-    let systems = new Map(); // tracks whether they are version dependent or not
+    let systems = new Map(); // tracks whether the comparison is version dependent or not
 
     // ok, first, if we can determine that the value sets match from the definitions, we will
     // if that fails, then we have to do the expansions, and then decide
 
+    let allCriteria = [...thisC.include || [], ...thisC.exclude || [], ...otherC.include || [], ...otherC.exclude || []];
     // first, we sort the includes by system, and then compare them as a group
     // Build a map of system -> { this: [...includes], other: [...includes] }
     const systemMap = new Map();
-    await this.addIncludes(systems, systemMap, thisC.include || [], 'this', txp);
-    await this.addIncludes(systems, systemMap, otherC.include || [], 'other', txp);
-    await this.addIncludes(systems, systemMap, thisC.exclude || [], 'thisEx', txp);
-    await this.addIncludes(systems, systemMap, otherC.exclude || [], 'otherEx', txp);
+    await this.addIncludes(systems, systemMap, thisC.include || [], 'this', txp, allCriteria);
+    await this.addIncludes(systems, systemMap, otherC.include || [], 'other', txp, allCriteria);
+    await this.addIncludes(systems, systemMap, thisC.exclude || [], 'thisEx', txp, allCriteria);
+    await this.addIncludes(systems, systemMap, otherC.exclude || [], 'otherEx', txp, allCriteria);
 
-    let status = { left: false, right: false, fail: false, common : false};
+    let status = { empty: false, left: false, right: false, fail: false, common : false};
+    let diagnostics = {};
 
-    for (const [key, value] of systemMap.entries()) {
-      if (key) {
-        let cs = await this.findCodeSystem(key, null, txp, ['complete', 'fragment'], null, true);
-        await this.compareSystems(systems, status, cs, value);
-      } else {
-        this.compareNonSystems(status, value);
+    let canBeQuick = !this.hasMultipleVersionsForAnySystem(systems, systemMap);
+    if (canBeQuick) {
+      for (const [key, value] of systemMap.entries()) {
+        if (key) {
+          let cs = await this.findCodeSystem(key, null, txp, ['complete', 'fragment'], null, true);
+          await this.compareSystems(systems, status, cs, value, diagnostics);
+        } else {
+          this.compareNonSystems(status, value, diagnostics);
+        }
       }
+    } else {
+      status.fail = true;
     }
 
     let exp = false;
@@ -242,13 +250,15 @@ class RelatedWorker extends TerminologyWorker {
     // expansions might not work (infinite value sets) so
     // we can't tell.
     if (status.fail) {
-      status.fail = false;
+      status = { left: false, right: false, fail: false, common : false}; // reset;
       exp = true;
-      await this.compareExpansions(systems, status, thisVS, otherVS);
+      await this.compareExpansions(systems, status, thisVS, otherVS, diagnostics);
     }
     let outcome;
     if (status.fail) {
       outcome = this.makeOutcome("indeterminate", `Unable to compare ${thisVS.vurl} and ${otherVS.vurl}: `+status.reason);
+    } else if (status.empty) {
+      outcome = this.makeOutcome("empty", `Both the value sets ${thisVS.vurl} and ${otherVS.vurl} are empty`);
     } else if (!status.common) {
       outcome = this.makeOutcome("disjoint", `No shared codes between the value sets ${thisVS.vurl} and ${otherVS.vurl}`);
     } else if (!status.left && !status.right) {
@@ -260,36 +270,56 @@ class RelatedWorker extends TerminologyWorker {
     } else {
       outcome = this.makeOutcome("subset", `The valueSet ${thisVS.vurl} is a seb-set of the valueSet ${otherVS.vurl}`);
     }
-    if (exp) {
-      outcome.parameter.push({name: 'expansion', valueBoolean: exp})
+    if (txp.diagnostics) {
+      outcome.parameter.push({name: 'performed-expansion', valueBoolean: exp ? true : false})
+      if (diagnostics.missing && diagnostics.missing.length > 0) {
+        outcome.parameter.push({name: 'missing-codes', valueString: diagnostics.missing.map(c => c.code).join(',') })
+      }
+      if (diagnostics.extra && diagnostics.extra.length > 0) {
+        outcome.parameter.push({name: 'extra-codes', valueString: diagnostics.extra.map(c => c.code).join(',') })
+      }
+      if (diagnostics.common && diagnostics.common.length > 0) {
+        outcome.parameter.push({name: 'common-codes', valueString: diagnostics.common.map(c => c.left.code).join(',') })
+      }
+      if (!exp) {
+        if (diagnostics.missingCodes && diagnostics.missingCodes.length > 0) {
+          outcome.parameter.push({name: 'missing-codes', valueString: diagnostics.missingCodes.join(',')})
+        }
+        if (diagnostics.extraCodes && diagnostics.extraCodes.length > 0) {
+          outcome.parameter.push({name: 'extra-codes', valueString: diagnostics.extraCodes.join(',')})
+        }
+        if (diagnostics.commonCodes && diagnostics.commonCodes.length > 0) {
+          outcome.parameter.push({name: 'common-codes', valueString: diagnostics.commonCodes.join(',')})
+        }
+      }
     }
     return outcome;
   }
 
-  async addIncludes(systems, systemMap, includes, side, txp) {
+  async addIncludes(systems, systemMap, includes, side, txp, allCriteria) {
     for (const inc of includes) {
       let key = inc.system || '';
       let v = {};
-      if (await this.versionMatters(systems, key, inc.version, v, txp)) {
+      if (await this.versionMatters(systems, key, inc.version, v, txp, allCriteria)) {
         key = key + "|" + v.version;
       }
       if (!systemMap.has(key)) {
-        systemMap.set(key, {this: [], other: []});
+        systemMap.set(key, {this: [], other: [], thisEx: [], otherEx: []});
       }
       systemMap.get(key)[side].push(inc);
     }
   }
 
-  async versionMatters(systems, key, version, v, txp) {
-    if (systems.has(key)) {
-      return systems.get(key);
-    }
+  async versionMatters(systems, key, version, v, txp, allCriteria) {
     let cs = await this.findCodeSystem(key, version, txp, ['complete', 'fragment'], null, true);
-    let res = cs == null || cs.versionNeeded();
+    let alreadyVersionDependent = systems.has(key) && systems.get(key).criteria;
+    let res = cs != null && (alreadyVersionDependent || ((version || cs.version()) && (cs.versionNeeded() || this.anyCriteriaHasFilters(allCriteria, key)))); // if there's filters, the version always matters
     if (res) {
       v.version = version || cs ? cs.version() : undefined;
     }
-    systems.set(key, res);
+    if (!systems.has(key)) {
+      systems.set(key, {criteria: res, codes: cs ? cs.versionNeeded() : false});
+    }
     return res;
   }
 
@@ -298,8 +328,8 @@ class RelatedWorker extends TerminologyWorker {
     status.fail = true;
   }
 
-  async compareSystems(systems, status, cs, value) {
-    if (value.thisEx || value.otherEx) {
+  async compareSystems(systems, status, cs, value, diagnostics) {
+    if ((value.thisEx && value.thisEx.length > 0) || (value.otherEx && value.otherEx.length > 0)) {
       // we don't try in this case
       status.fail = true;
       status.common = true;
@@ -341,25 +371,33 @@ class RelatedWorker extends TerminologyWorker {
         status.common = true;
         status.right = true;
         return;
-      } else if (this.isConcepts(value.this[0]) && this.isConcepts(value.other[0])) {
-        this.compareCodeLists(status, value.this[0], value.other[0]);
-        return;
-      } else if (this.isFilter(value.this[0]) && this.isFilter(value.other[0])) {
+      } else if (value.this.length > 1 || value.other.length > 1) {
+        status.common = true;
+        // if we have mixed concepts, or multiple filters, we can't reason about them (too many scenarios where they overlap in
+        // unpredictable ways. If they're not identical, we fail
         if (value.this.length != value.other.length) {
           status.fail = true;
-          return;
         } else {
           for (let i = 0; i < value.this.length; i++) {
             let t = value.this[i];
             let o = value.other[i];
-            if (!await this.filterSetsMatch(status, cs, t, o)) {
+            if (!this.includesIdentical(t, o)) {
               status.fail = true;
-              return;
+              break;
             }
-            status.common = true;
-            return;
           }
         }
+        return;
+      } else if (this.isConcepts(value.this[0]) && this.isConcepts(value.other[0])) {
+        this.compareCodeLists(status, value.this[0], value.other[0], diagnostics);
+        return;
+      } else if (this.isFilter(value.this[0]) && this.isFilter(value.other[0])) {
+        let t = value.this[0];
+        let o = value.other[0];
+        if (!await this.filterSetsMatch(status, cs, t, o)) {
+          status.fail = true;
+        }
+        return;
       }
     }
     status.fail = true; // not sure why we got to here, but it doesn't matter: we can't tell
@@ -377,6 +415,15 @@ class RelatedWorker extends TerminologyWorker {
   hasConceptsAndFilters(list) {
     for (const inc of list) {
       if (inc.concept?.length > 0 && inc.filter?.length > 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  hasFilters(list) {
+    for (const inc of list) {
+      if (inc.filter?.length > 0) {
         return true;
       }
     }
@@ -431,13 +478,16 @@ class RelatedWorker extends TerminologyWorker {
     );
   }
 
-  compareCodeLists(status, t, o) {
+  compareCodeLists(status, t, o, diagnostics) {
     const tSet = new Set(t.concept.map(x => x.code));
     const oSet = new Set(o.concept.map(x => x.code));
 
-    status.common = [...tSet].filter(c => oSet.has(c)).length > 0;
-    status.left = [...tSet].filter(c => !oSet.has(c)).length > 0;
-    status.right = [...oSet].filter(c => !tSet.has(c)).length > 0;
+    diagnostics.commonCodes = [...tSet].filter(c => oSet.has(c));
+    diagnostics.missingCodes = [...tSet].filter(c => !oSet.has(c));
+    diagnostics.extraCodes = [...oSet].filter(c => !tSet.has(c));
+    status.common = diagnostics.commonCodes.length > 0;
+    status.left = diagnostics.missingCodes.length > 0;
+    status.right =diagnostics.extraCodes.length > 0;
   }
 
   makeOutcome(code, msg) {
@@ -457,15 +507,45 @@ class RelatedWorker extends TerminologyWorker {
     return !inc.concept && !inc.filter;
   }
 
-  async compareExpansions(systems, status, thisC, otherC) {
-    const expThis = await this.doExpand(thisC);
-    const expOther = await this.doExpand(otherC);
+  async compareExpansions(systems, status, thisC, otherC, diagnostics) {
 
+    const expResThis = await this.doExpand(thisC);
+    this.opContext.unSeeAll();
+    const expResOther = await this.doExpand(otherC);
+
+    if (expResThis.error || expResOther.error) {
+      status.fail = true;
+      if (expResThis.error && expResOther.error) {
+        if (expResThis.error == expResOther.error) {
+          status.reason = "Both expansions failed: "+expResThis.error.message;
+        } else {
+          status.reason = "Both expansions failed with different errors: "+expResThis.error.message+"; "+expResOther.error.message;
+        }
+      } else if (expResThis.error) {
+        status.reason = "This expansion failed: "+expResThis.error.message
+      } else {
+        status.reason = "Other expansion failed: "+expResOther.error.message
+      }
+      return;
+    }
+    let expThis = expResThis.vs;
+    let expOther = expResOther.vs;
     if (this.isUnclosed(expThis) || this.isUnclosed(expOther)) {
       status.fail = true;
+      if (this.isUnclosed(expThis) && this.isUnclosed(expOther)) {
+        status.reason = "Both expansions are unclosed."
+      } else if (this.isUnclosed(expThis)) {
+        status.reason = "This expansion is unclosed."
+      } else {
+        status.reason = "Other expansion is unclosed."
+      }
       return;
     }
 
+    if ((!expThis.expansion.contains || expThis.expansion.contains.length == 0) && (!expOther.expansion.contains || expOther.expansion.contains.length == 0)) {
+      status.empty = true;
+      return;
+    }
     const matcher = new ArrayMatcher((l, r) =>
       this.matchContains(systems, l, r)
     );
@@ -482,6 +562,11 @@ class RelatedWorker extends TerminologyWorker {
     if (matcher.unmatchedRight.length > 0) {
       status.right = true;
     }
+    if (matcher.unmatchedLeft.length > 0 || matcher.unmatchedRight.length > 0) {
+      diagnostics.common = matcher.matched;
+    }
+    diagnostics.missing = matcher.unmatchedLeft;
+    diagnostics.extra = matcher.unmatchedRight;
   }
 
   isUnclosed(vs) {
@@ -495,7 +580,7 @@ class RelatedWorker extends TerminologyWorker {
     if (thisC.code != otherC.code) {
       return false;
     }
-    let versionMatters = systems.get(thisC.system);
+    let versionMatters = systems.has(thisC.system) && systems.get(thisC.system).codes;
     if (versionMatters && thisC.version != otherC.version) {
       return false;
     } else {
@@ -504,16 +589,25 @@ class RelatedWorker extends TerminologyWorker {
   }
 
   async doExpand(vs) {
-    let txpe = this.params.clone();
-    txpe.limit = 10000;
-    txpe.excludeNested = true;
-    let exp = new ValueSetExpander(this, txpe);
-    let vse = await exp.expand(vs, new SearchFilterText(''), true);
-    return vse
+    try {
+      let txpe = this.params.clone();
+      txpe.limit = 10000;
+      txpe.excludeNested = true;
+      let start = new Date();
+      console.log("Expanding value set");
+      let exp = new ValueSetExpander(this, txpe);
+      exp.noDetails = true;
+      let vse = await exp.expand(vs, new SearchFilterText(''), true);
+      console.log("Expanded value set - took " + (new Date() - start) + "ms");
+      return {vs: vse, error: null};
+    } catch (error) {
+      debugLog(error, "Error expanding value set");
+      return {vs: null, error: error};
+    }
   }
 
   isConcepts(inc) {
-    return inc.concept && inc.concept.length > 0;
+    return inc.concept && inc.concept.length > 0 && !this.isFilter(inc);
   }
 
   isFilter(inc) {
@@ -522,52 +616,99 @@ class RelatedWorker extends TerminologyWorker {
 
   async filterSetsMatch(status, cs, t, o) {
     // two includes have matching filters if the set of filters match.
-
-    let localstatus = { left: false, right: false};
-
-    const matcher = new ArrayMatcher((l, r) =>
-      this.filtersMatch(localstatus, cs, l, r)
-    );
-    await matcher.match(t.filter, o.filter);
-
-    if (matcher.unmatchedLeft.length > 0 || matcher.unmatchedRight.length > 0) {
-      return false;
-    } else {
-      if (localstatus.left) {
-        status.left = true;
-      }
-      if (localstatus.right) {
-        status.right = true;
-      }
-      return true;
-    }
-  }
-
-  async filtersMatch(status, cs, t, o) {
-    if (t.property != o.property || t.op != o.op) {
+    if (t.filter.length != o.filter.length) {
       return false;
     }
-    if (t.value == o.value) {
-      return true;
-    }
-    if (t.op == 'is-a') {
-      let rel = await cs.subsumesTest(t.value, o.value)
-      switch (rel) {
-        case 'equivalent':
-          return true;
-        case 'subsumes':
-          status.left = true;
-          return true;
-        case 'subsumed-by':
-          status.right = true;
-          return true;
-        default:
+    if (t.filter.length > 1) {
+      t.filter.sort((a, b) => (a.property || '').localeCompare(b.property) || (a.op || '').localeCompare(b.op) || (a.value || '').localeCompare(b.value));
+      o.filter.sort((a, b) => (a.property || '').localeCompare(b.property) || (a.op || '').localeCompare(b.op) || (a.value || '').localeCompare(b.value))
+      // we can't draw any conclusions if there's more than one filter, and they aren't identical,
+      // because we don't guess how they might interact with each other
+      for (let i = 0; i < (t.filter || []).length; i++) {
+        if (t.filter[i].property !== o.filter[i].property || t.filter[i].op !== o.filter[i].op || t.filter[i].value !== o.filter[i].value) {
           return false;
+        }
+      }
+      status.common = true;
+      return true;
+    } else {
+      let tf = t.filter[0];
+      let of = o.filter[0];
+      if (tf.property != of.property || tf.op != of.op) {
+        return false;
+      }
+      if (tf.value == of.value) {
+        status.common = true;
+        return true;
+      } else if (tf.op == 'is-a') {
+        let rel = await cs.subsumesTest(tf.value, of.value)
+        switch (rel) {
+          case 'equivalent':
+            return true;
+          case 'subsumes':
+            status.common = true;
+            status.left = true;
+            return true;
+          case 'subsumed-by':
+            status.common = true;
+            status.right = true;
+            return true;
+          default:
+            // we know that the codes aren't related, but we don't know whether they have common children
+            // well, that depends on whether there's a multi-heirarchy in play
+            if (!cs.hasMultiHierarchy()) {
+              status.common = false;
+              status.left = true;
+              status.right = true;
+              return true;
+
+            } else {
+              return false;
+            }
+        }
+      } else {
+        return false;
       }
     }
-    return false;
   }
 
+  includesIdentical(t, o) {
+    if ((t.concept || []).length !== (o.concept || []).length) {
+      return false;
+    }
+    for (let i = 0; i < (t.concept || []).length; i++) {
+      if (t.concept[i].code !== o.concept[i].code) {
+        return false;
+      }
+    }
+    if ((t.filter || []).length !== (o.filter || []).length) {
+      return false;
+    }
+    for (let i = 0; i < (t.filter || []).length; i++) {
+      if (t.filter[i].property !== o.filter[i].property || t.filter[i].op !== o.filter[i].op || t.filter[i].value !== o.filter[i].value ) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  anyCriteriaHasFilters(allCriteria, key) {
+    return allCriteria.some(c => c.system === key && c.filter && c.filter.length > 0);
+  }
+
+  hasMultipleVersionsForAnySystem(systems, systemMap) {
+    return [...systems.entries()].some(([url, val]) => {
+      if (val.criteria !== true) return false;
+      let count = 0;
+      for (const k of systemMap.keys()) {
+        if (k.startsWith(url)) {
+          count++;
+        }
+      }
+      return count > 1;
+    });
+  }
 }
 
 module.exports = {

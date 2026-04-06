@@ -80,6 +80,7 @@ class ReadWorker extends TerminologyWorker {
   async handleCodeSystem(req, res, id) {
     let cs = this.provider.getCodeSystemById(this.opContext, id);
     if (cs != null) {
+      req.sourcePackage = cs.sourcePackage;
       return res.json(cs.jsonObj);
     }
 
@@ -145,6 +146,7 @@ class ReadWorker extends TerminologyWorker {
       this.deadCheck('handleValueSet-loop');
       const vs = await vsp.fetchValueSetById(id);
       if (vs) {
+        req.sourcePackage = vs.sourcePackage;
         return res.json(vs.jsonObj);
       }
     }
@@ -165,9 +167,10 @@ class ReadWorker extends TerminologyWorker {
     // Iterate through valueSetProviders in order
     for (const cmsp of this.provider.conceptMapProviders) {
       this.deadCheck('handleConceptMap-loop');
-      const vs = await cmsp.fetchConceptMapById(id);
-      if (vs) {
-        return res.json(vs.jsonObj);
+      const cm = await cmsp.fetchConceptMapById(id);
+      if (cm) {
+        req.sourcePackage = cm.sourcePackage;
+        return res.json(cm.jsonObj);
       }
     }
 
