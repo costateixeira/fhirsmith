@@ -232,7 +232,8 @@ class MetadataHandler {
               ],
               operation: [
                 { name: 'expand', definition: 'http://hl7.org/fhir/OperationDefinition/ValueSet-expand' },
-                { name: 'validate-code', definition: 'http://hl7.org/fhir/OperationDefinition/ValueSet-validate-code' }
+                { name: 'validate-code', definition: 'http://hl7.org/fhir/OperationDefinition/ValueSet-validate-code' },
+                { name: 'related', definition: 'https://raw.githubusercontent.com/HealthIntersections/FHIRsmith/refs/heads/main/tx/data/OperationDefinition-ValueSet-related.json' }
               ]
             },
             {
@@ -265,6 +266,7 @@ class MetadataHandler {
             { name: 'validate-code', definition: 'http://hl7.org/fhir/OperationDefinition/Resource-validate-code' },
             { name: 'translate', definition: 'http://hl7.org/fhir/OperationDefinition/ConceptMap-translate' },
             { name: 'closure', definition: 'http://hl7.org/fhir/OperationDefinition/ConceptMap-closure' },
+            { name: 'related', definition: 'https://raw.githubusercontent.com/HealthIntersections/FHIRsmith/refs/heads/main/tx/data/OperationDefinition-ValueSet-related.json' },
             { name: 'versions', definition: 'http://hl7.org/fhir/OperationDefinition/fhir-versions' }
           ]
         }
