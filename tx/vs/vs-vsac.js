@@ -78,7 +78,7 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
     if (this.valueSetMap.size == 0) {
       await this.refreshValueSets();
     }
-
+    await this.refreshValueSets(); // TODO: remove this
     // Start periodic refresh
     this._startRefreshTimer();
     this.initialized = true;
@@ -173,6 +173,14 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
       this.lastRefresh = new Date();
       console.log(`VSAC refresh phase 1 done. Total: ${count} with ${ncount} new items`);
       this.stats.task('VSAC Sync', `VSAC refresh phase 1 done. Total: ${count} with ${ncount} new items`);
+
+      // phase 1b: query for recently updated value sets via _lastUpdated
+      let lastUpdatedCount = await this._scanLastUpdated();
+      console.log(`VSAC refresh phase 1b done. ${lastUpdatedCount} additional items from _lastUpdated`);
+      this.stats.task('VSAC Sync', `Phase 1b: ${lastUpdatedCount} from _lastUpdated`);
+
+      // deduplicate the queue
+      this.queue = [...new Set(this.queue)];
 
       let tracking = { totalFetched: 0, totalNew: 0, count: 0, newCount : 0 };
       // phase 2: query for history & content
@@ -418,8 +426,8 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
         isRefreshing: this.isRefreshing,
         refreshIntervalHours: this.refreshIntervalHours,
         nextRefresh: this.refreshTimer && this.lastRefresh
-          ? new Date(this.lastRefresh.getTime() + (this.refreshIntervalHours * 60 * 60 * 1000))
-          : null
+            ? new Date(this.lastRefresh.getTime() + (this.refreshIntervalHours * 60 * 60 * 1000))
+            : null
       }
     };
   }
@@ -506,8 +514,8 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
     if (bundle.entry && bundle.entry.length > 0) {
       // Extract ValueSets from bundle entries
       const valueSets = bundle.entry
-        .filter(entry => entry.resource && entry.resource.resourceType === 'ValueSet')
-        .map(entry => entry.resource);
+          .filter(entry => entry.resource && entry.resource.resourceType === 'ValueSet')
+          .map(entry => entry.resource);
       if (valueSets.length > 0) {
         tracking.totalNew = tracking.totalNew + await this.batchUpsertValueSets(valueSets);
         tracking.totalFetched += valueSets.length;
@@ -517,6 +525,58 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
     let logMsg = `VSAC (${tracking.count} of ${length}) ${q}: ${vcount} versions`;
     console.log(logMsg);
     this.stats.task('VSAC Sync', logMsg);
+  }
+
+  /**
+   * Scan VSAC for recently updated value sets using the _lastUpdated parameter.
+   * Uses a stored date from the previous run; if none exists, defaults to 4 days ago.
+   * Adds any found URLs to this.queue and stores the server's response date for next time.
+   * @returns {Promise<number>} Number of value set URLs added to the queue
+   * @private
+   */
+  async _scanLastUpdated() {
+    const SETTING_KEY = 'vsac_last_updated_date';
+
+    let sinceDate = await this.database.getSetting(SETTING_KEY);
+    if (!sinceDate) {
+      // No stored date — default to 10 days ago
+      const d = new Date();
+      d.setDate(d.getDate() - 10);
+      sinceDate = d.toISOString();
+    }
+
+    let url = `/res/ValueSet/?_lastUpdated=ge${sinceDate}&_offset=0&_count=100&_elements=id,url,version,status`;
+    let count = 0;
+    let serverDate = null;
+
+    while (url) {
+      console.log(`_lastUpdated scan: ${count} found so far`);
+      this.stats.task('VSAC Sync', `_lastUpdated scan: ${count} found`);
+
+      const bundle = await this._fetchBundle(url);
+
+      // Capture the server's lastUpdated from the first page
+      if (!serverDate && bundle.meta && bundle.meta.lastUpdated) {
+        serverDate = bundle.meta.lastUpdated;
+      }
+
+      for (let be of bundle.entry || []) {
+        let vs = be.resource;
+        if (vs && vs.url) {
+          this.queue.push(vs.url);
+          count++;
+        }
+      }
+
+      url = this._getNextUrl(bundle);
+    }
+
+    // Store the server date for next run
+    if (serverDate) {
+      await this.database.setSetting(SETTING_KEY, serverDate);
+    }
+
+    return count;
   }
 
   name() {
@@ -533,38 +593,38 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
 
     const rows = await new Promise((resolve, reject) => {
       db.all(
-        `SELECT 'vs' AS kind,
-                url,
-                version,
-                date_first_seen AS ts,
-                NULL AS status,
-                NULL AS error_message,
-                NULL AS finished_at,
-                NULL AS total_fetched,
-                NULL AS total_new
+          `SELECT 'vs' AS kind,
+                  url,
+                  version,
+                  date_first_seen AS ts,
+                  NULL AS status,
+                  NULL AS error_message,
+                  NULL AS finished_at,
+                  NULL AS total_fetched,
+                  NULL AS total_new
            FROM valuesets
-          WHERE date_first_seen > 0
-         UNION ALL
-         SELECT 'run' AS kind,
-                NULL,
-                NULL,
-                started_at AS ts,
-                status,
-                error_message,
-                finished_at,
-                total_fetched,
-                total_new
+           WHERE date_first_seen > 0
+           UNION ALL
+           SELECT 'run' AS kind,
+                  NULL,
+                  NULL,
+                  started_at AS ts,
+                  status,
+                  error_message,
+                  finished_at,
+                  total_fetched,
+                  total_new
            FROM vsac_runs
-         ORDER BY ts DESC
-         LIMIT 200`,
-        [],
-        (err, rows) => err ? reject(err) : resolve(rows)
+           ORDER BY ts DESC
+             LIMIT 200`,
+          [],
+          (err, rows) => err ? reject(err) : resolve(rows)
       );
     });
 
     const fmt = ts => ts
-      ? new Date(ts * 1000).toISOString().replace('T', ' ').substring(0, 19) + ' UTC'
-      : '—';
+        ? new Date(ts * 1000).toISOString().replace('T', ' ').substring(0, 19) + ' UTC'
+        : '—';
 
     let html = '<h3>VSAC Sync History</h3>';
     html += '<table class="grid">';
