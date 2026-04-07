@@ -1853,7 +1853,7 @@ class PublisherModule {
         } else {
           content += '<div class="table-responsive">';
           content += '<table class="table table-striped">';
-          content += '<thead><tr><th>Name</th><th>Local Folder</th><th>Git Root</th><th>Update Script</th><th>Active</th><th>Created</th><th>Actions</th></tr></thead>';
+          content += '<thead><tr><th>Name</th><th>Local Folder</th><th>Git Root</th><th>Update Script</th><th>History Templates</th><th>Web Templates</th><th>Active</th><th>Created</th><th>Actions</th></tr></thead>';
           content += '<tbody>';
 
           websites.forEach(website => {
