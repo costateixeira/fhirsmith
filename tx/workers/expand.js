@@ -1010,7 +1010,7 @@ class ValueSetExpander {
           cds.clear();
           Extensions.checkNoModifiers(cc, 'ValueSetExpander.processCodes', 'set concept reference', vsSrc.vurl);
           const cctxt = await cs.locate(cc.code, this.allAltCodes);
-          if (cctxt && cctxt.context && (!this.params.activeOnly || !await cs.isInactive(cctxt)) && await this.passesFilters(cs, cctxt, prep, filters, 0)) {
+          if (cctxt && cctxt.context && (!this.params.activeOnly || !await cs.isInactive(cctxt.context)) && await this.passesFilters(cs, cctxt.context, prep, filters, 0)) {
             if (filter.passesDesignations(cds) || filter.passes(cc.code)) {
               let ov = Extensions.readString(cc, 'http://hl7.org/fhir/StructureDefinition/itemWeight');
               if (!ov) {
