@@ -735,6 +735,17 @@ class OCLSourceCodeSystemProvider extends CodeSystemProvider {
       return { context: this.conceptCache.get(code), message: null };
     }
 
+    // OCL concept IDs may differ in case from the FHIR code (e.g. "y" vs "Y").
+    // Try a case-insensitive cache lookup before hitting the network.
+    const codeLower = code.toLowerCase();
+    for (const [key, value] of this.conceptCache.entries()) {
+      if (key.toLowerCase() === codeLower) {
+        // Cache under the requested case as well so future lookups are O(1).
+        this.conceptCache.set(code, value);
+        return { context: value, message: null };
+      }
+    }
+
     if (this.scheduleBackgroundLoad) {
       this.scheduleBackgroundLoad('lookup-miss');
     }
@@ -1032,23 +1043,26 @@ class OCLSourceCodeSystemProvider extends CodeSystemProvider {
       this.scheduleBackgroundLoad('concept-miss');
     }
 
-    const url = this.#buildConceptUrl(code);
     const pending = (async () => {
-      let response;
-      try {
-        response = await this.httpClient.get(url, { params: { verbose: true } });
-      } catch (error) {
-        // Missing concept should be treated as not-found, not as an internal server failure.
-        if (error && error.response && error.response.status === 404) {
-          return null;
+      const concept = await this.#fetchConceptByCode(code);
+      if (concept) {
+        return concept;
+      }
+      // OCL concept IDs may differ in case from the FHIR code (e.g. "y" vs "Y").
+      // Try common case alternatives before giving up.
+      const lower = code.toLowerCase();
+      const upper = code.toUpperCase();
+      for (const alt of [lower, upper]) {
+        if (alt !== code) {
+          const altConcept = await this.#fetchConceptByCode(alt);
+          if (altConcept) {
+            // Cache under the originally requested code so future lookups hit directly.
+            this.conceptCache.set(code, altConcept);
+            return altConcept;
+          }
         }
-        throw error;
       }
-      const concept = this.#toConceptContext(response.data);
-      if (concept && concept.code) {
-        this.conceptCache.set(concept.code, concept);
-      }
-      return concept;
+      return null;
     })();
 
     this.pendingConceptRequests.set(pendingKey, pending);
@@ -1057,6 +1071,24 @@ class OCLSourceCodeSystemProvider extends CodeSystemProvider {
     } finally {
       this.pendingConceptRequests.delete(pendingKey);
     }
+  }
+
+  async #fetchConceptByCode(code) {
+    const url = this.#buildConceptUrl(code);
+    let response;
+    try {
+      response = await this.httpClient.get(url, { params: { verbose: true } });
+    } catch (error) {
+      if (error && error.response && error.response.status === 404) {
+        return null;
+      }
+      throw error;
+    }
+    const concept = this.#toConceptContext(response.data);
+    if (concept && concept.code) {
+      this.conceptCache.set(concept.code, concept);
+    }
+    return concept;
   }
 
   async #allConceptContexts() {
