@@ -714,17 +714,38 @@ class PublisherModule {
 
     // Step 1: Clone supporting repositories into the task directory
     const registryDir = path.join(taskDir, 'ig-registry');
-    const historyDir = path.join(taskDir, 'fhir-ig-history-template');
-    const templatesDir = path.join(taskDir, 'fhir-web-templates');
 
     await this.runCommand('git', ['clone', 'git@github.com:FHIR/ig-registry.git', registryDir],
         {}, task.id, 'Cloning ig-registry');
 
-    await this.runCommand('git', ['clone', 'https://github.com/HL7/fhir-ig-history-template.git', historyDir],
-        {}, task.id, 'Cloning fhir-ig-history-template');
+    // Use website-configured history templates path if provided, otherwise clone the default repo
+    let historyDir;
+    if (website.history_templates) {
+      historyDir = website.history_templates;
+      await this.logTaskMessage(task.id, 'info', 'Using configured history templates: ' + historyDir);
+      if (!fs.existsSync(historyDir)) {
+        throw new Error('Configured history_templates path does not exist: ' + historyDir);
+      }
+    } else {
+      historyDir = path.join(taskDir, 'fhir-ig-history-template');
+      await this.runCommand('git', ['clone', 'https://github.com/HL7/fhir-ig-history-template.git', historyDir],
+          {}, task.id, 'Cloning fhir-ig-history-template');
+    }
 
-    await this.runCommand('git', ['clone', 'https://github.com/HL7/fhir-web-templates.git', templatesDir],
-        {}, task.id, 'Cloning fhir-web-templates');
+    // Use website-configured web templates path if provided, otherwise clone the default repo.
+    // This allows pointing to a subdirectory of the templates repo for different target websites.
+    let templatesDir;
+    if (website.web_templates) {
+      templatesDir = website.web_templates;
+      await this.logTaskMessage(task.id, 'info', 'Using configured web templates: ' + templatesDir);
+      if (!fs.existsSync(templatesDir)) {
+        throw new Error('Configured web_templates path does not exist: ' + templatesDir);
+      }
+    } else {
+      templatesDir = path.join(taskDir, 'fhir-web-templates');
+      await this.runCommand('git', ['clone', 'https://github.com/HL7/fhir-web-templates.git', templatesDir],
+          {}, task.id, 'Cloning fhir-web-templates');
+    }
 
     // Step 2: Reuse the publisher.jar from the draft build
     const publisherJar = path.join(taskDir, 'publisher.jar');
@@ -1853,7 +1874,7 @@ class PublisherModule {
         } else {
           content += '<div class="table-responsive">';
           content += '<table class="table table-striped">';
-          content += '<thead><tr><th>Name</th><th>Local Folder</th><th>Git Root</th><th>Update Script</th><th>History Templates</th><th>Web Templates</th><th>Active</th><th>Created</th><th>Actions</th></tr></thead>';
+          content += '<thead><tr><th>Name</th><th>Local Folder</th><th>Git Root</th><th>History Templates</th><th>Web Templates</th><th>Update Script</th><th>Active</th><th>Created</th><th>Actions</th></tr></thead>';
           content += '<tbody>';
 
           websites.forEach(website => {
