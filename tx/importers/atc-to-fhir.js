@@ -277,32 +277,7 @@ try {
     console.log(`Writing to ${OUTPUT_FILE}...`);
     fs.writeFileSync(OUTPUT_FILE, JSON.stringify(codeSystem, null, 2));
     console.log('Done!');
-    
-    // Print some stats
-    function countConcepts(concepts) {
-        let count = 0;
-        for (const c of concepts) {
-            count++;
-            if (c.concept) {
-                count += countConcepts(c.concept);
-            }
-        }
-        return count;
-    }
-    
-    function countWithDDD(concepts) {
-        let count = 0;
-        for (const c of concepts) {
-            if (c.property?.some(p => p.code === 'dddValue')) {
-                count++;
-            }
-            if (c.concept) {
-                count += countWithDDD(c.concept);
-            }
-        }
-        return count;
-    }
-    
+
     const totalConcepts = countConcepts(codeSystem.concept);
     const withDDD = countWithDDD(codeSystem.concept);
     console.log(`\nStatistics:`);
@@ -313,4 +288,29 @@ try {
 } catch (error) {
     console.error('Error:', error.message);
     process.exit(1);
+}
+
+// Print some stats
+function countConcepts(concepts) {
+    let count = 0;
+    for (const c of concepts) {
+        count++;
+        if (c.concept) {
+            count += countConcepts(c.concept);
+        }
+    }
+    return count;
+}
+
+function countWithDDD(concepts) {
+    let count = 0;
+    for (const c of concepts) {
+        if (c.property?.some(p => p.code === 'dddValue')) {
+            count++;
+        }
+        if (c.concept) {
+            count += countWithDDD(c.concept);
+        }
+    }
+    return count;
 }
