@@ -6,7 +6,7 @@ const ATC_FILE = process.argv[2] || '2025_ATC.xml';
 const DDD_FILE = process.argv[3] || '2025_ATC_ddd.xml';
 const OUTPUT_FILE = process.argv[4] || 'atc-codesystem.json';
 
-const PROPERTY_GROUP_EXT_URL = 'http://hl7.org/fhir/property.group';
+const PROPERTY_GROUP_EXT_URL = 'http://hl7.org/fhir/StructureDefinition/Codesystem-property-group';
 
 // Parse XML files
 function parseXML(filePath) {
