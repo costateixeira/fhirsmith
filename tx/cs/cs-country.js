@@ -2,6 +2,7 @@ const { CodeSystemProvider, FilterExecutionContext } = require('../../tx/cs/cs-a
 const assert = require('assert');
 const { CodeSystem } = require("../library/codesystem");
 const {CodeSystemFactoryProvider} = require("./cs-api");
+const regexUtilities = require("../../library/regex-utilities");
 
 class CountryCodeConcept {
   constructor(userDefined, code, display, french) {
@@ -199,7 +200,7 @@ class CountryCodeServices extends CodeSystemProvider {
 
       try {
         // Create regex with anchors to match the Pascal implementation (^value$)
-        const regex = new RegExp('^' + value + '$');
+        const regex = regexUtilities.compile('^' + value + '$');
 
         for (const concept of this.codes) {
           if (regex.test(concept.code)) {

@@ -1622,7 +1622,7 @@ class SnomedServicesFactory extends CodeSystemFactoryProvider {
         internalSource : this,
         relationship: relationship,
         id : id,
-        url: `${this.system}?fhir_cm=${id}`,
+        url: `${this.system()}?fhir_cm=${id}`,
         version: this.version(),
         name: `SNOMED CT ${name} Concept Map`,
         description: `The concept map implicitly defined by the ${name} Association Reference Set`,

@@ -78,7 +78,6 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
     if (this.valueSetMap.size == 0) {
       await this.refreshValueSets();
     }
-    await this.refreshValueSets(); // TODO: remove this
     // Start periodic refresh
     this._startRefreshTimer();
     this.initialized = true;

@@ -6,6 +6,7 @@ const { validateOptionalParameter, getValuePrimitive, validateArrayParameter} = 
 const {Issue} = require("../library/operation-outcome");
 const {Extensions} = require("../library/extensions");
 const {BaseCSServices} = require("./cs-base");
+const regexUtilities = require("../../library/regex-utilities");
 
 /**
  * Context class for FHIR CodeSystem provider concepts
@@ -1309,7 +1310,7 @@ class FhirCodeSystemProvider extends BaseCSServices {
     else if (op === 'regex') {
       // Regular expression match
       try {
-        const regex = new RegExp('^' + value + '$');
+        const regex = regexUtilities.compile('^' + value + '$');
         const allCodes = this.codeSystem.getAllCodes();
         for (const code of allCodes) {
           if (regex.test(code)) {
@@ -1320,7 +1321,7 @@ class FhirCodeSystemProvider extends BaseCSServices {
           }
         }
       } catch (error) {
-        throw new Error(`Invalid regex pattern: ${value}`);
+        throw new Issue('error', 'exception', null, 'INVALID_REGEX', this.opContext.i18n.translate('INVALID_REGEX', this.opContext.langs, [value, error.message]), 'vs-invalid', 422);
       }
     }
 
@@ -1428,7 +1429,7 @@ class FhirCodeSystemProvider extends BaseCSServices {
     }
     else if (op === 'regex') {
       try {
-        const regex = new RegExp('^' + value + '$');
+        const regex = regexUtilities.compile('^' + value + '$');
         return properties.some(p => regex.test(this._getPropertyValue(p)));
       } catch (error) {
         return false;
