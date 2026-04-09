@@ -389,20 +389,26 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
   }
 
   #indexValueSet(vs) {
-    const existing = this.valueSetMap.get(vs.url)
-      || (vs.version ? this.valueSetMap.get(`${vs.url}|${vs.version}`) : null)
-      || this._idMap.get(vs.id)
-      || null;
+    const existing = this.valueSetMap.get(vs.url) || null;
 
-    // Só indexa se não existe ou se for o mesmo objeto
-    if (!existing || existing === vs) {
-      this.valueSetMap.set(vs.url, vs);
-      if (vs.version) {
-        this.valueSetMap.set(`${vs.url}|${vs.version}`, vs);
-      }
-      this.valueSetMap.set(vs.id, vs);
-      this._idMap.set(vs.id, vs);
+    // When fresh discovery metadata replaces a cold-cached entry, carry over
+    // the enumerated compose so the expand engine doesn't fall back to
+    // "include whole CodeSystem".  The background expansion will eventually
+    // refresh it with up-to-date collection contents.
+    if (existing && existing !== vs
+      && Array.isArray(existing.jsonObj?.compose?.include)
+      && existing.jsonObj.compose.include.some(inc => Array.isArray(inc.concept) && inc.concept.length > 0)
+      && (!vs.jsonObj.compose || !Array.isArray(vs.jsonObj.compose.include) || vs.jsonObj.compose.include.length === 0)
+    ) {
+      vs.jsonObj.compose = existing.jsonObj.compose;
     }
+
+    this.valueSetMap.set(vs.url, vs);
+    if (vs.version) {
+      this.valueSetMap.set(`${vs.url}|${vs.version}`, vs);
+    }
+    this.valueSetMap.set(vs.id, vs);
+    this._idMap.set(vs.id, vs);
   }
 
   #toValueSet(collection) {
@@ -567,6 +573,17 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
       const existingInclude = Array.isArray(vs?.jsonObj?.compose?.include)
         ? vs.jsonObj.compose.include
         : [];
+
+      // If the compose already has enumerated concepts (from background expansion),
+      // it is the authoritative representation of the collection contents — don't
+      // overwrite it with system-only entries that would cause the expand engine
+      // to include ALL concepts from the CodeSystem.
+      const hasEnumeratedConcepts = existingInclude.some(
+        inc => Array.isArray(inc.concept) && inc.concept.length > 0
+      );
+      if (hasEnumeratedConcepts) {
+        return;
+      }
 
       // Always normalize existing compose entries first because discovery metadata
       // can carry non-canonical preferred_source values.
@@ -972,9 +989,12 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
       return;
     }
 
-    const cached = this.backgroundExpansionCache.get(cacheKey);
+    let cached = this.backgroundExpansionCache.get(cacheKey);
+    let invalidated = false;
     if (cached && !this.#isCachedExpansionValid(vs, cached)) {
       this.backgroundExpansionCache.delete(cacheKey);
+      cached = null;
+      invalidated = true;
     }
 
     // Already have a cached compose ready
@@ -982,23 +1002,22 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
       return;
     }
 
-    const cacheFilePath = getCacheFilePath(CACHE_VS_DIR, vs.url, vs.version || null, paramsKey);
-    const cacheAgeFromFileMs = getColdCacheAgeMs(cacheFilePath);
-    const persistedCache = this.backgroundExpansionCache.get(cacheKey);
-    const cacheAgeFromMetadataMs = Number.isFinite(persistedCache?.createdAt)
-      ? Math.max(0, Date.now() - persistedCache.createdAt)
-      : null;
+    // Skip freshness check when cache was just invalidated (VS metadata changed
+    // on the server) — the cold cache file is stale even if recently written.
+    if (!invalidated) {
+      const cacheFilePath = getCacheFilePath(CACHE_VS_DIR, vs.url, vs.version || null, paramsKey);
+      const cacheAgeFromFileMs = getColdCacheAgeMs(cacheFilePath);
+      const persistedCache = this.backgroundExpansionCache.get(cacheKey);
+      const cacheAgeFromMetadataMs = Number.isFinite(persistedCache?.createdAt)
+        ? Math.max(0, Date.now() - persistedCache.createdAt)
+        : null;
 
-    // Treat cache as fresh when either file mtime or persisted timestamp is recent.
-    const freshnessCandidates = [cacheAgeFromFileMs, cacheAgeFromMetadataMs].filter(age => age != null);
-    const freshestCacheAgeMs = freshnessCandidates.length > 0 ? Math.min(...freshnessCandidates) : null;
-    if (freshestCacheAgeMs != null && freshestCacheAgeMs <= COLD_CACHE_FRESHNESS_MS) {
-      const freshnessSource = cacheAgeFromFileMs != null && cacheAgeFromMetadataMs != null
-        ? 'file+metadata'
-        : cacheAgeFromFileMs != null
-          ? 'file'
-          : 'metadata';
-      return;
+      // Treat cache as fresh when either file mtime or persisted timestamp is recent.
+      const freshnessCandidates = [cacheAgeFromFileMs, cacheAgeFromMetadataMs].filter(age => age != null);
+      const freshestCacheAgeMs = freshnessCandidates.length > 0 ? Math.min(...freshnessCandidates) : null;
+      if (freshestCacheAgeMs != null && freshestCacheAgeMs <= COLD_CACHE_FRESHNESS_MS) {
+        return;
+      }
     }
 
     const jobKey = `vs:${cacheKey}`;
@@ -1121,7 +1140,11 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
         if (!systemConcepts.has(entry.system)) {
           systemConcepts.set(entry.system, []);
         }
-        systemConcepts.get(entry.system).push(entry.code);
+        const concept = { code: entry.code };
+        if (Array.isArray(entry.designation) && entry.designation.length > 0) {
+          concept.designation = entry.designation;
+        }
+        systemConcepts.get(entry.system).push(concept);
         totalCount++;
       }
       if (progressState) {
@@ -1138,9 +1161,9 @@ class OCLValueSetProvider extends AbstractValueSetProvider {
     }
 
     return {
-      include: Array.from(systemConcepts.entries()).map(([system, codes]) => ({
+      include: Array.from(systemConcepts.entries()).map(([system, concepts]) => ({
         system,
-        concept: codes.map(code => ({ code }))
+        concept: concepts
       }))
     };
   }
