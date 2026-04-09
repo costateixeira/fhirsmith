@@ -3220,6 +3220,14 @@ describe('overload', () => {
 describe('fragment', () => {
   // Testing handling a code system fragment
 
+  it('fragment-expansionR5', async () => {
+    await runTest({"suite":"fragment","test":"fragment-expansion"}, "5.0");
+  });
+
+  it('fragment-expansionR4', async () => {
+    await runTest({"suite":"fragment","test":"fragment-expansion"}, "4.0");
+  });
+
   it('validation-fragment-code-goodR5', async () => {
     await runTest({"suite":"fragment","test":"validation-fragment-code-good"}, "5.0");
   });
@@ -4064,6 +4072,18 @@ describe('translate', () => {
     await runTest({"suite":"translate","test":"translate-1"}, "5.0");
   });
 
+  it('translate-1R4', async () => {
+    await runTest({"suite":"translate","test":"translate-1"}, "4.0");
+  });
+
+  it('translate-reverseR5', async () => {
+    await runTest({"suite":"translate","test":"translate-reverse"}, "5.0");
+  });
+
+  it('translate-reverseR4', async () => {
+    await runTest({"suite":"translate","test":"translate-reverse"}, "4.0");
+  });
+
 });
 
 describe('tho', () => {
@@ -4359,6 +4379,14 @@ describe('tx.fhir.org', () => {
 
   it('loinc-validate-codeR4', async () => {
     await runTest({"suite":"tx.fhir.org","test":"loinc-validate-code"}, "4.0");
+  });
+
+  it('loinc-validate-code-uzR5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"loinc-validate-code-uz"}, "5.0");
+  });
+
+  it('loinc-validate-code-uzR4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"loinc-validate-code-uz"}, "4.0");
   });
 
   it('loinc-validate-discouraged-codeR5', async () => {
@@ -4785,6 +4813,14 @@ describe('tx.fhir.org', () => {
     await runTest({"suite":"tx.fhir.org","test":"snomed-expand-property-1"}, "4.0");
   });
 
+  it('snomed-expand-property-2R5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-expand-property-2"}, "5.0");
+  });
+
+  it('snomed-expand-property-2R4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-expand-property-2"}, "4.0");
+  });
+
   it('snomed-validate-active-badR5', async () => {
     await runTest({"suite":"tx.fhir.org","test":"snomed-validate-active-bad"}, "5.0");
   });
@@ -4847,6 +4883,14 @@ describe('tx.fhir.org', () => {
 
   it('snomed-validate-property-goodR4', async () => {
     await runTest({"suite":"tx.fhir.org","test":"snomed-validate-property-good"}, "4.0");
+  });
+
+  it('snomed-translateR5', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-translate"}, "5.0");
+  });
+
+  it('snomed-translateR4', async () => {
+    await runTest({"suite":"tx.fhir.org","test":"snomed-translate"}, "4.0");
   });
 
 });
@@ -6146,6 +6190,296 @@ describe('permutations', () => {
 
   it('good-scd-isa-requestR4', async () => {
     await runTest({"suite":"permutations","test":"good-scd-isa-request"}, "4.0");
+  });
+
+});
+
+describe('regex-bad', () => {
+  // Bad Regex - denial of service attack
+
+  it('expand-regex-badR5', async () => {
+    await runTest({"suite":"regex-bad","test":"expand-regex-bad"}, "5.0");
+  });
+
+  it('expand-regex-badR4', async () => {
+    await runTest({"suite":"regex-bad","test":"expand-regex-bad"}, "4.0");
+  });
+
+  it('validate-regex-badR5', async () => {
+    await runTest({"suite":"regex-bad","test":"validate-regex-bad"}, "5.0");
+  });
+
+  it('validate-regex-badR4', async () => {
+    await runTest({"suite":"regex-bad","test":"validate-regex-bad"}, "4.0");
+  });
+
+});
+
+describe('related2', () => {
+  // Tests for $compare operation - comparing two value sets to determine their relationship (equivalent, subset, superset, overlap, disjoint, unknown)
+
+  it('related-eq-identical-defR5', async () => {
+    await runTest({"suite":"related2","test":"related-eq-identical-def"}, "5.0");
+  });
+
+  it('related-eq-identical-defR4', async () => {
+    await runTest({"suite":"related2","test":"related-eq-identical-def"}, "4.0");
+  });
+
+  it('related-eq-enum-reorderR5', async () => {
+    await runTest({"suite":"related2","test":"related-eq-enum-reorder"}, "5.0");
+  });
+
+  it('related-eq-enum-reorderR4', async () => {
+    await runTest({"suite":"related2","test":"related-eq-enum-reorder"}, "4.0");
+  });
+
+  it('related-eq-multi-include-reorderR5', async () => {
+    await runTest({"suite":"related2","test":"related-eq-multi-include-reorder"}, "5.0");
+  });
+
+  it('related-eq-multi-include-reorderR4', async () => {
+    await runTest({"suite":"related2","test":"related-eq-multi-include-reorder"}, "4.0");
+  });
+
+  it('related-eq-filter-vs-enumR5', async () => {
+    await runTest({"suite":"related2","test":"related-eq-filter-vs-enum"}, "5.0");
+  });
+
+  it('related-eq-filter-vs-enumR4', async () => {
+    await runTest({"suite":"related2","test":"related-eq-filter-vs-enum"}, "4.0");
+  });
+
+  it('related-eq-import-vs-inlineR5', async () => {
+    await runTest({"suite":"related2","test":"related-eq-import-vs-inline"}, "5.0");
+  });
+
+  it('related-eq-import-vs-inlineR4', async () => {
+    await runTest({"suite":"related2","test":"related-eq-import-vs-inline"}, "4.0");
+  });
+
+  it('related-eq-import-reorderR5', async () => {
+    await runTest({"suite":"related2","test":"related-eq-import-reorder"}, "5.0");
+  });
+
+  it('related-eq-import-reorderR4', async () => {
+    await runTest({"suite":"related2","test":"related-eq-import-reorder"}, "4.0");
+  });
+
+  it('related-expeq-exclude-vs-enumR5', async () => {
+    await runTest({"suite":"related2","test":"related-expeq-exclude-vs-enum"}, "5.0");
+  });
+
+  it('related-expeq-exclude-vs-enumR4', async () => {
+    await runTest({"suite":"related2","test":"related-expeq-exclude-vs-enum"}, "4.0");
+  });
+
+  it('related-expeq-exclude-partialR5', async () => {
+    await runTest({"suite":"related2","test":"related-expeq-exclude-partial"}, "5.0");
+  });
+
+  it('related-expeq-exclude-partialR4', async () => {
+    await runTest({"suite":"related2","test":"related-expeq-exclude-partial"}, "4.0");
+  });
+
+  it('related-sub-branch-vs-rootR5', async () => {
+    await runTest({"suite":"related2","test":"related-sub-branch-vs-root"}, "5.0");
+  });
+
+  it('related-sub-branch-vs-rootR4', async () => {
+    await runTest({"suite":"related2","test":"related-sub-branch-vs-root"}, "4.0");
+  });
+
+  it('related-sub-enum-vs-filterR5', async () => {
+    await runTest({"suite":"related2","test":"related-sub-enum-vs-filter"}, "5.0");
+  });
+
+  it('related-sub-enum-vs-filterR4', async () => {
+    await runTest({"suite":"related2","test":"related-sub-enum-vs-filter"}, "4.0");
+  });
+
+  it('related-sub-base-vs-import-plusR5', async () => {
+    await runTest({"suite":"related2","test":"related-sub-base-vs-import-plus"}, "5.0");
+  });
+
+  it('related-sub-base-vs-import-plusR4', async () => {
+    await runTest({"suite":"related2","test":"related-sub-base-vs-import-plus"}, "4.0");
+  });
+
+  it('related-sub-leaf-vs-subtreeR5', async () => {
+    await runTest({"suite":"related2","test":"related-sub-leaf-vs-subtree"}, "5.0");
+  });
+
+  it('related-sub-leaf-vs-subtreeR4', async () => {
+    await runTest({"suite":"related2","test":"related-sub-leaf-vs-subtree"}, "4.0");
+  });
+
+  it('related-super-root-vs-branchR5', async () => {
+    await runTest({"suite":"related2","test":"related-super-root-vs-branch"}, "5.0");
+  });
+
+  it('related-super-root-vs-branchR4', async () => {
+    await runTest({"suite":"related2","test":"related-super-root-vs-branch"}, "4.0");
+  });
+
+  it('related-expsub-exclude-narrowerR5', async () => {
+    await runTest({"suite":"related2","test":"related-expsub-exclude-narrower"}, "5.0");
+  });
+
+  it('related-expsub-exclude-narrowerR4', async () => {
+    await runTest({"suite":"related2","test":"related-expsub-exclude-narrower"}, "4.0");
+  });
+
+  it('related-disj-diff-systemsR5', async () => {
+    await runTest({"suite":"related2","test":"related-disj-diff-systems"}, "5.0");
+  });
+
+  it('related-disj-diff-systemsR4', async () => {
+    await runTest({"suite":"related2","test":"related-disj-diff-systems"}, "4.0");
+  });
+
+  it('related-disj-diff-branchesR5', async () => {
+    await runTest({"suite":"related2","test":"related-disj-diff-branches"}, "5.0");
+  });
+
+  it('related-disj-diff-branchesR4', async () => {
+    await runTest({"suite":"related2","test":"related-disj-diff-branches"}, "4.0");
+  });
+
+  it('related-disj-enum-no-intersectionR5', async () => {
+    await runTest({"suite":"related2","test":"related-disj-enum-no-intersection"}, "5.0");
+  });
+
+  it('related-disj-enum-no-intersectionR4', async () => {
+    await runTest({"suite":"related2","test":"related-disj-enum-no-intersection"}, "4.0");
+  });
+
+  it('related-disj-multi-systemR5', async () => {
+    await runTest({"suite":"related2","test":"related-disj-multi-system"}, "5.0");
+  });
+
+  it('related-disj-multi-systemR4', async () => {
+    await runTest({"suite":"related2","test":"related-disj-multi-system"}, "4.0");
+  });
+
+  it('related-ov-enum-partialR5', async () => {
+    await runTest({"suite":"related2","test":"related-ov-enum-partial"}, "5.0");
+  });
+
+  it('related-ov-enum-partialR4', async () => {
+    await runTest({"suite":"related2","test":"related-ov-enum-partial"}, "4.0");
+  });
+
+  it('related-ov-filter-vs-enumR5', async () => {
+    await runTest({"suite":"related2","test":"related-ov-filter-vs-enum"}, "5.0");
+  });
+
+  it('related-ov-filter-vs-enumR4', async () => {
+    await runTest({"suite":"related2","test":"related-ov-filter-vs-enum"}, "4.0");
+  });
+
+  it('related-ov-multi-include-partialR5', async () => {
+    await runTest({"suite":"related2","test":"related-ov-multi-include-partial"}, "5.0");
+  });
+
+  it('related-ov-multi-include-partialR4', async () => {
+    await runTest({"suite":"related2","test":"related-ov-multi-include-partial"}, "4.0");
+  });
+
+  it('related-ov-import-partialR5', async () => {
+    await runTest({"suite":"related2","test":"related-ov-import-partial"}, "5.0");
+  });
+
+  it('related-ov-import-partialR4', async () => {
+    await runTest({"suite":"related2","test":"related-ov-import-partial"}, "4.0");
+  });
+
+  it('related-ov-cross-systemR5', async () => {
+    await runTest({"suite":"related2","test":"related-ov-cross-system"}, "5.0");
+  });
+
+  it('related-ov-cross-systemR4', async () => {
+    await runTest({"suite":"related2","test":"related-ov-cross-system"}, "4.0");
+  });
+
+  it('related-ov-exclude-partialR5', async () => {
+    await runTest({"suite":"related2","test":"related-ov-exclude-partial"}, "5.0");
+  });
+
+  it('related-ov-exclude-partialR4', async () => {
+    await runTest({"suite":"related2","test":"related-ov-exclude-partial"}, "4.0");
+  });
+
+  it('related-unk-snomed-both-filterR5', async () => {
+    await runTest({"suite":"related2","test":"related-unk-snomed-both-filter"}, "5.0");
+  });
+
+  it('related-unk-snomed-both-filterR4', async () => {
+    await runTest({"suite":"related2","test":"related-unk-snomed-both-filter"}, "4.0");
+  });
+
+  it('related-unk-snomed-filter-vs-enumR5', async () => {
+    await runTest({"suite":"related2","test":"related-unk-snomed-filter-vs-enum"}, "5.0");
+  });
+
+  it('related-unk-snomed-filter-vs-enumR4', async () => {
+    await runTest({"suite":"related2","test":"related-unk-snomed-filter-vs-enum"}, "4.0");
+  });
+
+  it('related-unk-unknown-systemR5', async () => {
+    await runTest({"suite":"related2","test":"related-unk-unknown-system"}, "5.0");
+  });
+
+  it('related-unk-unknown-systemR4', async () => {
+    await runTest({"suite":"related2","test":"related-unk-unknown-system"}, "4.0");
+  });
+
+  it('related-ver-same-def-diff-cs-versionR5', async () => {
+    await runTest({"suite":"related2","test":"related-ver-same-def-diff-cs-version"}, "5.0");
+  });
+
+  it('related-ver-same-def-diff-cs-versionR4', async () => {
+    await runTest({"suite":"related2","test":"related-ver-same-def-diff-cs-version"}, "4.0");
+  });
+
+  it('related-ver-all-diff-cs-versionR5', async () => {
+    await runTest({"suite":"related2","test":"related-ver-all-diff-cs-version"}, "5.0");
+  });
+
+  it('related-ver-all-diff-cs-versionR4', async () => {
+    await runTest({"suite":"related2","test":"related-ver-all-diff-cs-version"}, "4.0");
+  });
+
+  it('related-ver-branch-diff-cs-versionR5', async () => {
+    await runTest({"suite":"related2","test":"related-ver-branch-diff-cs-version"}, "5.0");
+  });
+
+  it('related-ver-branch-diff-cs-versionR4', async () => {
+    await runTest({"suite":"related2","test":"related-ver-branch-diff-cs-version"}, "4.0");
+  });
+
+  it('related-ver-unversioned-vs-pinnedR5', async () => {
+    await runTest({"suite":"related2","test":"related-ver-unversioned-vs-pinned"}, "5.0");
+  });
+
+  it('related-ver-unversioned-vs-pinnedR4', async () => {
+    await runTest({"suite":"related2","test":"related-ver-unversioned-vs-pinned"}, "4.0");
+  });
+
+  it('related-ver-same-vs-diff-versionR5', async () => {
+    await runTest({"suite":"related2","test":"related-ver-same-vs-diff-version"}, "5.0");
+  });
+
+  it('related-ver-same-vs-diff-versionR4', async () => {
+    await runTest({"suite":"related2","test":"related-ver-same-vs-diff-version"}, "4.0");
+  });
+
+  it('related-ver-import-version-cascadeR5', async () => {
+    await runTest({"suite":"related2","test":"related-ver-import-version-cascade"}, "5.0");
+  });
+
+  it('related-ver-import-version-cascadeR4', async () => {
+    await runTest({"suite":"related2","test":"related-ver-import-version-cascade"}, "4.0");
   });
 
 });
