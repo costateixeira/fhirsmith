@@ -51,7 +51,7 @@
     "fs-extra": "^11.3.3",
     "ini": "^6.0.0",
     "inquirer": "^8.2.5",
-    "liquidjs": "^10.24.0",
+    "liquidjs": "^10.25.5",
     "lusca": "^1.7.0",
     "natural": "^6.12.0",
     "node-cron": "^3.0.3",
