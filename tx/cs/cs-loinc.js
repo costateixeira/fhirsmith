@@ -6,6 +6,7 @@ const { CodeSystemFactoryProvider} = require('./cs-api');
 const { validateOptionalParameter, validateArrayParameter} = require("../../library/utilities");
 const {BaseCSServices} = require("./cs-base");
 const {sqlEscapeString} = require("../../xig/xig");
+const regexUtilities = require('../../library/regex-utilities');
 
 // Context kinds matching Pascal enum
 const LoincProviderContextKind = {
@@ -938,7 +939,7 @@ class LoincServices extends BaseCSServices {
 // Helper method for regex matching
   async #findRegexMatches(sql, pattern, valueColumn, keyColumn = 'Key') {
     return new Promise((resolve, reject) => {
-      const regex = new RegExp(pattern);
+      const regex = regexUtilities.compile(pattern);
       const matchingKeys = [];
 
       this.db.all(sql, (err, rows) => {

@@ -13,6 +13,7 @@ const { OCLBackgroundJobQueue } = require('./jobs/background-queue');
 const { OCLConceptFilterContext } = require('./model/concept-filter-context');
 const { toConceptContext } = require('./mappers/concept-mapper');
 const { patchSearchWorkerForOCLCodeFiltering } = require('./shared/patches');
+const regexUtilities = require("../../library/regex-utilities");
 
 patchSearchWorkerForOCLCodeFiltering();
 
@@ -1135,7 +1136,7 @@ class OCLSourceCodeSystemProvider extends CodeSystemProvider {
 
   #buildPropertyMatcher(prop, op, value) {
     if (op === 'regex') {
-      const regex = new RegExp(String(value), 'i');
+      const regex = regexUtilities.compile(String(value), 'i');
       return concept => {
         const candidate = this.#valueForFilter(concept, prop);
         if (candidate == null) {

@@ -1520,7 +1520,7 @@ describe('FHIR CodeSystem Provider', () => {
         test('should handle invalid regex gracefully', async () => {
           await expect(
             simpleProvider.filter(filterContext, 'code', 'regex', '[invalid')
-          ).rejects.toThrow('Invalid regex pattern');
+          ).rejects.toThrow('The regex \'[invalid\' is not valid: Invalid regular expression: /^[invalid$/u: missing ]: [invalid$');
         });
       });
 
