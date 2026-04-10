@@ -5,6 +5,26 @@ All notable changes to the Health Intersections Node Server will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.9.1] - 2026-04-10
+
+### Added
+
+- TX: Add support for child-of filters
+
+### Changed
+
+- TX: increase vsac timeout
+
+### Fixed
+
+- Tidy up dashboard
+- TX: fix bug listing versions when validating
+- Fix support for child-of in R4/R3
+
+### Tx Conformance Statement
+
+FHIRsmith passed all 1578 HL7 terminology service tests (modes tx.fhir.org+omop+general+snomed, tests v1.9.1, runner v6.9.5)
+
 ## [v0.9.0] - 2026-04-09
 
 ### Added
