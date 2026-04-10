@@ -17,6 +17,7 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
    * @param {string} config.cacheFolder - Local folder for cached database
    * @param {number} [config.refreshIntervalHours=24] - Hours between refresh scans
    * @param {string} [config.baseUrl='http://cts.nlm.nih.gov/fhir'] - Base URL for VSAC FHIR server
+   * @param {number} [config.timeoutMs=120000] - HTTP request timeout in milliseconds
    */
   constructor(config, stats) {
     super();
@@ -43,7 +44,7 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
     const authString = Buffer.from(`apikey:${this.apiKey}`).toString('base64');
     this.httpClient = axios.create({
       baseURL: this.baseUrl,
-      timeout: 30000,
+      timeout: config.timeoutMs || 120000,
       headers: {
         'Accept': 'application/fhir+json',
         'User-Agent': 'FHIR-ValueSet-Provider/1.0',
