@@ -466,14 +466,15 @@ class Renderer {
         li.tx(" "+ this.translate('VALUE_SET_WHERE')+" ");
         li.startCommaList("and");
         for (let f of inc.filter) {
-          if (f.op == 'exists') {
+          let op = this.readFilterOp(f);
+          if (op == 'exists') {
             if (f.value == "true") {
               li.commaItem(f.property+" "+ this.translate('VALUE_SET_EXISTS'));
             } else {
               li.commaItem(f.property+" "+ this.translate('VALUE_SET_DOESNT_EXIST'));
             }
           } else {
-            li.commaItem(f.property + " " + f.op + " ");
+            li.commaItem(f.property + " " + op + " ");
             const loc = this.linkResolver ? await this.linkResolver.resolveCode(this.opContext, inc.system, inc.version, f.value) : null;
             if (loc) {
               li.ah(loc.link).tx(loc.description);
@@ -2241,6 +2242,14 @@ class Renderer {
         return 'CodeSystems as parameters = ' + value;
       default:
         return defn+' = ' + value;
+    }
+  }
+
+  readFilterOp(f) {
+    if (f._op) {
+      return Extensions.readString(f._op, 'http://hl7.org/fhir/5.0/StructureDefinition/extension-ValueSet.compose.include.filter.op');
+    } else {
+      return f.op;
     }
   }
 }

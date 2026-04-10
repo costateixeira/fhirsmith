@@ -56,7 +56,13 @@ const Extensions = {
     if (!resource) {
       return undefined;
     }
-    const extensions = Array.isArray(resource) ? resource : (resource.extension || []);
+    let extensions = Array.isArray(resource) ? resource : (resource.extension || []);
+    for (let ext of extensions || []) {
+      if (ext.url === url) {
+        return getValuePrimitive(ext);
+      }
+    }
+    extensions = Array.isArray(resource) ? resource : (resource.modifierExtension || []);
     for (let ext of extensions || []) {
       if (ext.url === url) {
         return getValuePrimitive(ext);

@@ -1224,7 +1224,7 @@ class FhirCodeSystemProvider extends BaseCSServices {
 
     // Handle concept/code hierarchy filters
     if ((prop === 'concept' || prop === 'code')) {
-      results = await this._handleConceptFilter(filterContext, op, value);
+      results = await this._handleConceptFilter(filterContext, prop, op, value);
     }
 
     // Handle child existence filter
@@ -1248,7 +1248,8 @@ class FhirCodeSystemProvider extends BaseCSServices {
     }
 
     if (!results) {
-      throw new Error(`The filter ${prop} ${op} ${value} was not understood`)
+      throw new Issue('error', 'exception', null, 'FILTER_NOT_UNDERSTOOD',
+            this.opContext.i18n.translate('FILTER_NOT_UNDERSTOOD', this.opContext.langs, [prop, op, value]), 'vs-invalid', 422);
     }
     // Add to filter context
     if (!filterContext.filters) {
@@ -1267,15 +1268,17 @@ class FhirCodeSystemProvider extends BaseCSServices {
    * @returns {Promise<FhirCodeSystemProviderFilterContext>} Filter results
    * @private
    */
-  async _handleConceptFilter(filterContext, op, value) {
+  async _handleConceptFilter(filterContext, prop, op, value) {
     const results = new FhirCodeSystemProviderFilterContext();
 
     if (op === 'is-a' || op === 'descendent-of') {
       // Find all descendants of the specified code
       const includeRoot = (op === 'is-a');
       await this._addDescendants(results, value, includeRoot);
-    }
-    else if (op === 'is-not-a') {
+    } else if (op === 'child-of') {
+      // Find all descendants of the specified code
+      await this._addChildren(results, value);
+    } else if (op === 'is-not-a') {
       // Find all concepts that are NOT descendants of the specified code
       const excludeDescendants = this.codeSystem.getDescendants(value);
       const excludeSet = new Set([value, ...excludeDescendants]);
@@ -1323,6 +1326,9 @@ class FhirCodeSystemProvider extends BaseCSServices {
       } catch (error) {
         throw new Issue('error', 'exception', null, 'INVALID_REGEX', this.opContext.i18n.translate('INVALID_REGEX', this.opContext.langs, [value, error.message]), 'vs-invalid', 422);
       }
+    } else {
+      throw new Issue('error', 'exception', null, 'FILTER_NOT_UNDERSTOOD',
+          this.opContext.i18n.translate('FILTER_NOT_UNDERSTOOD', this.opContext.langs, [prop, op, value]), 'vs-invalid', 422);
     }
 
     return results;
@@ -1344,6 +1350,27 @@ class FhirCodeSystemProvider extends BaseCSServices {
       const descendants = this.codeSystem.getDescendants(ancestorCode);
       for (const code of descendants) {
         if (code !== ancestorCode) {
+          const concept = this.codeSystem.getConceptByCode(code);
+          if (concept) {
+            results.add(concept, 0);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Add immediate children of a code to the results
+   * @param {FhirCodeSystemProviderFilterContext} results - Results to add to
+   * @param {string} ancestorCode - The parent code
+   * @private
+   */
+  async _addChildren(results, parentCode) {
+    const concept = this.codeSystem.getConceptByCode(parentCode);
+    if (concept) {
+      const descendants = this.codeSystem.getChildren(parentCode);
+      for (const code of descendants) {
+        if (code !== parentCode) { // should not be
           const concept = this.codeSystem.getConceptByCode(code);
           if (concept) {
             results.add(concept, 0);
