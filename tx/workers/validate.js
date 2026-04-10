@@ -839,7 +839,7 @@ class ValueSetChecker {
               } else {
                 bAdd = !unknownSystems.has(system + '|' + version);
                 if (bAdd) {
-                  let vl = await this.listVersions(system);
+                  let vl = await this.worker.listVersions(system);
                   if (vl.length == 0) {
                     mid = 'UNKNOWN_CODESYSTEM_VERSION_NONE';
                     vn = system;
