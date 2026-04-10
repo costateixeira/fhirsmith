@@ -1,5 +1,6 @@
 const {VersionUtilities} = require("../../library/version-utilities");
 const {getValueName} = require("../../library/utilities");
+const {Extensions} = require("../library/extensions");
 
 /**
  * Converts input ValueSet to R5 format (modifies input object for performance)
@@ -13,6 +14,12 @@ function valueSetToR5(jsonObj, sourceVersion) {
   if (VersionUtilities.isR5Ver(sourceVersion)) {
     return jsonObj; // No conversion needed
   }
+  for (const inc of jsonObj.compose.include || []) {
+    valueSetIncludeToR5(inc);
+  }
+  for (const inc of jsonObj.compose.exclude || []) {
+    valueSetIncludeToR5(inc);
+  }
   if (VersionUtilities.isR4Ver(sourceVersion)) {
     return jsonObj; // No conversion needed
   }
@@ -25,6 +32,19 @@ function valueSetToR5(jsonObj, sourceVersion) {
   }
   throw new Error(`Unsupported FHIR version: ${sourceVersion}`);
 }
+
+function valueSetIncludeToR5(inc) {
+  for (const filter of inc.filter || []) {
+    if (filter._op) {
+      let code = Extensions.readString(filter._op, 'http://hl7.org/fhir/5.0/StructureDefinition/extension-ValueSet.compose.include.filter.op');
+      if (code) {
+        filter.op = code;
+        delete filter._op;
+      }
+    }
+  }
+}
+
 
 /**
  * Converts R5 ValueSet to target version format (clones object first)
@@ -70,8 +90,8 @@ function valueSetR5ToR4(r5Obj) {
       if (include.filter && Array.isArray(include.filter)) {
         include.filter = include.filter.map(filter => {
           if (filter.op && isR5OnlyFilterOperator(filter.op)) {
-            // Remove R5-only operators
-            return null;
+            filter._op = { "extension": "http://hl7.org/fhir/5.0/StructureDefinition/extension-ValueSet.compose.include.filter.op", "valueCode": filter.op}
+            delete filter.op;
           }
           return filter;
         }).filter(filter => filter !== null);
@@ -85,8 +105,8 @@ function valueSetR5ToR4(r5Obj) {
       if (exclude.filter && Array.isArray(exclude.filter)) {
         exclude.filter = exclude.filter.map(filter => {
           if (filter.op && isR5OnlyFilterOperator(filter.op)) {
-            // Remove R5-only operators
-            return null;
+            filter._op = { "extension": "http://hl7.org/fhir/5.0/StructureDefinition/extension-ValueSet.compose.include.filter.op", "valueCode": filter.op}
+            delete filter.op;
           }
           return filter;
         }).filter(filter => filter !== null);
@@ -135,8 +155,8 @@ function valueSetR5ToR3(r5Obj) {
       if (include.filter && Array.isArray(include.filter)) {
         include.filter = include.filter.map(filter => {
           if (filter.op && !isR3CompatibleFilterOperator(filter.op)) {
-            // Remove non-R3-compatible operators
-            return null;
+            filter._op = { "extension": "http://hl7.org/fhir/5.0/StructureDefinition/extension-ValueSet.compose.include.filter.op", "valueCode": filter.op}
+            delete filter.op;
           }
           return filter;
         }).filter(filter => filter !== null);
@@ -150,8 +170,8 @@ function valueSetR5ToR3(r5Obj) {
       if (exclude.filter && Array.isArray(exclude.filter)) {
         exclude.filter = exclude.filter.map(filter => {
           if (filter.op && !isR3CompatibleFilterOperator(filter.op)) {
-            // Remove non-R3-compatible operators
-            return null;
+            filter._op = { "extension": "http://hl7.org/fhir/5.0/StructureDefinition/extension-ValueSet.compose.include.filter.op", "valueCode": filter.op}
+            delete filter.op;
           }
           return filter;
         }).filter(filter => filter !== null);
