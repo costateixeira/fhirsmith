@@ -12,7 +12,7 @@ const {debugLog} = require("../operation-context");
  * Fetches and caches ValueSets from the NLM VSAC FHIR server
  */
 class VSACValueSetProvider extends AbstractValueSetProvider {
-  SYNC_AT_START_UP = true;
+  SYNC_AT_START_UP = false;
 
   /**
    * @param {Object} config - Configuration object
@@ -170,7 +170,6 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
           console.log(`Reached total count (${total}), stopping`);
           break;
         }
-        break;
       }
 
       this.lastRefresh = new Date();
