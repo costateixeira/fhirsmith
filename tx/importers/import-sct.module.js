@@ -48,37 +48,37 @@ class SnomedModule extends BaseTerminologyModule {
   registerCommands(terminologyCommand, globalOptions) {
     // Import command
     terminologyCommand
-      .command('import')
-      .description('Import SNOMED CT data from RF2 source directory')
-      .option('-s, --source <directory>', 'Source directory containing RF2 files')
-      .option('-b, --base <directory>', 'Base edition directory (for extensions)')
-      .option('-d, --dest <file>', 'Destination cache file')
-      .option('-e, --edition <code>', 'Edition code (e.g., 900000000000207008 for International)')
-      .option('-v, --version <version>', 'Version in YYYYMMDD format (e.g., 20250801)')
-      .option('-u, --uri <uri>', 'Version URI (overrides edition/version if provided)')
-      .option('-l, --language <code>', 'Default language code (overrides edition default if provided)')
-      .option('-y, --yes', 'Skip confirmations')
-      .action(async (options) => {
-        await this.handleImportCommand({...globalOptions, ...options});
-      });
+        .command('import')
+        .description('Import SNOMED CT data from RF2 source directory')
+        .option('-s, --source <directory>', 'Source directory containing RF2 files')
+        .option('-b, --base <directory>', 'Base edition directory (for extensions)')
+        .option('-d, --dest <file>', 'Destination cache file')
+        .option('-e, --edition <code>', 'Edition code (e.g., 900000000000207008 for International)')
+        .option('-v, --version <version>', 'Version in YYYYMMDD format (e.g., 20250801)')
+        .option('-u, --uri <uri>', 'Version URI (overrides edition/version if provided)')
+        .option('-l, --language <code>', 'Default language code (overrides edition default if provided)')
+        .option('-y, --yes', 'Skip confirmations')
+        .action(async (options) => {
+          await this.handleImportCommand({...globalOptions, ...options});
+        });
 
     // Validate command
     terminologyCommand
-      .command('validate')
-      .description('Validate SNOMED CT RF2 directory structure')
-      .option('-s, --source <directory>', 'Source directory to validate')
-      .action(async (options) => {
-        await this.handleValidateCommand({...globalOptions, ...options});
-      });
+        .command('validate')
+        .description('Validate SNOMED CT RF2 directory structure')
+        .option('-s, --source <directory>', 'Source directory to validate')
+        .action(async (options) => {
+          await this.handleValidateCommand({...globalOptions, ...options});
+        });
 
     // Status command
     terminologyCommand
-      .command('status')
-      .description('Show status of SNOMED CT cache')
-      .option('-d, --dest <file>', 'Cache file to check')
-      .action(async (options) => {
-        await this.handleStatusCommand({...globalOptions, ...options});
-      });
+        .command('status')
+        .description('Show status of SNOMED CT cache')
+        .option('-d, --dest <file>', 'Cache file to check')
+        .action(async (options) => {
+          await this.handleStatusCommand({...globalOptions, ...options});
+        });
   }
 
   async handleImportCommand(options) {
@@ -633,7 +633,7 @@ class SnomedModule extends BaseTerminologyModule {
     }
 
     const additionalAnswers = additionalQuestions.length > 0 ?
-      await inquirer.prompt(additionalQuestions) : {};
+        await inquirer.prompt(additionalQuestions) : {};
 
     // Build the final configuration
     const config = {
@@ -774,7 +774,7 @@ class SnomedModule extends BaseTerminologyModule {
       } else if (firstLine.startsWith('id\teffectiveTime\tactive\tmoduleId\tconceptId\tlanguageCode\ttypeId\tterm\tcaseSignificanceId')) {
         files.descriptions.push(filePath);
       } else if (firstLine.startsWith('id\teffectiveTime\tactive\tmoduleId\tsourceId\tdestinationId\trelationshipGroup\ttypeId\tcharacteristicTypeId\tmodifierId') &&
-        !filePath.includes('StatedRelationship')) {
+          !filePath.includes('StatedRelationship')) {
         files.relationships.push(filePath);
       }
     } catch (error) {
@@ -1165,6 +1165,19 @@ class SnomedImporter {
       refsetDirectories: []
     };
 
+    // For extensions: load base edition files first so that all International
+    // Edition concepts, descriptions, and relationships are present before the
+    // extension content is layered on top.
+    if (this.config.base) {
+      if (this.config.verbose) {
+        console.log(`Loading base edition from: ${this.config.base}`);
+      }
+      this._scanDirectory(this.config.base, files);
+    }
+
+    // Then load the extension (or standalone edition) source files.
+    // For extensions these come second so that extension rows can override
+    // base rows where the same component has been updated.
     this._scanDirectory(this.config.source, files);
     return files;
   }
@@ -1200,7 +1213,7 @@ class SnomedImporter {
       } else if (firstLine.startsWith('id\teffectiveTime\tactive\tmoduleId\tconceptId\tlanguageCode\ttypeId\tterm\tcaseSignificanceId')) {
         files.descriptions.push(filePath);
       } else if (firstLine.startsWith('id\teffectiveTime\tactive\tmoduleId\tsourceId\tdestinationId\trelationshipGroup\ttypeId\tcharacteristicTypeId\tmodifierId') &&
-        !filePath.includes('StatedRelationship')) {
+          !filePath.includes('StatedRelationship')) {
         files.relationships.push(filePath);
       }
     } catch (error) {
@@ -1250,6 +1263,9 @@ class SnomedImporter {
     this.conceptList = [];
     let processedLines = 0;
 
+    // When loading base + extension, track list indices for fast replacement
+    const conceptIdToListIndex = this.config.base ? new Map() : null;
+
     for (let i = 0; i < this.files.concepts.length; i++) {
       const file = this.files.concepts[i];
       const rl = readline.createInterface({
@@ -1275,8 +1291,23 @@ class SnomedImporter {
           };
 
           if (this.conceptMap.has(concept.id)) {
-            throw new Error(`Duplicate Concept Id at line ${lineCount}: ${concept.id} - check you are processing the snapshot not the full edition`);
+            // When loading base + extension, the same concept may appear in both.
+            // The extension snapshot row takes precedence (it is loaded second).
+            // If there is no base directory this is a genuine duplicate in a single
+            // snapshot and we should still raise an error.
+            if (!this.config.base) {
+              throw new Error(`Duplicate Concept Id at line ${lineCount}: ${concept.id} - check you are processing the snapshot not the full edition`);
+            }
+            // Replace the base edition row with the extension row
+            const idx = conceptIdToListIndex.get(concept.id);
+            if (idx !== undefined) {
+              this.conceptList[idx] = concept;
+            }
+            this.conceptMap.set(concept.id, concept);
           } else {
+            if (conceptIdToListIndex) {
+              conceptIdToListIndex.set(concept.id, this.conceptList.length);
+            }
             this.conceptList.push(concept);
             this.conceptMap.set(concept.id, concept);
           }
@@ -1347,6 +1378,12 @@ class SnomedImporter {
     const descriptionList = [];
     let processedLines = 0;
 
+    // Build a lookup from description id -> index in descriptionList so that
+    // extension rows can replace base rows for the same description.
+    if (this.config.base) {
+      this._descriptionIdSet = new Map();
+    }
+
     for (const file of this.files.descriptions) {
       const rl = readline.createInterface({
         input: fs.createReadStream(file),
@@ -1372,7 +1409,19 @@ class SnomedImporter {
             caseSignificanceId: BigInt(parts[8])
           };
 
-          descriptionList.push(desc);
+          // When loading base + extension, the same description may appear in
+          // both.  The extension row (loaded second) takes precedence.
+          if (this.config.base && this._descriptionIdSet) {
+            const existingIdx = this._descriptionIdSet.get(desc.id);
+            if (existingIdx !== undefined) {
+              descriptionList[existingIdx] = desc;
+            } else {
+              this._descriptionIdSet.set(desc.id, descriptionList.length);
+              descriptionList.push(desc);
+            }
+          } else {
+            descriptionList.push(desc);
+          }
         }
 
         processedLines++;
@@ -1417,8 +1466,8 @@ class SnomedImporter {
         const caps = this.conceptMap.get(desc.caseSignificanceId);
 
         const descOffset = this.descriptions.addDescription(
-          termOffset, desc.id, effectiveTime, concept.index,
-          module.index, kind.index, caps.index, desc.active, lang
+            termOffset, desc.id, effectiveTime, concept.index,
+            module.index, kind.index, caps.index, desc.active, lang
         );
 
         // Track description on concept
@@ -1692,6 +1741,11 @@ class SnomedImporter {
     }
     this.isAIndex = isAConcept.index;
 
+    // Pass 1: collect all relationship rows, deduplicating so that extension
+    // rows (loaded second) override base rows with the same relationship id.
+    const relationshipRows = [];
+    const relationshipIdMap = this.config.base ? new Map() : null; // id -> index in relationshipRows
+
     for (const file of this.files.relationships) {
       const rl = readline.createInterface({
         input: fs.createReadStream(file),
@@ -1718,40 +1772,16 @@ class SnomedImporter {
             modifierId: BigInt(parts[9])
           };
 
-          const source = this.conceptMap.get(rel.sourceId);
-          const destination = this.conceptMap.get(rel.destinationId);
-          const type = this.conceptMap.get(rel.typeId);
-
-          if (source && destination && type) {
-            const effectiveTime = this.convertDateToSnomedDate(rel.effectiveTime);
-
-            // Check if this is a defining relationship
-            const defining = rel.characteristicTypeId === RF2_MAGIC_RELN_DEFINING ||
-              rel.characteristicTypeId === RF2_MAGIC_RELN_STATED ||
-              rel.characteristicTypeId === RF2_MAGIC_RELN_INFERRED;
-
-            const relationshipIndex = this.relationships.addRelationship(
-              rel.id, source.index, destination.index, type.index,
-              0, 0, 0, effectiveTime, rel.active, defining, rel.relationshipGroup
-            );
-
-            // Track parent/child relationships for is-a relationships
-            if (type.index === this.isAIndex && defining) {
-              const sourceTracker = this.getOrCreateConceptTracker(source.index);
-              if (rel.active) {
-                sourceTracker.addActiveParent(destination.index);
-              } else {
-                sourceTracker.addInactiveParent(destination.index);
-              }
+          if (relationshipIdMap) {
+            const existingIdx = relationshipIdMap.get(rel.id);
+            if (existingIdx !== undefined) {
+              relationshipRows[existingIdx] = rel;
+            } else {
+              relationshipIdMap.set(rel.id, relationshipRows.length);
+              relationshipRows.push(rel);
             }
-
-            // Track inbound/outbound relationships
-            const sourceTracker = this.getOrCreateConceptTracker(source.index);
-            const destTracker = this.getOrCreateConceptTracker(destination.index);
-
-            sourceTracker.addOutbound(relationshipIndex);
-            destTracker.addInbound(relationshipIndex);
-
+          } else {
+            relationshipRows.push(rel);
           }
         }
 
@@ -1762,10 +1792,62 @@ class SnomedImporter {
       }
     }
 
+    if (this.progressReporter) {
+      this.progressReporter.completeTask('Reading Relationships', processedLines, totalLines);
+    }
+
+    // Pass 2: process the deduplicated relationship rows into the binary
+    // structures and concept trackers.
+    const buildProgressBar = this.progressReporter?.createTaskProgressBar('Building Relationships');
+    buildProgressBar?.start(relationshipRows.length, 0);
+
+    for (let i = 0; i < relationshipRows.length; i++) {
+      const rel = relationshipRows[i];
+
+      const source = this.conceptMap.get(rel.sourceId);
+      const destination = this.conceptMap.get(rel.destinationId);
+      const type = this.conceptMap.get(rel.typeId);
+
+      if (source && destination && type) {
+        const effectiveTime = this.convertDateToSnomedDate(rel.effectiveTime);
+
+        // Check if this is a defining relationship
+        const defining = rel.characteristicTypeId === RF2_MAGIC_RELN_DEFINING ||
+            rel.characteristicTypeId === RF2_MAGIC_RELN_STATED ||
+            rel.characteristicTypeId === RF2_MAGIC_RELN_INFERRED;
+
+        const relationshipIndex = this.relationships.addRelationship(
+            rel.id, source.index, destination.index, type.index,
+            0, 0, 0, effectiveTime, rel.active, defining, rel.relationshipGroup
+        );
+
+        // Track parent/child relationships for is-a relationships
+        if (type.index === this.isAIndex && defining) {
+          const sourceTracker = this.getOrCreateConceptTracker(source.index);
+          if (rel.active) {
+            sourceTracker.addActiveParent(destination.index);
+          } else {
+            sourceTracker.addInactiveParent(destination.index);
+          }
+        }
+
+        // Track inbound/outbound relationships
+        const sourceTracker = this.getOrCreateConceptTracker(source.index);
+        const destTracker = this.getOrCreateConceptTracker(destination.index);
+
+        sourceTracker.addOutbound(relationshipIndex);
+        destTracker.addInbound(relationshipIndex);
+      }
+
+      if (i % 1000 === 0) {
+        buildProgressBar?.update(i);
+      }
+    }
+
     this.relationships.doneBuild();
 
     if (this.progressReporter) {
-      this.progressReporter.completeTask('Reading Relationships', processedLines, totalLines);
+      this.progressReporter.completeTask('Building Relationships', relationshipRows.length, relationshipRows.length);
     }
   }
 
@@ -1800,9 +1882,9 @@ class SnomedImporter {
         // Set parents if concept has any
         if (tracker.activeParents.length > 0 || tracker.inactiveParents.length > 0) {
           const activeParentsRef = tracker.activeParents.length > 0 ?
-            this.refs.addReferences(tracker.activeParents) : 0;
+              this.refs.addReferences(tracker.activeParents) : 0;
           const inactiveParentsRef = tracker.inactiveParents.length > 0 ?
-            this.refs.addReferences(tracker.inactiveParents) : 0;
+              this.refs.addReferences(tracker.inactiveParents) : 0;
 
           this.concepts.setParents(concept.index, activeParentsRef, inactiveParentsRef);
         } else {
@@ -2104,14 +2186,14 @@ class SnomedImporter {
     // NOTE: This calls addString() so it must happen AFTER strings.reopen()
     for (const refSet of refSetsArray) {
       this.refsetIndex.addReferenceSet(
-        this.addString(refSet.title),    // This needs strings builder to be active
-        refSet.filename,
-        refSet.index,
-        refSet.membersByRef,
-        refSet.membersByName,
-        refSet.fieldTypes,
-        refSet.fieldNames,
-        refSet.langs
+          this.addString(refSet.title),    // This needs strings builder to be active
+          refSet.filename,
+          refSet.index,
+          refSet.membersByRef,
+          refSet.membersByName,
+          refSet.fieldTypes,
+          refSet.fieldNames,
+          refSet.langs
       );
     }
   }
@@ -2216,7 +2298,13 @@ class SnomedImporter {
         if (!refSet || currentRefSetId !== refSetId) {
           currentRefSetId = refSetId;
           refSet = this.getOrCreateRefSet(refSetId, displayName, isLangRefset);
-          refSet.filename = this.addString(path.relative(this.config.source, filePath));
+          // Compute relative path — the file may live under the base directory
+          // rather than the extension source directory.
+          let relPath = path.relative(this.config.source, filePath);
+          if (this.config.base && relPath.startsWith('..')) {
+            relPath = path.relative(this.config.base, filePath);
+          }
+          refSet.filename = this.addString(relPath);
           refSet.fieldTypes = this.getOrCreateFieldTypes(fieldTypes);
           refSet.fieldNames = this.getOrCreateFieldNames(headers.slice(6), fieldTypes); // Additional fields beyond standard 6
         }
@@ -2577,8 +2665,8 @@ class SnomedImporter {
     };
 
     const services = new SnomedExpressionServices(
-      snomedStructures,
-      this.isAIndex
+        snomedStructures,
+        this.isAIndex
     );
 
     // Set building flag to true so services will generate normal forms dynamically

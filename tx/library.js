@@ -35,6 +35,7 @@ const { OCLCodeSystemProvider, OCLSourceCodeSystemFactory } = require('./ocl/cs-
 const { OCLValueSetProvider } = require('./ocl/vs-ocl');
 const { OCLConceptMapProvider } = require('./ocl/cm-ocl');
 const {UriServicesFactory} = require("./cs/cs-uri");
+const {debugLog} = require("./operation-context");
 
 /**
  * This class holds all the loaded content ready for processing
@@ -185,6 +186,7 @@ class Library {
       try {
         await this.processSource(source, this.packageManager, "cs");
       } catch (error) {
+        debugLog(error);
         console.error(`Failed to load code systems from '${source}': ${error.message}`);
         throw error;
       }
@@ -196,6 +198,7 @@ class Library {
       try {
         await this.processSource(source, this.packageManager, "npm");
       } catch (error) {
+        debugLog(error);
         console.error(`Failed to load package '${source}': ${error.message}`);
         throw error;
       }
