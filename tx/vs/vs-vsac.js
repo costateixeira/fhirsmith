@@ -1,4 +1,5 @@
 const path = require('path');
+const crypto = require('crypto');
 const axios = require('axios');
 const { AbstractValueSetProvider } = require('./vs-api');
 const { ValueSetDatabase } = require('./vs-database');
@@ -11,6 +12,8 @@ const {debugLog} = require("../operation-context");
  * Fetches and caches ValueSets from the NLM VSAC FHIR server
  */
 class VSACValueSetProvider extends AbstractValueSetProvider {
+  SYNC_AT_START_UP = true;
+
   /**
    * @param {Object} config - Configuration object
    * @param {string} config.apiKey - API key for VSAC authentication
@@ -71,12 +74,11 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
     if (!(await this.database.exists())) {
       await this.database.create();
     } else {
-      // Ensure schema is up to date (e.g. date_first_seen column added after initial deploy)
-      await this.database._migrateIfNeeded(await this.database._getWriteConnection());
-      // Load existing data
+      // Schema migrations are applied lazily by the database layer on first
+      // connection. Just load existing data.
       await this._reloadMap();
     }
-    if (this.valueSetMap.size == 0) {
+    if (this.SYNC_AT_START_UP || this.valueSetMap.size == 0) {
       await this.refreshValueSets();
     }
     // Start periodic refresh
@@ -168,6 +170,7 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
           console.log(`Reached total count (${total}), stopping`);
           break;
         }
+        break;
       }
 
       this.lastRefresh = new Date();
@@ -182,11 +185,11 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
       // deduplicate the queue
       this.queue = [...new Set(this.queue)];
 
-      let tracking = { totalFetched: 0, totalNew: 0, count: 0, newCount : 0 };
+      let tracking = { totalFetched: 0, totalNew: 0, totalUpdated: 0, count: 0, newCount : 0 };
       // phase 2: query for history & content
       this.requeue = [];
       for (let q of this.queue) {
-        this.stats.task('VSAC History for '+q, `running (${tracking.totalFetched} fetched, ${tracking.totalNew} new)`);
+        this.stats.task('VSAC History for '+q, `running (${tracking.totalFetched} fetched, ${tracking.totalNew} new, ${tracking.totalUpdated} updated)`);
         try {
           await this.processContentAndHistory(q, tracking, this.queue.length);
         } catch (error) {
@@ -194,29 +197,27 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
           debugLog(error);
           this.stats.task('VSAC Sync', error.message);
         }
-        // `running (${totalFetched} fetched, ${totalNew} new)`)
         tracking.count++;
       }
       console.log("Requeue");
       for (let q of this.requeue) {
-        this.stats.task('VSAC History for '+q, `running (${tracking.totalFetched} fetched, ${tracking.totalNew} new)`);
+        this.stats.task('VSAC History for '+q, `running (${tracking.totalFetched} fetched, ${tracking.totalNew} new, ${tracking.totalUpdated} updated)`);
         try {
           await this.processContentAndHistory(q, tracking, this.requeue.length);
         } catch (error) {
           debugLog(error);
           this.stats.task('VSAC Sync', error.message);
         }
-        // `running (${totalFetched} fetched, ${totalNew} new)`)
         tracking.count++;
       }
 
       // Reload map with fresh data
       await this._reloadMap();
-      let msg = `VSAC refresh completed. Total: ${tracking.totalFetched} ValueSets, Deleted: ${tracking.deletedCount}`;
+      let msg = `VSAC refresh completed. Total: ${tracking.totalFetched} ValueSets, New: ${tracking.totalNew}, Updated: ${tracking.totalUpdated}`;
       this.stats.taskDone('VSAC Sync', msg);
       console.log(msg);
 
-      await this.database.finishRun(runId, tracking.totalFetched, tracking.totalNew);
+      await this.database.finishRun(runId, tracking.totalFetched, tracking.totalNew, tracking.totalUpdated);
     } catch (error) {
       debugLog(error, 'Error during VSAC refresh:');
       this.stats.taskError('VSAC Sync', `Error (${error.message})`);
@@ -228,30 +229,71 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
   }
 
   /**
-   * Insert multiple ValueSets in a batch operation
+   * Compute a SHA-256 hash of the ValueSet content for change detection.
+   * @param {Object} vs - The ValueSet resource (plain JSON object)
+   * @returns {string} hex-encoded SHA-256
+   * @private
+   */
+  _hashValueSet(vs) {
+    return crypto.createHash('sha256').update(JSON.stringify(vs)).digest('hex');
+  }
+
+  /**
+   * Insert multiple ValueSets in a batch operation.
+   * For each value set: if url|version is already known, compare content hashes.
+   *   - hash unchanged  -> touch last_seen only (seeValueSet)
+   *   - hash changed    -> upsert and record an 'updated' event
+   *   - not seen before -> upsert and record a 'new' event
    * @param {Array<Object>} valueSets - Array of ValueSet resources
-   * @returns {Promise<void>}
+   * @returns {Promise<{newCount: number, updatedCount: number}>}
    */
   async batchUpsertValueSets(valueSets) {
     if (valueSets.length === 0) {
-      return;
+      return { newCount: 0, updatedCount: 0 };
     }
 
-    let count = 0;
+    let newCount = 0;
+    let updatedCount = 0;
+
     // Process sequentially to avoid database locking
     for (const valueSet of valueSets) {
-      let key = valueSet.url+"|"+valueSet.version;
-      let vs = this.valueSetMap.get(key);
-      if (vs) {
-        // we've seen this before, and maybe fetched it's history, so just update
-        // the timestamp
-        await this.database.seeValueSet(valueSet);
+      const key = valueSet.url+"|"+valueSet.version;
+      const existing = this.valueSetMap.get(key);
+      const newHash = this._hashValueSet(valueSet);
+
+      if (existing) {
+        // We've seen this url|version before. Decide whether the content
+        // has actually changed by comparing hashes.
+        //
+        // Note: _reloadMap() mutates the in-memory jsonObj (strips inc.version
+        // from compose.include/exclude), so we cannot reliably recompute a
+        // hash from existing.jsonObj — it would not match the hash of the
+        // original unmutated JSON we stored. For rows predating this feature
+        // (content_hash NULL), we defer update detection until the next cycle:
+        // the upsert below runs only when hashes differ, so on the *next*
+        // sync after migration we'll have a proper baseline.
+        if (existing.contentHash && existing.contentHash === newHash) {
+          // No change - just touch last_seen
+          await this.database.seeValueSet(valueSet);
+        } else if (!existing.contentHash) {
+          // Legacy row without a stored hash - backfill the hash silently
+          // without emitting a spurious 'updated' event. We do a lightweight
+          // touch + hash update rather than a full upsert+event.
+          await this.database.seeValueSet(valueSet);
+          await this.database.setContentHash(valueSet.id, newHash);
+        } else {
+          // Content has changed - treat as update
+          await this.database.upsertValueSet(valueSet, newHash);
+          await this.database.recordEvent('updated', valueSet.url, valueSet.version);
+          updatedCount++;
+        }
       } else {
-        await this.database.upsertValueSet(valueSet);
-        count++;
+        await this.database.upsertValueSet(valueSet, newHash);
+        await this.database.recordEvent('new', valueSet.url, valueSet.version);
+        newCount++;
       }
     }
-    return count;
+    return { newCount, updatedCount };
   }
 
   /**
@@ -511,18 +553,21 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
     const bundle = await this._fetchBundle(url);
 
     let vcount = 0;
+    let perRun = { newCount: 0, updatedCount: 0 };
     if (bundle.entry && bundle.entry.length > 0) {
       // Extract ValueSets from bundle entries
       const valueSets = bundle.entry
           .filter(entry => entry.resource && entry.resource.resourceType === 'ValueSet')
           .map(entry => entry.resource);
       if (valueSets.length > 0) {
-        tracking.totalNew = tracking.totalNew + await this.batchUpsertValueSets(valueSets);
+        perRun = await this.batchUpsertValueSets(valueSets);
+        tracking.totalNew += perRun.newCount;
+        tracking.totalUpdated += perRun.updatedCount;
         tracking.totalFetched += valueSets.length;
         vcount = valueSets.length;
       }
     }
-    let logMsg = `VSAC (${tracking.count} of ${length}) ${q}: ${vcount} versions`;
+    let logMsg = `VSAC (${tracking.count} of ${length}) ${q}: ${vcount} versions (${perRun.newCount} new, ${perRun.updatedCount} updated)`;
     console.log(logMsg);
     this.stats.task('VSAC Sync', logMsg);
   }
@@ -593,30 +638,33 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
 
     const rows = await new Promise((resolve, reject) => {
       db.all(
-          `SELECT 'vs' AS kind,
+          `SELECT 'event' AS kind,
                   url,
                   version,
-                  date_first_seen AS ts,
-                  NULL AS status,
-                  NULL AS error_message,
-                  NULL AS finished_at,
-                  NULL AS total_fetched,
-                  NULL AS total_new
-           FROM valuesets
-           WHERE date_first_seen > 0
+             timestamp AS ts,
+             event_type,
+             NULL AS status,
+             NULL AS error_message,
+             NULL AS finished_at,
+             NULL AS total_fetched,
+             NULL AS total_new,
+             NULL AS total_updated
+           FROM vsac_events
            UNION ALL
-           SELECT 'run' AS kind,
-                  NULL,
-                  NULL,
-                  started_at AS ts,
-                  status,
-                  error_message,
-                  finished_at,
-                  total_fetched,
-                  total_new
-           FROM vsac_runs
-           ORDER BY ts DESC
-             LIMIT 200`,
+          SELECT 'run' AS kind,
+                 NULL,
+                 NULL,
+                 started_at AS ts,
+                 NULL AS event_type,
+                 status,
+                 error_message,
+                 finished_at,
+                 total_fetched,
+                 total_new,
+                 total_updated
+          FROM vsac_runs
+          ORDER BY ts DESC
+            LIMIT 200`,
           [],
           (err, rows) => err ? reject(err) : resolve(rows)
       );
@@ -636,7 +684,8 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
         const duration = row.finished_at ? `${row.finished_at - row.ts}s` : 'in progress';
         let detail, colour;
         if (row.status === 'ok') {
-          detail = `${row.total_fetched} fetched, ${row.total_new} new, ${duration}`;
+          const updated = row.total_updated != null ? `, ${row.total_updated} updated` : '';
+          detail = `${row.total_fetched} fetched, ${row.total_new} new${updated}, ${duration}`;
           colour = 'green';
         } else if (row.status === 'error') {
           detail = `Failed: ${escape(row.error_message || '')} (${duration})`;
@@ -651,9 +700,28 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
         html += `<td>${detail}</td>`;
         html += `</tr>`;
       } else {
+        // Event row: 'new', 'updated', or 'deleted'
+        let label, colour;
+        switch (row.event_type) {
+          case 'new':
+            label = 'New value set';
+            colour = 'green';
+            break;
+          case 'updated':
+            label = 'Updated value set';
+            colour = 'blue';
+            break;
+          case 'deleted':
+            label = 'Deleted value set';
+            colour = 'red';
+            break;
+          default:
+            label = escape(row.event_type || 'Event');
+            colour = 'black';
+        }
         html += `<tr>`;
         html += `<td>${escape(fmt(row.ts))}</td>`;
-        html += `<td>New value set</td>`;
+        html += `<td><span style="color:${colour}">${label}</span></td>`;
         html += `<td>${escape(row.url || '')}#${escape(row.version || '')}</td>`;
         html += `</tr>`;
       }

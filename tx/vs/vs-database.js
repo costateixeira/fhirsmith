@@ -1,4 +1,5 @@
 const fs = require('fs').promises;
+const crypto = require('crypto');
 const sqlite3 = require('sqlite3').verbose();
 const { VersionUtilities } = require('../../library/version-utilities');
 const ValueSet = require("../library/valueset");
@@ -18,8 +19,13 @@ class ValueSetDatabase {
    */
   constructor(dbPath) {
     this.dbPath = dbPath;
-    this._db = null;          // Shared read-only connection
-    this._writeDb = null;     // Write connection (opened only when needed)
+    // Single read-write connection used for everything. Using a separate
+    // OPEN_READONLY connection for reads can miss WAL-based schema changes
+    // made through the write connection (because read-only opens can't fully
+    // participate in the shared-memory protocol), so queries issued right
+    // after a migration ALTER TABLE can fail with a stale schema cache.
+    this._writeDb = null;
+    this._migrationPromise = null;
   }
 
   /**
@@ -29,46 +35,104 @@ class ValueSetDatabase {
    * @private
    */
   _migrateIfNeeded(db) {
-    return new Promise((resolve, reject) => {
-      db.all("PRAGMA table_info(valuesets)", [], (err, cols) => {
-        if (err) { reject(err); return; }
-        const hasCol = cols.some(c => c.name === 'date_first_seen');
-        const migrations = [];
-        if (!hasCol) {
-          migrations.push(new Promise((res, rej) => {
+    // Run migrations SEQUENTIALLY. node-sqlite3 does not guarantee that
+    // separately-submitted statements run in submission order on the same
+    // connection — `db.serialize()` is opt-in. Without sequencing, a
+    // `CREATE INDEX` can race ahead of its `CREATE TABLE`, or a `PRAGMA
+    // table_info` can race ahead of a `CREATE TABLE IF NOT EXISTS`, and
+    // you get "no such table" errors on DDL that should have been fine.
+    const run = (sql) => new Promise((res, rej) => {
+      db.run(sql, [], (err) => err ? rej(err) : res());
+    });
+    const all = (sql) => new Promise((res, rej) => {
+      db.all(sql, [], (err, rows) => err ? rej(err) : res(rows));
+    });
+
+    return (async () => {
+      const cols = await all("PRAGMA table_info(valuesets)");
+      const hasDateFirstSeen = cols.some(c => c.name === 'date_first_seen');
+      const hasContentHash = cols.some(c => c.name === 'content_hash');
+
+      if (!hasDateFirstSeen) {
+        await run("ALTER TABLE valuesets ADD COLUMN date_first_seen INTEGER DEFAULT 0");
+      }
+      if (!hasContentHash) {
+        await run("ALTER TABLE valuesets ADD COLUMN content_hash TEXT");
+      }
+
+      // Ensure vsac_runs table exists (with total_updated for fresh installs)
+      await run(`
+        CREATE TABLE IF NOT EXISTS vsac_runs (
+                                               id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                               started_at INTEGER NOT NULL,
+                                               finished_at INTEGER,
+                                               status TEXT NOT NULL DEFAULT 'running',
+                                               error_message TEXT,
+                                               total_fetched INTEGER,
+                                               total_new INTEGER,
+                                               total_updated INTEGER
+        )
+      `);
+
+      // If vsac_runs already existed (older schema), add total_updated column
+      const runCols = await all("PRAGMA table_info(vsac_runs)");
+      const hasTotalUpdated = runCols.some(c => c.name === 'total_updated');
+      if (!hasTotalUpdated && runCols.length > 0) {
+        await run("ALTER TABLE vsac_runs ADD COLUMN total_updated INTEGER");
+      }
+
+      // Ensure vsac_settings table exists (for _lastUpdated tracking etc.)
+      await run(`
+        CREATE TABLE IF NOT EXISTS vsac_settings (
+                                                   key TEXT PRIMARY KEY,
+                                                   value TEXT
+        )
+      `);
+
+      // Ensure vsac_events table exists (audit log of new/updated/deleted value sets)
+      await run(`
+        CREATE TABLE IF NOT EXISTS vsac_events (
+                                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                 timestamp INTEGER NOT NULL,
+                                                 event_type TEXT NOT NULL,
+                                                 url TEXT NOT NULL,
+                                                 version TEXT,
+                                                 detail TEXT
+        )
+      `);
+      await run("CREATE INDEX IF NOT EXISTS idx_events_timestamp ON vsac_events(timestamp)");
+
+      // Backfill content_hash for any existing rows that don't have one.
+      // This establishes a baseline so the NEXT sync can detect real content
+      // changes immediately (otherwise the first sync just silently populates
+      // hashes and can never flag anything as 'updated').
+      const needHash = await all(
+          "SELECT COUNT(*) AS n FROM valuesets WHERE content_hash IS NULL"
+      );
+      const missing = (needHash[0] && needHash[0].n) || 0;
+      if (missing > 0) {
+        console.log(`Backfilling content_hash for ${missing} existing value sets...`);
+        const rows = await all(
+            "SELECT id, content FROM valuesets WHERE content_hash IS NULL"
+        );
+        let done = 0;
+        for (const row of rows) {
+          const hash = crypto.createHash('sha256').update(row.content).digest('hex');
+          await new Promise((res, rej) => {
             db.run(
-                "ALTER TABLE valuesets ADD COLUMN date_first_seen INTEGER DEFAULT 0",
-                [],
+                'UPDATE valuesets SET content_hash = ? WHERE id = ?',
+                [hash, row.id],
                 (err) => err ? rej(err) : res()
             );
-          }));
+          });
+          done++;
+          if (done % 1000 === 0) {
+            console.log(`  ...${done}/${missing}`);
+          }
         }
-        // Ensure vsac_runs table exists
-        migrations.push(new Promise((res, rej) => {
-          db.run(`
-            CREATE TABLE IF NOT EXISTS vsac_runs (
-                                                   id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                                   started_at INTEGER NOT NULL,
-                                                   finished_at INTEGER,
-                                                   status TEXT NOT NULL DEFAULT 'running',
-                                                   error_message TEXT,
-                                                   total_fetched INTEGER,
-                                                   total_new INTEGER
-            )
-          `, [], (err) => err ? rej(err) : res());
-        }));
-        // Ensure vsac_settings table exists (for _lastUpdated tracking etc.)
-        migrations.push(new Promise((res, rej) => {
-          db.run(`
-            CREATE TABLE IF NOT EXISTS vsac_settings (
-              key TEXT PRIMARY KEY,
-              value TEXT
-            )
-          `, [], (err) => err ? rej(err) : res());
-        }));
-        Promise.all(migrations).then(() => resolve()).catch(reject);
-      });
-    });
+        console.log(`Backfilled ${done} hashes.`);
+      }
+    })();
   }
 
   /**
@@ -77,21 +141,9 @@ class ValueSetDatabase {
    * @private
    */
   _getReadConnection() {
-    return new Promise((resolve, reject) => {
-      if (this._db) {
-        resolve(this._db);
-        return;
-      }
-
-      this._db = new sqlite3.Database(this.dbPath, sqlite3.OPEN_READONLY, (err) => {
-        if (err) {
-          this._db = null;
-          reject(new Error(`Failed to open database ${this.dbPath}: ${err.message}`));
-        } else {
-          resolve(this._db);
-        }
-      });
-    });
+    // Reads go through the same connection as writes. See the constructor
+    // comment for why we don't use a separate OPEN_READONLY connection.
+    return this._ensureMigrated().then(() => this._writeDb);
   }
 
   /**
@@ -100,21 +152,38 @@ class ValueSetDatabase {
    * @private
    */
   _getWriteConnection() {
-    return new Promise((resolve, reject) => {
+    return this._ensureMigrated().then(() => this._writeDb);
+  }
+
+  /**
+   * Ensure the database schema is migrated. Idempotent: subsequent calls
+   * return the cached promise. Opens a write connection (which is required
+   * for ALTER TABLE) if one is not already open. The write connection is
+   * kept open for reuse by later _getWriteConnection calls.
+   * @returns {Promise<void>}
+   * @private
+   */
+  _ensureMigrated() {
+    if (this._migrationPromise) {
+      return this._migrationPromise;
+    }
+    this._migrationPromise = new Promise((resolve, reject) => {
       if (this._writeDb) {
-        resolve(this._writeDb);
+        this._migrateIfNeeded(this._writeDb).then(resolve).catch(reject);
         return;
       }
-
       this._writeDb = new sqlite3.Database(this.dbPath, (err) => {
         if (err) {
           this._writeDb = null;
           reject(new Error(`Failed to open database for writing: ${err.message}`));
-        } else {
-          this._migrateIfNeeded(this._writeDb).then(() => resolve(this._writeDb)).catch(reject);
+          return;
         }
+        this._migrateIfNeeded(this._writeDb).then(resolve).catch(reject);
       });
     });
+    // If migration fails, clear the cached promise so a retry can attempt again
+    this._migrationPromise.catch(() => { this._migrationPromise = null; });
+    return this._migrationPromise;
   }
 
   /**
@@ -122,29 +191,20 @@ class ValueSetDatabase {
    * @returns {Promise<void>}
    */
   async close() {
-    const closePromises = [];
+    // Clear the cached migration promise so a subsequent open re-migrates
+    this._migrationPromise = null;
 
-    if (this._db) {
-      closePromises.push(new Promise((resolve) => {
-        this._db.close((err) => {
-          if (err) console.warn(`Warning closing read connection: ${err.message}`);
-          this._db = null;
-          resolve();
-        });
-      }));
+    if (!this._writeDb) {
+      return;
     }
 
-    if (this._writeDb) {
-      closePromises.push(new Promise((resolve) => {
-        this._writeDb.close((err) => {
-          if (err) console.warn(`Warning closing write connection: ${err.message}`);
-          this._writeDb = null;
-          resolve();
-        });
-      }));
-    }
-
-    await Promise.all(closePromises);
+    await new Promise((resolve) => {
+      this._writeDb.close((err) => {
+        if (err) console.warn(`Warning closing database connection: ${err.message}`);
+        this._writeDb = null;
+        resolve();
+      });
+    });
   }
 
   /**
@@ -193,6 +253,7 @@ class ValueSetDatabase {
                                      status TEXT,
                                      title TEXT,
                                      content TEXT NOT NULL,
+                                     content_hash TEXT,
                                      last_seen INTEGER DEFAULT (strftime('%s', 'now')),
                                      date_first_seen INTEGER DEFAULT (strftime('%s', 'now'))
             )
@@ -241,17 +302,31 @@ class ValueSetDatabase {
                                      status TEXT NOT NULL DEFAULT 'running',
                                      error_message TEXT,
                                      total_fetched INTEGER,
-                                     total_new INTEGER
+                                     total_new INTEGER,
+                                     total_updated INTEGER
             )
           `);
 
           // Settings table (key-value store for _lastUpdated tracking etc.)
           db.run(`
-              CREATE TABLE IF NOT EXISTS vsac_settings (
-                  key TEXT PRIMARY KEY,
-                  value TEXT
-              )
+            CREATE TABLE IF NOT EXISTS vsac_settings (
+                                                       key TEXT PRIMARY KEY,
+                                                       value TEXT
+            )
           `);
+
+          // Event log table (new/updated/deleted value sets)
+          db.run(`
+            CREATE TABLE IF NOT EXISTS vsac_events (
+                                                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                     timestamp INTEGER NOT NULL,
+                                                     event_type TEXT NOT NULL,
+                                                     url TEXT NOT NULL,
+                                                     version TEXT,
+                                                     detail TEXT
+            )
+          `);
+          db.run('CREATE INDEX idx_events_timestamp ON vsac_events(timestamp)');
 
           // Create indexes for better search performance
           db.run('CREATE INDEX idx_valuesets_url ON valuesets(url, version)');
@@ -300,15 +375,36 @@ class ValueSetDatabase {
    * @param {number} id - The run ID from startRun()
    * @param {number} totalFetched - Total value sets fetched
    * @param {number} totalNew - Number of new value sets found
+   * @param {number} [totalUpdated=0] - Number of existing value sets whose content changed
    * @returns {Promise<void>}
    */
-  async finishRun(id, totalFetched, totalNew) {
+  async finishRun(id, totalFetched, totalNew, totalUpdated = 0) {
     const db = await this._getWriteConnection();
     return new Promise((resolve, reject) => {
       db.run(
           `UPDATE vsac_runs SET finished_at = strftime('%s','now'), status = 'ok',
-                                total_fetched = ?, total_new = ? WHERE id = ?`,
-          [totalFetched, totalNew, id],
+                                total_fetched = ?, total_new = ?, total_updated = ? WHERE id = ?`,
+          [totalFetched, totalNew, totalUpdated, id],
+          err => err ? reject(err) : resolve()
+      );
+    });
+  }
+
+  /**
+   * Record a VSAC event in the audit log
+   * @param {string} eventType - 'new', 'updated', or 'deleted'
+   * @param {string} url - The value set URL
+   * @param {string|null} version - The version, or null
+   * @param {string|null} [detail] - Optional detail string
+   * @returns {Promise<void>}
+   */
+  async recordEvent(eventType, url, version, detail = null) {
+    const db = await this._getWriteConnection();
+    return new Promise((resolve, reject) => {
+      db.run(
+          `INSERT INTO vsac_events (timestamp, event_type, url, version, detail)
+           VALUES (strftime('%s','now'), ?, ?, ?, ?)`,
+          [eventType, url, version || null, detail],
           err => err ? reject(err) : resolve()
       );
     });
@@ -358,7 +454,7 @@ class ValueSetDatabase {
     return new Promise((resolve, reject) => {
       db.run(
           `INSERT INTO vsac_settings (key, value) VALUES (?, ?)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
           [key, value],
           err => err ? reject(err) : resolve()
       );
@@ -368,9 +464,10 @@ class ValueSetDatabase {
   /**
    * Insert or update a single ValueSet in the database
    * @param {Object} valueSet - The ValueSet resource
+   * @param {string} [contentHash] - Optional pre-computed content hash to store
    * @returns {Promise<void>}
    */
-  async upsertValueSet(valueSet) {
+  async upsertValueSet(valueSet, contentHash = null) {
     if (!valueSet.url) {
       throw new Error('ValueSet must have a url property');
     }
@@ -405,8 +502,9 @@ class ValueSetDatabase {
             db.run(`
               INSERT INTO valuesets (
                 id, url, version, date, description, effectivePeriod_start, effectivePeriod_end,
-                expansion_identifier, name, publisher, status, title, content, last_seen, date_first_seen
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
+                expansion_identifier, name, publisher, status, title, content, content_hash,
+                last_seen, date_first_seen
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s', 'now'), strftime('%s', 'now'))
                 ON CONFLICT(id) DO UPDATE SET
                 url=excluded.url,
                                      version=excluded.version,
@@ -420,6 +518,7 @@ class ValueSetDatabase {
                                      status=excluded.status,
                                      title=excluded.title,
                                      content=excluded.content,
+                                     content_hash=excluded.content_hash,
                                      last_seen=strftime('%s', 'now')
             `, [
               valueSet.id,
@@ -434,7 +533,8 @@ class ValueSetDatabase {
               valueSet.publisher || null,
               valueSet.status || null,
               valueSet.title || null,
-              JSON.stringify(valueSet)
+              JSON.stringify(valueSet),
+              contentHash
             ], (err) => {
               if (err) {
                 reject(new Error(`Failed to insert main record: ${err.message}`));
@@ -447,6 +547,24 @@ class ValueSetDatabase {
           });
         });
       });
+    });
+  }
+
+  /**
+   * Backfill the content_hash column for a row without rewriting content or
+   * emitting an event. Used for legacy rows from before content_hash existed.
+   * @param {string} id - The ValueSet id
+   * @param {string} hash - The SHA-256 hex hash to store
+   * @returns {Promise<void>}
+   */
+  async setContentHash(id, hash) {
+    const db = await this._getWriteConnection();
+    return new Promise((resolve, reject) => {
+      db.run(
+          'UPDATE valuesets SET content_hash = ? WHERE id = ?',
+          [hash, id],
+          err => err ? reject(err) : resolve()
+      );
     });
   }
 
@@ -590,7 +708,7 @@ class ValueSetDatabase {
     const db = await this._getReadConnection();
 
     return new Promise((resolve, reject) => {
-      db.all('SELECT id, url, version, content FROM valuesets', [], (err, rows) => {
+      db.all('SELECT id, url, version, content, content_hash FROM valuesets', [], (err, rows) => {
         if (err) {
           reject(new Error(`Failed to load value sets: ${err.message}`));
           return;
@@ -603,6 +721,9 @@ class ValueSetDatabase {
           for (const row of rows) {
             const valueSet = new ValueSet(JSON.parse(row.content));
             valueSet.sourcePackage = source;
+            // Attach the stored content hash so callers can detect changes
+            // without recomputing over the full JSON.
+            valueSet.contentHash = row.content_hash || null;
             // Store by URL and id alone
             this.addToMap(valueSetMap, row.id, row.url, row.version, valueSet);
           }
