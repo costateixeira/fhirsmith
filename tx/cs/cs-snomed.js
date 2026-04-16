@@ -445,6 +445,276 @@ class SnomedServices {
 
   }
 
+  /**
+   * Supported ECL subset:
+   *   Plain concept ref      404684003
+   *   << (descendant-or-self-of)
+   *   <! (strict descendant-of)
+   *   <  (child-of)
+   *   >> (ancestor-or-self-of)
+   *   >! (strict ancestor-of)
+   *   >  (parent-of)
+   *   ^  (member-of refset)      — refset must be a plain concept ID
+   *   *  (wildcard)
+   *   AND / OR / MINUS compound expressions
+   *
+   * Everything else (refinements, dotted expressions, cardinality,
+   * reverse attributes, numeric/string comparisons) throws an informative error.
+   */
+
+  /**
+   * Parse an ECL expression string and return a SnomedFilterContext whose
+   * `descendants` array contains the resolved concept indexes.
+   *
+   * Throws an Error for syntax errors, unknown concepts, or unsupported features.
+   *
+   * @param {string} eclExpression
+   * @returns {SnomedFilterContext}
+   */
+  filterECL = function (eclExpression) {
+    let ast;
+    try {
+      const tokens = new ECLLexer(eclExpression).tokenize();
+      ast = new ECLParser(tokens).parse();
+    } catch (err) {
+      throw new Error(`Invalid ECL expression: ${err.message}`);
+    }
+    return this._evalECLNode(ast);
+  };
+
+  /**
+   * Recursive ECL AST evaluator.
+   * @param {object} node
+   * @returns {SnomedFilterContext}
+   */
+  _evalECLNode = function (node) {
+    if (!node) {
+      throw new Error('ECL evaluation error: null AST node');
+    }
+
+    switch (node.type) {
+
+      case ECLNodeType.SUB_EXPRESSION_CONSTRAINT:
+        return this._evalSubExpression(node);
+
+      case ECLNodeType.COMPOUND_EXPRESSION_CONSTRAINT: {
+        const left = this._evalECLNode(node.left);
+        const right = this._evalECLNode(node.right);
+        switch (node.operator) {
+          case ECLNodeType.CONJUNCTION:
+            return this._eclIntersect(left, right);
+          case ECLNodeType.DISJUNCTION:
+            return this._eclUnion(left, right);
+          case ECLNodeType.EXCLUSION:
+            return this._eclMinus(left, right);
+          default:
+            throw new Error(`Unsupported ECL compound operator: ${node.operator}`);
+        }
+      }
+
+      case ECLNodeType.REFINED_EXPRESSION_CONSTRAINT:
+        throw new Error('ECL refinements (the : syntax) are not yet supported by this server');
+
+      case ECLNodeType.DOTTED_EXPRESSION_CONSTRAINT:
+        throw new Error('ECL dotted expressions are not yet supported by this server');
+
+      default:
+        // Could be a bare concept reference or wildcard passed in directly
+        // (e.g. when a parenthesised expression resolves to one of these).
+        if (node.type === ECLNodeType.CONCEPT_REFERENCE ||
+            node.type === ECLNodeType.WILDCARD ||
+            node.type === ECLNodeType.MEMBER_OF) {
+          // Wrap it as if it came from a no-operator SubExpressionConstraint
+          return this._evalSubExpression({type: ECLNodeType.SUB_EXPRESSION_CONSTRAINT, operator: null, focus: node});
+        }
+        throw new Error(`Unsupported ECL node type: ${node.type}`);
+    }
+  };
+
+  /**
+   * Evaluate a SUB_EXPRESSION_CONSTRAINT node, which combines an optional
+   * hierarchy operator with a focus (concept ref, wildcard, or member-of).
+   * @param {object} node
+   * @returns {SnomedFilterContext}
+   */
+  _evalSubExpression = function (node) {
+    const operator = node.operator; // an ECLTokenType string, or null
+    const focus = node.focus;
+
+    // Wildcard
+    if (focus.type === ECLNodeType.WILDCARD) {
+      if (operator) {
+        throw new Error('ECL hierarchy operators combined with wildcard (*) are not supported');
+      }
+      return this._eclWildcard();
+    }
+
+    // Member-of (^)
+    if (focus.type === ECLNodeType.MEMBER_OF) {
+      if (operator) {
+        throw new Error('ECL hierarchy operators combined with ^ (member-of) are not yet supported');
+      }
+      return this._evalMemberOf(focus);
+    }
+
+    // Plain concept reference
+    if (focus.type === ECLNodeType.CONCEPT_REFERENCE) {
+      return this._evalConceptWithOperator(focus.conceptId, operator);
+    }
+
+    // Parenthesised sub-expression: focus is itself a full constraint node
+    return this._evalECLNode(focus);
+  };
+
+  /**
+   * Resolve a concept ID + hierarchy operator.
+   * @param {string} conceptId
+   * @param {string|null} operator  ECLTokenType constant
+   * @returns {SnomedFilterContext}
+   */
+  _evalConceptWithOperator = function (conceptId, operator) {
+    switch (operator) {
+      case null:
+      case undefined:
+        return this.filterEquals(conceptId);
+
+      case ECLTokenType.CHILD_OR_SELF_OF:        // <<
+      case ECLTokenType.DESCENDANT_OR_SELF_OF:   // <<! — identical semantics for a single concept
+        return this.filterIsA(conceptId, true);
+
+      case ECLTokenType.DESCENDANT_OF:           // <!
+        return this.filterIsA(conceptId, false);
+
+      case ECLTokenType.CHILD_OF:                // <
+        return this.filterChildOf(conceptId);
+
+      case ECLTokenType.PARENT_OR_SELF_OF:       // >>
+      case ECLTokenType.ANCESTOR_OR_SELF_OF: {   // >>! — same for a single concept
+        const result = this.filterGeneralizes(conceptId);
+        // filterGeneralizes returns ancestors only; add self
+        const self = this.concepts.findConcept(conceptId);
+        if (self.found && !result.descendants.includes(self.index)) {
+          result.descendants.push(self.index);
+        }
+        return result;
+      }
+
+      case ECLTokenType.ANCESTOR_OF:             // >!
+        return this.filterGeneralizes(conceptId);
+
+      case ECLTokenType.PARENT_OF: {             // >  — direct parents only
+        const conceptResult = this.concepts.findConcept(conceptId);
+        if (!conceptResult.found) {
+          throw new Error(`The SNOMED CT Concept ${conceptId} is not known`);
+        }
+        const result = new SnomedFilterContext();
+        result.descendants = this.getConceptParents(conceptResult.index);
+        return result;
+      }
+
+      default:
+        throw new Error(`Unsupported ECL hierarchy operator: ${operator}`);
+    }
+  };
+
+  /**
+   * Evaluate a MEMBER_OF node.  Only plain concept-reference refsets are
+   * supported; complex expressions inside ^ are not yet supported.
+   * @param {object} memberOfNode
+   * @returns {SnomedFilterContext}
+   */
+  _evalMemberOf = function (memberOfNode) {
+    const refSet = memberOfNode.refSet;
+    if (refSet.type !== ECLNodeType.CONCEPT_REFERENCE) {
+      throw new Error('ECL ^ (member-of) with a non-concept-reference refset is not yet supported');
+    }
+    // filterIn accepts a comma-separated string; a single ID works fine
+    return this.filterIn(refSet.conceptId);
+  };
+
+  /**
+   * Wildcard — all active concepts.  The eclWildcard flag tells filterCheck /
+   * filterLocate to accept every active concept without enumeration.
+   * @returns {SnomedFilterContext}
+   */
+  _eclWildcard = function () {
+    const result = new SnomedFilterContext();
+    result.eclWildcard = true;
+    return result;
+  };
+
+// ── Set operation helpers ────────────────────────────────────────────────────
+
+  /**
+   * Flatten a SnomedFilterContext to a plain array of concept indexes,
+   * handling the three different storage slots used by the existing filters.
+   * @param {SnomedFilterContext} ctx
+   * @returns {number[]}
+   */
+  _eclToIndexArray = function (ctx) {
+    if (ctx.descendants && ctx.descendants.length > 0) return ctx.descendants;
+    if (ctx.members && ctx.members.length > 0) return ctx.members.map(m => m.ref);
+    if (ctx.matches && ctx.matches.length > 0) return ctx.matches.map(m => m.index);
+    return [];
+  };
+
+  /**
+   * AND: concepts present in both sets.
+   */
+  _eclIntersect = function (left, right) {
+    if (left.eclWildcard) return right;
+    if (right.eclWildcard) return left;
+    const leftSet = new Set(this._eclToIndexArray(left));
+    const result = new SnomedFilterContext();
+    result.descendants = this._eclToIndexArray(right).filter(idx => leftSet.has(idx));
+    return result;
+  };
+
+  /**
+   * OR: concepts present in either set.
+   */
+  _eclUnion = function (left, right) {
+    if (left.eclWildcard || right.eclWildcard) return this._eclWildcard();
+    const combined = new Set([
+      ...this._eclToIndexArray(left),
+      ...this._eclToIndexArray(right)
+    ]);
+    const result = new SnomedFilterContext();
+    result.descendants = [...combined];
+    return result;
+  };
+
+  /**
+   * MINUS: concepts in left that are not in right.
+   */
+  _eclMinus = function (left, right) {
+    const result = new SnomedFilterContext();
+
+    if (right.eclWildcard) {
+      result.descendants = [];
+      return result;
+    }
+
+    const rightSet = new Set(this._eclToIndexArray(right));
+
+    if (left.eclWildcard) {
+      // Enumerate all active concepts minus the right set
+      const all = [];
+      for (let i = 0; i < this.concepts.count(); i++) {
+        const concept = this.concepts.getConceptByCount(i);
+        if (this.isActive(concept.index) && !rightSet.has(concept.index)) {
+          all.push(concept.index);
+        }
+      }
+      result.descendants = all;
+      return result;
+    }
+
+    result.descendants = this._eclToIndexArray(left).filter(idx => !rightSet.has(idx));
+    return result;
+  };
+
+
   searchFilter(searchText, includeInactive = false, exactMatch = false) {
     const result = new SnomedFilterContext();
 
@@ -918,6 +1188,9 @@ class SnomedProvider extends BaseCSServices {
       const id = this.sct.stringToIdOrZero(value);
       return id !== 0n && op === '=';
     }
+    if (prop === 'constraint') {
+      return op === '=';
+    }
 
     if (prop == 'expressions' && op == '=' && ['true', 'false'].includes(value)) {
       return true;
@@ -991,6 +1264,11 @@ class SnomedProvider extends BaseCSServices {
       }
     }
 
+    if (prop === 'constraint' && op === '=') {
+      filterContext.filters.push(await this.sct.filterECL(value));
+      return null;
+    }
+
     if (prop === 'moduleId') {
       const id = this.sct.stringToIdOrZero(value);
       if (id === 0n) {
@@ -1034,6 +1312,7 @@ class SnomedProvider extends BaseCSServices {
 
     throw new Error(`Unsupported filter property: ${prop}`);
   }
+
 
   async executeFilters(filterContext) {
     return filterContext.filters;
@@ -1096,6 +1375,9 @@ class SnomedProvider extends BaseCSServices {
       return conceptResult.message;
     }
 
+    if (set.eclWildcard) {
+      return this.sct.isActive(reference) ? ctxt : null;
+    }
     const ctxt = conceptResult.context;
     const reference = ctxt.getReference();
     let found = false;
@@ -1168,7 +1450,9 @@ class SnomedProvider extends BaseCSServices {
     } else if (set.descendants && set.descendants.length > 0) {
       return set.descendants.includes(reference);
     }
-
+    if (set.eclWildcard) {
+      return this.sct.isActive(reference);
+    }
     return false;
   }
 
