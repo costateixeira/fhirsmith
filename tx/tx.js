@@ -20,7 +20,7 @@ const packageJson = require("../package.json");
 // Import workers
 const ReadWorker = require('./workers/read');
 const SearchWorker = require('./workers/search');
-const { ExpandWorker, INTERNAL_DEFAULT_LIMIT, EXTERNAL_DEFAULT_LIMIT} = require('./workers/expand');
+const { ExpandWorker, INTERNAL_DEFAULT_LIMIT, EXTERNAL_TEST_DEFAULT_LIMIT} = require('./workers/expand');
 const { ValidateWorker } = require('./workers/validate');
 const TranslateWorker = require('./workers/translate');
 const LookupWorker = require('./workers/lookup');
@@ -1212,8 +1212,12 @@ class TXModule {
   }
 
   externalLimit(req) {
+    let hdr = req.headers["x-too-costly-threshold"];
+    if (hdr) {
+      return parseInt(hdr);
+    }
     let isTest = req.header("User-Agent") == 'Tools/Java';
-    if (this.config.internalLimit && !isTest) return this.config.externalLimit; else return EXTERNAL_DEFAULT_LIMIT;
+    if (this.config.internalLimit && !isTest) return this.config.externalLimit; else return EXTERNAL_TEST_DEFAULT_LIMIT;
   }
 
 }

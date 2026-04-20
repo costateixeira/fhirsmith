@@ -7,8 +7,6 @@
  * Supports ECL v2.1 specification from SNOMED International
  */
 
-const { SnomedFilterContext } = require('../cs/cs-snomed');
-
 // ECL Token Types
 const ECLTokenType = {
   // Literals
@@ -18,15 +16,15 @@ const ECLTokenType = {
   INTEGER: 'INTEGER',
   DECIMAL: 'DECIMAL',
 
-  // Operators
-  CHILD_OF: 'CHILD_OF',                    // <
-  CHILD_OR_SELF_OF: 'CHILD_OR_SELF_OF',   // <<
-  DESCENDANT_OF: 'DESCENDANT_OF',         // <!
-  DESCENDANT_OR_SELF_OF: 'DESCENDANT_OR_SELF_OF', // <<!
-  PARENT_OF: 'PARENT_OF',                 // >
-  PARENT_OR_SELF_OF: 'PARENT_OR_SELF_OF', // >>
-  ANCESTOR_OF: 'ANCESTOR_OF',             // >!
-  ANCESTOR_OR_SELF_OF: 'ANCESTOR_OR_SELF_OF', // >>!
+  // Operators (ECL 2.x spec)
+  CHILD_OF: 'CHILD_OF',                    // <!   direct children only
+  CHILD_OR_SELF_OF: 'CHILD_OR_SELF_OF',   // <<!  self + direct children
+  DESCENDANT_OF: 'DESCENDANT_OF',         // <    all transitive descendants, no self
+  DESCENDANT_OR_SELF_OF: 'DESCENDANT_OR_SELF_OF', // <<   self + all transitive descendants
+  PARENT_OF: 'PARENT_OF',                 // >!   direct parents only
+  PARENT_OR_SELF_OF: 'PARENT_OR_SELF_OF', // >>!  self + direct parents
+  ANCESTOR_OF: 'ANCESTOR_OF',             // >    all transitive ancestors, no self
+  ANCESTOR_OR_SELF_OF: 'ANCESTOR_OR_SELF_OF', // >>   self + all transitive ancestors
 
   // Set operators
   AND: 'AND',
@@ -268,29 +266,38 @@ class ECLLexer {
       }
 
       // Multi-character operators
+      // ECL 2.x hierarchy operators:
+      //   <    descendantOf         (transitive, no self)
+      //   <<   descendantOrSelfOf   (transitive, with self)
+      //   <!   childOf              (one step)
+      //   <<!  childOrSelfOf        (one step + self)
+      //   >    ancestorOf           (transitive, no self)
+      //   >>   ancestorOrSelfOf     (transitive, with self)
+      //   >!   parentOf             (one step)
+      //   >>!  parentOrSelfOf       (one step + self)
       if (this.current === '<') {
         if (this.peek() === '<') {
           if (this.peek(2) === '!') {
             this.advance();
             this.advance();
             this.advance();
-            return { type: ECLTokenType.DESCENDANT_OR_SELF_OF, value: '<<!', };
+            return { type: ECLTokenType.CHILD_OR_SELF_OF, value: '<<!' };
           } else {
             this.advance();
             this.advance();
-            return { type: ECLTokenType.CHILD_OR_SELF_OF, value: '<<' };
+            return { type: ECLTokenType.DESCENDANT_OR_SELF_OF, value: '<<' };
           }
         } else if (this.peek() === '!') {
           this.advance();
           this.advance();
-          return { type: ECLTokenType.DESCENDANT_OF, value: '<!' };
+          return { type: ECLTokenType.CHILD_OF, value: '<!' };
         } else if (this.peek() === '=') {
           this.advance();
           this.advance();
           return { type: ECLTokenType.LTE, value: '<=' };
         } else {
           this.advance();
-          return { type: ECLTokenType.CHILD_OF, value: '<' };
+          return { type: ECLTokenType.DESCENDANT_OF, value: '<' };
         }
       }
 
@@ -300,23 +307,23 @@ class ECLLexer {
             this.advance();
             this.advance();
             this.advance();
-            return { type: ECLTokenType.ANCESTOR_OR_SELF_OF, value: '>>!' };
+            return { type: ECLTokenType.PARENT_OR_SELF_OF, value: '>>!' };
           } else {
             this.advance();
             this.advance();
-            return { type: ECLTokenType.PARENT_OR_SELF_OF, value: '>>' };
+            return { type: ECLTokenType.ANCESTOR_OR_SELF_OF, value: '>>' };
           }
         } else if (this.peek() === '!') {
           this.advance();
           this.advance();
-          return { type: ECLTokenType.ANCESTOR_OF, value: '>!' };
+          return { type: ECLTokenType.PARENT_OF, value: '>!' };
         } else if (this.peek() === '=') {
           this.advance();
           this.advance();
           return { type: ECLTokenType.GTE, value: '>=' };
         } else {
           this.advance();
-          return { type: ECLTokenType.PARENT_OF, value: '>' };
+          return { type: ECLTokenType.ANCESTOR_OF, value: '>' };
         }
       }
 
@@ -350,9 +357,9 @@ class ECLLexer {
 
         // Check if immediately followed by .digit (decimal number)
         if (pos < this.input.length &&
-          this.input[pos] === '.' &&
-          pos + 1 < this.input.length &&
-          /\d/.test(this.input[pos + 1])) {
+            this.input[pos] === '.' &&
+            pos + 1 < this.input.length &&
+            /\d/.test(this.input[pos + 1])) {
           // This is a decimal number - parse it completely
           const num = this.readNumber();
           return { type: num.type, value: num.value };
@@ -471,8 +478,8 @@ class ECLParser {
       const right = this.parseRefinedExpressionConstraint();
 
       const nodeType = operator.type === ECLTokenType.AND ? ECLNodeType.CONJUNCTION :
-        operator.type === ECLTokenType.OR ? ECLNodeType.DISJUNCTION :
-          ECLNodeType.EXCLUSION;
+          operator.type === ECLTokenType.OR ? ECLNodeType.DISJUNCTION :
+              ECLNodeType.EXCLUSION;
 
       left = {
         type: ECLNodeType.COMPOUND_EXPRESSION_CONSTRAINT,
@@ -527,10 +534,10 @@ class ECLParser {
     // Handle constraint operators
     let operator = null;
     if (this.match(
-      ECLTokenType.CHILD_OF, ECLTokenType.CHILD_OR_SELF_OF,
-      ECLTokenType.DESCENDANT_OF, ECLTokenType.DESCENDANT_OR_SELF_OF,
-      ECLTokenType.PARENT_OF, ECLTokenType.PARENT_OR_SELF_OF,
-      ECLTokenType.ANCESTOR_OF, ECLTokenType.ANCESTOR_OR_SELF_OF
+        ECLTokenType.CHILD_OF, ECLTokenType.CHILD_OR_SELF_OF,
+        ECLTokenType.DESCENDANT_OF, ECLTokenType.DESCENDANT_OR_SELF_OF,
+        ECLTokenType.PARENT_OF, ECLTokenType.PARENT_OR_SELF_OF,
+        ECLTokenType.ANCESTOR_OF, ECLTokenType.ANCESTOR_OR_SELF_OF
     )) {
       operator = this.current;
       this.advance();
@@ -681,8 +688,11 @@ class ECLParser {
         operator: operator.type,
         value
       };
-    } else if (this.match(ECLTokenType.LT, ECLTokenType.LTE, ECLTokenType.CHILD_OF, ECLTokenType.PARENT_OF, ECLTokenType.GTE)) {
-      // Note: CHILD_OF (<) is treated as LT and PARENT_OF (>) is treated as GT in numeric comparison context
+    } else if (this.match(ECLTokenType.LT, ECLTokenType.LTE, ECLTokenType.DESCENDANT_OF, ECLTokenType.ANCESTOR_OF, ECLTokenType.GTE)) {
+      // In ECL, bare `<` and `>` are overloaded: they lex as hierarchy
+      // operators (DESCENDANT_OF / ANCESTOR_OF) but in an attribute comparison
+      // context they mean less-than / greater-than. Accept them here and map
+      // them to LT / GT so downstream consumers see a uniform shape.
       const operator = this.current;
       this.advance();
 
@@ -697,11 +707,11 @@ class ECLParser {
         this.error('Expected numeric value after #');
       }
 
-      // Map CHILD_OF to LT and PARENT_OF to GT for numeric comparisons
+      // Map DESCENDANT_OF to LT and ANCESTOR_OF to GT for numeric comparisons
       let operatorType = operator.type;
-      if (operator.type === ECLTokenType.CHILD_OF) {
+      if (operator.type === ECLTokenType.DESCENDANT_OF) {
         operatorType = ECLTokenType.LT;
-      } else if (operator.type === ECLTokenType.PARENT_OF) {
+      } else if (operator.type === ECLTokenType.ANCESTOR_OF) {
         operatorType = ECLTokenType.GT;
       }
 
@@ -1030,6 +1040,8 @@ class ECLValidator {
   }
 
   async evaluateWildcard() {
+    const { SnomedFilterContext } = require('../cs/cs-snomed');
+
     // Return all concepts - this would need optimization in practice
     const filter = new SnomedFilterContext();
     const allConcepts = [];
@@ -1046,49 +1058,86 @@ class ECLValidator {
   }
 
   async evaluateSubExpressionConstraint(node) {
+    const { SnomedFilterContext } = require('../cs/cs-snomed');
+
     const baseFilter = await this.evaluateAST(node.focus);
 
     if (!node.operator) {
       return baseFilter;
     }
 
-    // Apply constraint operator
-    const results = new SnomedFilterContext();
+    // Apply constraint operator — collect into a Set to deduplicate across
+    // multi-concept base filters.
+    const accumulated = new Set();
 
     for (const conceptIndex of baseFilter.descendants || []) {
       const conceptId = this.sct.concepts.getConceptId(conceptIndex);
 
       let operatorFilter;
       switch (node.operator) {
-        case ECLTokenType.CHILD_OF:
+          // ── Descendants ─────────────────────────────────────────────────────
+        case ECLTokenType.DESCENDANT_OF:           // <    transitive, no self
           operatorFilter = this.sct.filterIsA(conceptId, false);
           break;
-        case ECLTokenType.CHILD_OR_SELF_OF:
+        case ECLTokenType.DESCENDANT_OR_SELF_OF:   // <<   transitive + self
           operatorFilter = this.sct.filterIsA(conceptId, true);
           break;
-        case ECLTokenType.DESCENDANT_OF:
-          operatorFilter = this.sct.filterIsA(conceptId, false);
+        case ECLTokenType.CHILD_OF:                // <!   direct children only
+          operatorFilter = this.sct.filterChildOf(conceptId);
           break;
-        case ECLTokenType.DESCENDANT_OR_SELF_OF:
-          operatorFilter = this.sct.filterIsA(conceptId, true);
+        case ECLTokenType.CHILD_OR_SELF_OF: {      // <<!  self + direct children
+          operatorFilter = new SnomedFilterContext();
+          const selfResult = this.sct.concepts.findConcept(conceptId);
+          const children = selfResult.found ? this.sct.getConceptChildren(selfResult.index) : [];
+          operatorFilter.descendants = selfResult.found ? [selfResult.index, ...children] : children;
           break;
-        case ECLTokenType.PARENT_OF:
-        case ECLTokenType.PARENT_OR_SELF_OF:
-        case ECLTokenType.ANCESTOR_OF:
-        case ECLTokenType.ANCESTOR_OR_SELF_OF:
-          // These would require reverse hierarchy traversal
-          throw new Error(`Operator ${node.operator} not yet implemented`);
+        }
+
+          // ── Ancestors ───────────────────────────────────────────────────────
+        case ECLTokenType.ANCESTOR_OF:             // >    transitive, no self
+          operatorFilter = this.sct.filterGeneralizes(conceptId);
+          break;
+        case ECLTokenType.ANCESTOR_OR_SELF_OF: {   // >>   transitive + self
+          operatorFilter = this.sct.filterGeneralizes(conceptId);
+          const selfResult = this.sct.concepts.findConcept(conceptId);
+          if (selfResult.found && !operatorFilter.descendants.includes(selfResult.index)) {
+            operatorFilter.descendants.push(selfResult.index);
+          }
+          break;
+        }
+        case ECLTokenType.PARENT_OF: {             // >!   direct parents only
+          operatorFilter = new SnomedFilterContext();
+          const selfResult = this.sct.concepts.findConcept(conceptId);
+          operatorFilter.descendants = selfResult.found
+              ? this.sct.getConceptParents(selfResult.index)
+              : [];
+          break;
+        }
+        case ECLTokenType.PARENT_OR_SELF_OF: {     // >>!  self + direct parents
+          operatorFilter = new SnomedFilterContext();
+          const selfResult = this.sct.concepts.findConcept(conceptId);
+          const parents = selfResult.found ? this.sct.getConceptParents(selfResult.index) : [];
+          operatorFilter.descendants = selfResult.found ? [selfResult.index, ...parents] : parents;
+          break;
+        }
+
         default:
           throw new Error(`Unknown constraint operator: ${node.operator}`);
       }
 
-      results.descendants = [...(results.descendants || []), ...(operatorFilter.descendants || [])];
+      for (const idx of operatorFilter.descendants || []) {
+        accumulated.add(idx);
+      }
     }
 
+    const results = new SnomedFilterContext();
+    results.descendants = [...accumulated];
     return results;
   }
 
   async evaluateCompoundExpression(node) {
+    const { SnomedFilterContext } = require('../cs/cs-snomed');
+
     const leftFilter = await this.evaluateAST(node.left);
     const rightFilter = await this.evaluateAST(node.right);
 
@@ -1327,7 +1376,7 @@ class ECLValidator {
         this.validateSemanticAST(node.value, errors);
         break;
 
-      // Basic nodes don't need semantic validation
+        // Basic nodes don't need semantic validation
       case ECLNodeType.CONCEPT_REFERENCE:
       case ECLNodeType.WILDCARD:
         break;
