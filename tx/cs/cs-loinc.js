@@ -658,7 +658,7 @@ class LoincServices extends BaseCSServices {
     return new LoincPrep(iterate);
   }
 
-  async filter(filterContext, prop, op, value) {
+  async filter(filterContext, forIteration, prop, op, value) {
     const filter = new LoincFilterHolder();
     await this.#executeFilterQuery(prop, op, value, filter);
     filterContext.filters.push(filter);

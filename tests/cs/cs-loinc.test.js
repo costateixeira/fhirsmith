@@ -618,6 +618,7 @@ describe('LOINC Provider', () => {
         const filterContext = await provider.getPrepContext(true);
         await provider.filter(
           filterContext,
+          true,
           testCase.property,
           testCase.operator,
           testCase.value
@@ -657,6 +658,7 @@ describe('LOINC Provider', () => {
         const filterContext = await provider.getPrepContext(true);
         await provider.filter(
           filterContext,
+          true,
           testCase.property,
           testCase.operator,
           testCase.value
@@ -694,6 +696,7 @@ describe('LOINC Provider', () => {
         const filterContext = await provider.getPrepContext(true);
         await provider.filter(
           filterContext,
+          true,
           testCase.property,
           testCase.operator,
           testCase.value
@@ -729,6 +732,7 @@ describe('LOINC Provider', () => {
         const filterContext = await provider.getPrepContext(true);
         await provider.filter(
           filterContext,
+          true,
           'CLASSTYPE',
           '=',
           testCase.value
@@ -753,6 +757,7 @@ describe('LOINC Provider', () => {
         const filterContext = await provider.getPrepContext(true);
         await provider.filter(
           filterContext,
+          true,
           'concept',
           testCase.operator,
           testCase.value
@@ -779,6 +784,7 @@ describe('LOINC Provider', () => {
         const filterContext = await provider.getPrepContext(true);
         await provider.filter(
           filterContext,
+          true,
           'STATUS',
           '=',
           testCase.value
@@ -800,6 +806,7 @@ describe('LOINC Provider', () => {
         const filterContext = await provider.getPrepContext(true);
         await provider.filter(
           filterContext,
+          true,
           'copyright',
           '=',
           testCase.value
@@ -830,6 +837,7 @@ describe('LOINC Provider', () => {
       const filterContext = await provider.getPrepContext(false);
       await provider.filter(
         filterContext,
+        true,
         testCase.property,
         testCase.operator,
         testCase.value
@@ -853,6 +861,7 @@ describe('LOINC Provider', () => {
       const filterContext = await provider.getPrepContext(true);
       await provider.filter(
         filterContext,
+        true,
         testCase.property,
         testCase.operator,
         testCase.value
@@ -876,6 +885,7 @@ describe('LOINC Provider', () => {
       const filterContext = await provider.getPrepContext(true);
       await provider.filter(
         filterContext,
+        true,
         testCase.property,
         testCase.operator,
         testCase.value
@@ -954,7 +964,7 @@ describe('LOINC Provider', () => {
       const filterContext = await provider.getPrepContext(true);
 
       await expect(
-        provider.filter(filterContext, 'unsupported', '=', 'value')
+        provider.filter(filterContext, true, 'unsupported', '=', 'value')
       ).rejects.toThrow('not supported');
     });
 

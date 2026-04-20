@@ -130,7 +130,7 @@ describe('AreaCodeServices', () => {
 
     beforeEach(async () => {
       ctxt = await provider.getPrepContext(false);
-      await provider.filter(ctxt, 'class', '=', 'country');
+      await provider.filter(ctxt, true, 'class', '=', 'country');
       const filters = await provider.executeFilters(ctxt);
       countryFilter = filters[0];
     });
@@ -195,7 +195,7 @@ describe('AreaCodeServices', () => {
 
     beforeEach(async () => {
       ctxt = await provider.getPrepContext(false);
-      await provider.filter(ctxt, 'type', '=', 'region');
+      await provider.filter(ctxt, true, 'type', '=', 'region');
       const filters = await provider.executeFilters(ctxt);
       regionFilter = filters[0];
     });
@@ -253,13 +253,13 @@ describe('AreaCodeServices', () => {
   describe('Filter Error Cases', () => {
     test('should throw error for unsupported property', async () => {
       await expect(
-        provider.filter(await provider.getPrepContext(false), 'display', '=', 'test')
+        provider.filter(await provider.getPrepContext(false), true, 'display', '=', 'test')
       ).rejects.toThrow('not supported');
     });
 
     test('should throw error for unsupported operator', async () => {
       await expect(
-        provider.filter(await provider.getPrepContext(false), 'class', 'contains', 'country')
+        provider.filter(await provider.getPrepContext(false), true, 'class', 'contains', 'country')
       ).rejects.toThrow('not supported');
     });
 
@@ -274,7 +274,7 @@ describe('AreaCodeServices', () => {
   describe('Execute Filters', () => {
     test('should execute single filter', async () => {
       const ctxt = await provider.getPrepContext(false);
-      await provider.filter(ctxt, 'class', '=', 'country');
+      await provider.filter(ctxt, true, 'class', '=', 'country');
       const results = await provider.executeFilters(ctxt);
       const countryFilter = results[0];
 

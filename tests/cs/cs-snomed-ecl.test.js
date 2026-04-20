@@ -51,18 +51,19 @@ describe('ECL Validator Test Suite', () => {
 
     test('should tokenize constraint operators', () => {
       const operators = [
-        { input: '<', expected: ECLTokenType.CHILD_OF },
-        { input: '<<', expected: ECLTokenType.CHILD_OR_SELF_OF },
-        { input: '<<!', expected: ECLTokenType.DESCENDANT_OR_SELF_OF },
-        { input: '<!', expected: ECLTokenType.DESCENDANT_OF },
-        { input: '>', expected: ECLTokenType.PARENT_OF },
-        { input: '>>', expected: ECLTokenType.PARENT_OR_SELF_OF },
-        { input: '>>!', expected: ECLTokenType.ANCESTOR_OR_SELF_OF },
-        { input: '>!', expected: ECLTokenType.ANCESTOR_OF }
+        { input: '<', expected: ECLTokenType.DESCENDANT_OF },
+        { input: '<!', expected: ECLTokenType.CHILD_OF },
+        { input: '<<', expected: ECLTokenType.DESCENDANT_OR_SELF_OF },
+        { input: '<<!', expected: ECLTokenType.CHILD_OR_SELF_OF },
+        { input: '>', expected: ECLTokenType.ANCESTOR_OF },
+        { input: '>>', expected: ECLTokenType.ANCESTOR_OR_SELF_OF },
+        { input: '>!', expected: ECLTokenType.PARENT_OF },
+        { input: '>>!', expected: ECLTokenType.PARENT_OR_SELF_OF }
       ];
 
       operators.forEach(({ input, expected }) => {
         const lexer = new ECLLexer(input);
+        console.log(`Tokenizing "${input}": ${expected}`);
         const tokens = lexer.tokenize();
         expect(tokens[0].type).toBe(expected);
         expect(tokens[0].value).toBe(input);
@@ -94,8 +95,8 @@ describe('ECL Validator Test Suite', () => {
         ECLTokenType.COLON,
         ECLTokenType.EQUALS,
         ECLTokenType.NOT_EQUALS,
-        ECLTokenType.CHILD_OF,
-        ECLTokenType.PARENT_OF,
+        ECLTokenType.DESCENDANT_OF,
+        ECLTokenType.ANCESTOR_OF,
         ECLTokenType.LTE,
         ECLTokenType.GTE,
         ECLTokenType.MEMBER_OF,
@@ -105,6 +106,7 @@ describe('ECL Validator Test Suite', () => {
       ];
 
       tokens.forEach((token, index) => {
+        console.log(`Token ${expectedTypes[index]}: ${token.type}`);
         if (index < expectedTypes.length - 1) { // Exclude EOF from detailed check
           expect(token.type).toBe(expectedTypes[index]);
         }
@@ -162,7 +164,7 @@ describe('ECL Validator Test Suite', () => {
       const tokens = lexer.tokenize();
 
       expect(tokens).toHaveLength(3); // <<, SCTID, EOF (whitespace ignored)
-      expect(tokens[0].type).toBe(ECLTokenType.CHILD_OR_SELF_OF);
+      expect(tokens[0].type).toBe(ECLTokenType.DESCENDANT_OR_SELF_OF);
       expect(tokens[1].type).toBe(ECLTokenType.SCTID);
     });
 
@@ -205,23 +207,24 @@ describe('ECL Validator Test Suite', () => {
       const testCases = [
         {
           input: '< 404684003 |Clinical finding|',
-          operator: ECLTokenType.CHILD_OF
-        },
-        {
-          input: '<< 404684003 |Clinical finding|',
-          operator: ECLTokenType.CHILD_OR_SELF_OF
-        },
-        {
-          input: '<! 404684003 |Clinical finding|',
           operator: ECLTokenType.DESCENDANT_OF
         },
         {
-          input: '<<! 404684003 |Clinical finding|',
+          input: '<< 404684003 |Clinical finding|',
           operator: ECLTokenType.DESCENDANT_OR_SELF_OF
+        },
+        {
+          input: '<! 404684003 |Clinical finding|',
+          operator: ECLTokenType.CHILD_OF
+        },
+        {
+          input: '<<! 404684003 |Clinical finding|',
+          operator: ECLTokenType.CHILD_OR_SELF_OF
         }
       ];
 
       testCases.forEach(({ input, operator }) => {
+        console.log(`Parsing: ${input}`);
         const result = eclValidator.parse(input);
         expect(result.success).toBe(true);
         expect(result.ast.operator).toBe(operator);
@@ -260,7 +263,7 @@ describe('ECL Validator Test Suite', () => {
 
       expect(result.success).toBe(true);
       expect(result.ast.type).toBe(ECLNodeType.REFINED_EXPRESSION_CONSTRAINT);
-      expect(result.ast.base.operator).toBe(ECLTokenType.CHILD_OR_SELF_OF);
+      expect(result.ast.base.operator).toBe(ECLTokenType.DESCENDANT_OR_SELF_OF);
       expect(result.ast.refinement.type).toBe(ECLNodeType.ATTRIBUTE);
     });
 

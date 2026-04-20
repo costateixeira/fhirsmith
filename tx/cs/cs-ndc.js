@@ -405,7 +405,7 @@ class NdcServices extends CodeSystemProvider {
       ['10-digit', '11-digit', 'product'].includes(value);
   }
 
-  async filter(filterContext, prop, op, value) {
+  async filter(filterContext, forIteration, prop, op, value) {
     
 
     if (prop === 'code-type' && op === '=') {

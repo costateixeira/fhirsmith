@@ -172,7 +172,7 @@ describe('CountryCodeServices', () => {
   describe('Regex Filtering', () => {
     test('should filter by 2-letter code pattern', async () => {
       const ctxt = await provider.getPrepContext(false);
-      await provider.filter(ctxt, 'code', 'regex', 'U[S|A]');
+      await provider.filter(ctxt, true, 'code', 'regex', 'U[S|A]');
       const filters = await provider.executeFilters(ctxt);
       expect(filters[0]).toBeTruthy();
       expect(filters[0].list).toBeTruthy();
@@ -197,7 +197,7 @@ describe('CountryCodeServices', () => {
 
     test('should filter by 3-letter code pattern', async () => {
       const ctxt = await provider.getPrepContext(false);
-      await provider.filter(ctxt, 'code', 'regex', 'US.*');
+      await provider.filter(ctxt, true, 'code', 'regex', 'US.*');
       const filters = await provider.executeFilters(ctxt);
       const filter = filters[0];
 
@@ -220,7 +220,7 @@ describe('CountryCodeServices', () => {
 
     test('should filter by numeric code pattern', async () => {
       const ctxt = await provider.getPrepContext(false);
-      await provider.filter(ctxt, 'code', 'regex', '8[0-9]{2}');
+      await provider.filter(ctxt, true, 'code', 'regex', '8[0-9]{2}');
       const filters = await provider.executeFilters(ctxt);
       const filter = filters[0];
 
@@ -245,7 +245,7 @@ describe('CountryCodeServices', () => {
 
     test('should filter by exact match pattern', async () => {
       const ctxt = await provider.getPrepContext(false);
-      await provider.filter(ctxt, 'code', 'regex', 'US');
+      await provider.filter(ctxt, true, 'code', 'regex', 'US');
       const filters = await provider.executeFilters(ctxt);
       const filter = filters[0];
 
@@ -263,7 +263,7 @@ describe('CountryCodeServices', () => {
 
     test('should filter all 2-letter codes', async () => {
       const ctxt = await provider.getPrepContext(false);
-      await provider.filter(ctxt, 'code', 'regex', '[A-Z]{2}');
+      await provider.filter(ctxt, true, 'code', 'regex', '[A-Z]{2}');
       const filters = await provider.executeFilters(ctxt);
       const filter = filters[0];
 
@@ -286,7 +286,7 @@ describe('CountryCodeServices', () => {
 
     test('should filter all 3-letter codes', async () => {
       const ctxt = await provider.getPrepContext(false);
-      await provider.filter(ctxt, 'code', 'regex', '[A-Z]{3}');
+      await provider.filter(ctxt, true, 'code', 'regex', '[A-Z]{3}');
       const filters = await provider.executeFilters(ctxt);
       const filter = filters[0];
 
@@ -309,7 +309,7 @@ describe('CountryCodeServices', () => {
 
     test('should filter all numeric codes', async () => {
       const ctxt = await provider.getPrepContext(false);
-      await provider.filter(ctxt, 'code', 'regex', '\\d{3}');
+      await provider.filter(ctxt, true, 'code', 'regex', '\\d{3}');
       const filters = await provider.executeFilters(ctxt);
       const filter = filters[0];
 
@@ -332,7 +332,7 @@ describe('CountryCodeServices', () => {
 
     test('should handle empty filter results', async () => {
       const ctxt = await provider.getPrepContext(false);
-      await provider.filter(ctxt, 'code', 'regex', 'ZZZZZ');
+      await provider.filter(ctxt, true, 'code', 'regex', 'ZZZZZ');
       const filters = await provider.executeFilters(ctxt);
       const filter = filters[0];
 
@@ -344,7 +344,7 @@ describe('CountryCodeServices', () => {
 
     test('should locate specific code in filter', async () => {
       const ctxt = await provider.getPrepContext(false);
-      await provider.filter(ctxt, 'code', 'regex', 'US.*');
+      await provider.filter(ctxt, true, 'code', 'regex', 'US.*');
       const filters = await provider.executeFilters(ctxt);
       const filter = filters[0];
 
@@ -356,7 +356,7 @@ describe('CountryCodeServices', () => {
 
     test('should not locate code not in filter', async () => {
       const ctxt = await provider.getPrepContext(false);
-      await provider.filter(ctxt, 'code', 'regex', 'US.*');
+      await provider.filter(ctxt, true, 'code', 'regex', 'US.*');
       const filters = await provider.executeFilters(ctxt);
       const filter = filters[0];
 
@@ -367,7 +367,7 @@ describe('CountryCodeServices', () => {
 
     test('should check if concept is in filter', async () => {
       const ctxt = await provider.getPrepContext(false);
-      await provider.filter(ctxt, 'code', 'regex', 'US.*');
+      await provider.filter(ctxt, true, 'code', 'regex', 'US.*');
       const filters = await provider.executeFilters(ctxt);
       const filter = filters[0];
 
@@ -384,19 +384,19 @@ describe('CountryCodeServices', () => {
   describe('Filter Error Cases', () => {
     test('should throw error for unsupported property', async () => {
       await expect(
-        provider.filter(await provider.getPrepContext(false), 'display', 'regex', 'test')
+        provider.filter(await provider.getPrepContext(false), true, 'display', 'regex', 'test')
       ).rejects.toThrow('not supported');
     });
 
     test('should throw error for unsupported operator', async () => {
       await expect(
-        provider.filter(await provider.getPrepContext(false), 'code', 'equals', 'US')
+        provider.filter(await provider.getPrepContext(false), true, 'code', 'equals', 'US')
       ).rejects.toThrow('not supported');
     });
 
     test('should throw error for invalid regex', async () => {
       await expect(
-        provider.filter(await provider.getPrepContext(false), 'code', 'regex', '[invalid')
+        provider.filter(await provider.getPrepContext(false), true, 'code', 'regex', '[invalid')
       ).rejects.toThrow('Invalid regex pattern');
     });
 
@@ -411,7 +411,7 @@ describe('CountryCodeServices', () => {
   describe('Execute Filters', () => {
     test('should execute single filter', async () => {
       const ctxt = await provider.getPrepContext(false);
-      await provider.filter(ctxt, 'code', 'regex', 'US.*');
+      await provider.filter(ctxt, true, 'code', 'regex', 'US.*');
       const results = await provider.executeFilters(ctxt);
 
       expect(results).toBeTruthy();

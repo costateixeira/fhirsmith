@@ -366,7 +366,7 @@ class RxNormServices extends CodeSystemProvider {
     return new RxNormPrep();
   }
 
-  async filter(filterContext, prop, op, value) {
+  async filter(filterContext, forIteration, prop, op, value) {
     
 
     const filter = new RxNormFilterHolder();
