@@ -136,7 +136,7 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
       console.log('Starting VSAC ValueSet refresh...');
 
       // This lists all the currently valid value sets by URL, but not the older versions
-      let url = '/ValueSet?_offset=0&_count=100&_elements=id,url,version,status';
+      let url = '/ValueSet?_offset=0&_count=1000&_elements=id,url,version,status';
 
       let total = undefined;
       let count = 0;
@@ -669,7 +669,23 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
       );
     });
 
-    const fmt = ts => ts
+    // ISO date (YYYY-MM-DD UTC) for grouping
+    const dayKey = ts => ts
+        ? new Date(ts * 1000).toISOString().substring(0, 10)
+        : '';
+    // Human-friendly day heading e.g. "Tuesday, 14 April 2026"
+    const dayLabel = ts => ts
+        ? new Date(ts * 1000).toLocaleDateString('en-GB', {
+          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+          timeZone: 'UTC'
+        })
+        : '—';
+    // HH:MM:SS UTC within a day
+    const timeOnly = ts => ts
+        ? new Date(ts * 1000).toISOString().substring(11, 19) + ' UTC'
+        : '—';
+    // Full timestamp (used in "Running..." detail where context is needed)
+    const fmtFull = ts => ts
         ? new Date(ts * 1000).toISOString().replace('T', ' ').substring(0, 19) + ' UTC'
         : '—';
 
@@ -678,7 +694,16 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
     html += '<thead><tr><th>Time</th><th>Event</th><th>Detail</th></tr></thead>';
     html += '<tbody>';
 
+    let currentDay = null;
     for (const row of rows) {
+      const rowDay = dayKey(row.ts);
+      if (rowDay !== currentDay) {
+        currentDay = rowDay;
+        html += `<tr style="background:#d8d8d8">`;
+        html += `<td colspan="3"><strong>${escape(dayLabel(row.ts))}</strong></td>`;
+        html += `</tr>`;
+      }
+
       if (row.kind === 'run') {
         const duration = row.finished_at ? `${row.finished_at - row.ts}s` : 'in progress';
         let detail, colour;
@@ -690,11 +715,11 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
           detail = `Failed: ${escape(row.error_message || '')} (${duration})`;
           colour = 'red';
         } else {
-          detail = `Running... (started ${fmt(row.ts)})`;
+          detail = `Running... (started ${fmtFull(row.ts)})`;
           colour = 'orange';
         }
         html += `<tr style="background:#f0f0f0">`;
-        html += `<td>${escape(fmt(row.ts))}</td>`;
+        html += `<td>${escape(timeOnly(row.ts))}</td>`;
         html += `<td><strong style="color:${colour}">Sync run</strong></td>`;
         html += `<td>${detail}</td>`;
         html += `</tr>`;
@@ -703,15 +728,15 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
         let label, colour;
         switch (row.event_type) {
           case 'new':
-            label = 'New value set';
+            label = 'New';
             colour = 'green';
             break;
           case 'updated':
-            label = 'Updated value set';
+            label = 'Updated';
             colour = 'blue';
             break;
           case 'deleted':
-            label = 'Deleted value set';
+            label = 'Deleted';
             colour = 'red';
             break;
           default:
@@ -719,9 +744,9 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
             colour = 'black';
         }
         html += `<tr>`;
-        html += `<td>${escape(fmt(row.ts))}</td>`;
+        html += `<td>${escape(timeOnly(row.ts))}</td>`;
         html += `<td><span style="color:${colour}">${label}</span></td>`;
-        html += `<td>${escape(row.url || '')}#${escape(row.version || '')}</td>`;
+        html += `<td>${escape(this.urlTail(row.url) || '')} v <a href="../ValueSet/${escape(this.urlTail(row.url) || '')}-${escape(row.version || '')}">${escape(row.version || '')}</a></td>`;
         html += `</tr>`;
       }
     }
@@ -732,6 +757,10 @@ class VSACValueSetProvider extends AbstractValueSetProvider {
 
   id() {
     return "vsac";
+  }
+
+  urlTail(url) {
+    return url ? url.substring(url.lastIndexOf('/') + 1) : '';
   }
 }
 
