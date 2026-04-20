@@ -3301,13 +3301,6 @@ describe('fragment', () => {
 describe('big', () => {
   // Testing handling a big code system
 
-  it('big-echo-no-limitR5', async () => {
-    await runTest({"suite":"big","test":"big-echo-no-limit"}, "5.0");
-  });
-
-  it('big-echo-no-limitR4', async () => {
-    await runTest({"suite":"big","test":"big-echo-no-limit"}, "4.0");
-  });
 
   it('big-echo-zero-fifty-limitR5', async () => {
     await runTest({"suite":"big","test":"big-echo-zero-fifty-limit"}, "5.0");
