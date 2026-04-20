@@ -340,8 +340,23 @@ class TerminologyWorker {
    * @param {string} version - ValueSet version (optional, overrides URL version)
    * @returns {ValueSet|null} Found ValueSet or null
    */
-  async findValueSet(url, version = '') {
+  async findValueSet(url, version, source = '') {
     if (!url) {
+      return null;
+    }
+    if (url.startsWith("#")) {
+      if (source) {
+        if (source.jsonObj) {
+          source = source.jsonObj;
+        }
+        for (const contained of source.contained || []) {
+          if (contained.id === url.substring(1)) {
+            const ret = this.wrapRawResource(contained);
+            ret.isContained = true;
+            return ret;
+          }
+        }
+      }
       return null;
     }
 

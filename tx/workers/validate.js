@@ -351,7 +351,7 @@ class ValueSetChecker {
         let s = this.worker.pinValueSet(u);
         this.worker.deadCheck('prepareConceptSet');
         if (!this.others.has(s)) {
-          let other = await this.worker.findValueSet(s, '');
+          let other = await this.worker.findValueSet(s, '', vs);
           if (other === null) {
             throw new Issue('error', 'not-found', null, 'Unable_to_resolve_value_Set_', this.worker.i18n.translate('Unable_to_resolve_value_Set_', this.params.HTTPLanguages, [s]), 'not-found', 422);
           }
@@ -472,7 +472,7 @@ class ValueSetChecker {
         this.worker.opContext.addNote(this.valueSet, 'Didn\'t find CodeSystem "' + this.worker.renderer.displayCoded(system, version) + '"', this.indentCount);
         result = null;
         cause.value = 'not-found';
-        let vss = await this.worker.findValueSet(system, '');
+        let vss = await this.worker.findValueSet(system, '', null);
         if (vss !== null) {
           vss = null;
           let msg = this.worker.i18n.translate('Terminology_TX_System_ValueSet2', this.params.HTTPLanguages, [system]);
@@ -1154,7 +1154,7 @@ class ValueSetChecker {
         }
         let prov = await this.worker.findCodeSystem(ws, c.version, this.params, ['complete', 'fragment'],  op,true, true, false, this.worker.requiredSupplements);
         if (prov === null) {
-          let vss = await this.worker.findValueSet(ws, '');
+          let vss = await this.worker.findValueSet(ws, '', null);
           if (vss !== null) {
             vss = null;
             let m = this.worker.i18n.translate('Terminology_TX_System_ValueSet2', this.params.HTTPLanguages, [ws]);
@@ -1538,9 +1538,6 @@ class ValueSetChecker {
 
   async checkConceptSet(path, role, cs, cset, code, displays, vs, message, inactive, normalForm, vstatus, op, vcc, messages) {
     this.worker.opContext.addNote(vs, 'check code ' + role + ' ' + this.worker.renderer.displayValueSetInclude(cset) + ' at ' + path, this.indentCount);
-    if (role !== 'not in') {
-      inactive.value = false;
-    }
     let result = false;
     if (!cset.concept && !cset.filter) {
       let loc = await cs.locate(code);
@@ -1683,7 +1680,7 @@ class ValueSetChecker {
         if (!fc.value) {
           throw new Issue('error', 'invalid', null, 'UNABLE_TO_HANDLE_SYSTEM_FILTER_WITH_NO_VALUE', this.worker.i18n.translate('UNABLE_TO_HANDLE_SYSTEM_FILTER_WITH_NO_VALUE', this.params.HTTPLanguages, [cs.system(), fc.property, fc.op]));
         }
-        await cs.filter(prep, fc.property, fc.op, fc.value);
+        await cs.filter(prep, false, fc.property, fc.op, fc.value);
         // if (f === null) {
         //   throw new Issue('error', 'not-supported', null, 'FILTER_NOT_UNDERSTOOD', this.worker.i18n.translate('FILTER_NOT_UNDERSTOOD', this.params.HTTPLanguages, [fc.property, fc.op, fc.value, vs.vurl, cs.system()]) + ' (2)', 'vs-invalid');
         // }
@@ -2232,7 +2229,7 @@ class ValidateWorker extends TerminologyWorker {
       if (csp) {
         return csp;
       } else {
-        let vs = await this.findValueSet(url, version);
+        let vs = await this.findValueSet(url, version, null);
         if (vs) {
           let msg = this.i18n.translate('Terminology_TX_System_ValueSet2', txParams.HTTPLanguages, [url]);
           throw new Issue('error', 'invalid', path, 'Terminology_TX_System_ValueSet2', msg, 'invalid-data');
@@ -2448,22 +2445,22 @@ class ValidateWorker extends TerminologyWorker {
     return defaultValue;
   }
 
-  /**
-   * Find a ValueSet by URL
-   * @param {string} url - ValueSet URL
-   * @param {string} [version] - ValueSet version
-   * @returns {Object|null} ValueSet resource or null
-   */
-  async findValueSet(url, version = null) {
-    // First check additional resources
-    const found = this.findInAdditionalResources(url, version || '', 'ValueSet', false);
-    if (found) {
-      return found;
-    }
-
-    // Then check provider
-    return await this.provider.findValueSet(this.opContext, url, version);
-  }
+  // /**
+  //  * Find a ValueSet by URL
+  //  * @param {string} url - ValueSet URL
+  //  * @param {string} [version] - ValueSet version
+  //  * @returns {Object|null} ValueSet resource or null
+  //  */
+  // async findValueSet(url, version = null) {
+  //   // First check additional resources
+  //   const found = this.findInAdditionalResources(url, version || '', 'ValueSet', false);
+  //   if (found) {
+  //     return found;
+  //   }
+  //
+  //   // Then check provider
+  //   return await this.provider.findValueSet(this.opContext, url, version);
+  // }
 
   /**
    * Get display text for a code (stub implementation for doValidationCS)
