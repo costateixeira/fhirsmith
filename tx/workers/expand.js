@@ -22,6 +22,7 @@ const {debugLog} = require("../operation-context");
 
 // Expansion limits (from Pascal constants)
 const EXTERNAL_DEFAULT_LIMIT = 1000;
+const EXTERNAL_TEST_DEFAULT_LIMIT = 3000;
 const INTERNAL_DEFAULT_LIMIT = 10000;
 const EXPANSION_DEAD_TIME_SECS = 30;
 const CACHE_WHEN_DEBUGGING = false;
@@ -508,8 +509,8 @@ class ValueSetExpander {
     this.excluded.add(key);
   }
 
-  async checkCanExpandValueSet(uri, version) {
-    const vs = await this.worker.findValueSet(uri, version);
+  async checkCanExpandValueSet(uri, version, source) {
+    const vs = await this.worker.findValueSet(uri, version, source);
     if (vs == null) {
       if (!version && uri.includes('|')) {
         version = uri.substring(uri.indexOf('|') + 1);
@@ -525,9 +526,8 @@ class ValueSetExpander {
     }
   }
 
-  async expandValueSet(uri, version, filter, notClosed) {
+  async expandValueSet(uri, version, vs, filter, notClosed) {
 
-    let vs = await this.worker.findValueSet(uri, version);
     if (!vs) {
       if (version) {
         throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK_PINNED', this.worker.i18n.translate('VS_EXP_IMPORT_UNK_PINNED', this.params.httpLanguages, [uri, version]), "not-found", 422);
@@ -609,14 +609,14 @@ class ValueSetExpander {
     }
   }
 
-  async checkSource(cset, exp, filter, srcURL, ts, vsInfo) {
+  async checkSource(cset, exp, filter, srcURL, ts, vsInfo , source) {
     this.worker.deadCheck('checkSource');
     Extensions.checkNoModifiers(cset, 'ValueSetExpander.checkSource', 'set', srcURL);
     let imp = false;
     for (const u of cset.valueSet || []) {
       this.worker.deadCheck('checkSource');
       const s = this.worker.pinValueSet(u);
-      await this.checkCanExpandValueSet(s, '');
+      await this.checkCanExpandValueSet(s, '', source);
       imp = true;
     }
 
@@ -659,7 +659,7 @@ class ValueSetExpander {
 
         if (!cset.concept && !cset.filter) {
           if (cs.specialEnumeration()) {
-            await this.checkCanExpandValueSet(cs.specialEnumeration(), '');
+            await this.checkCanExpandValueSet(cs.specialEnumeration(), '', null);
           } else if (filter.isNull) {
             if (cs.isNotClosed()) {
               if (cs.specialEnumeration()) {
@@ -704,9 +704,12 @@ class ValueSetExpander {
         this.worker.deadCheck('processCodes#2');
         const s = this.worker.pinValueSet(u);
         this.worker.opContext.log('import value set ' + s);
-        const ivs = new ImportedValueSet(await this.expandValueSet(s, '', filter, notClosed));
-        this.checkResourceCanonicalStatus(expansion, ivs.valueSet, this.valueSet);
-        this.addParamUri(expansion, 'used-valueset', this.worker.makeVurl(ivs.valueSet));
+        let vs = await this.worker.findValueSet(s, '', vsSrc);
+        const ivs = new ImportedValueSet(await this.expandValueSet(s, '', vs, filter, notClosed));
+        this. checkResourceCanonicalStatus(expansion, ivs.valueSet, this.valueSet);
+        if (!vs.isContained) {
+          this.addParamUri(expansion, 'used-valueset', this.worker.makeVurl(ivs.valueSet));
+        }
         valueSets.push(ivs);
       }
       this.addToTotal(await this.importValueSet(valueSets[0].valueSet, expansion, valueSets, 1));
@@ -728,16 +731,20 @@ class ValueSetExpander {
           this.worker.deadCheck('processCodes#2');
           const s = this.worker.pinValueSet(u);
           this.worker.opContext.log('import value set ' + s);
-          const ivs = new ImportedValueSet(await this.expandValueSet(s, '', filter, notClosed));
+          let vs = await this.worker.findValueSet(s, '', vsSrc);
+          const ivs = new ImportedValueSet(await this.expandValueSet(s, '', vs, filter, notClosed));
           this.checkResourceCanonicalStatus(expansion, ivs.valueSet, this.valueSet);
-          this.addParamUri(expansion, 'used-valueset', this.worker.makeVurl(ivs.valueSet));
+          if (!vs.isContained) {
+            this.addParamUri(expansion, 'used-valueset', this.worker.makeVurl(ivs.valueSet));
+          }
           valueSets.push(ivs);
         }
 
         if (!cset.concept && !cset.filter) {
           if (cs.specialEnumeration() && filters.length === 0) {
             this.worker.opContext.log('import special value set ' + cs.specialEnumeration());
-            const base = await this.expandValueSet(cs.specialEnumeration(), '', filter, notClosed);
+            let vs = await this.worker.findValueSet(cs.specialEnumeration(), '', null);
+            const base = await this.expandValueSet(cs.specialEnumeration(), '', vs, filter, notClosed);
             Extensions.addBoolean(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", true);
             Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed-reason", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
             await this.importValueSet(base, expansion, valueSets, 0);
@@ -860,7 +867,7 @@ class ValueSetExpander {
               throw new Issue('error', 'invalid', path + ".filter[" + i + "]", 'UNABLE_TO_HANDLE_SYSTEM_FILTER_WITH_NO_VALUE', this.worker.i18n.translate('UNABLE_TO_HANDLE_SYSTEM_FILTER_WITH_NO_VALUE', this.params.httpLanguages, [cs.system(), fc.property, fc.op]), 'vs-invalid', 400);
             }
             Extensions.checkNoModifiers(fc, 'ValueSetExpander.processCodes', 'filter', vsSrc.vurl);
-            await cs.filter(prep, fc.property, fc.op, fc.value);
+            await cs.filter(prep, i == 0, fc.property, fc.op, fc.value);
           }
 
           const fset = await cs.executeFilters(prep);
@@ -871,6 +878,7 @@ class ValueSetExpander {
           }
 
           this.worker.opContext.log('iterate filters');
+          this.addToTotal(0);
           const cds = new Designations(this.worker.i18n.languageDefinitions);
           while (await cs.filterMore(prep, fset[0])) {
             this.worker.deadCheck('processCodes#5');
@@ -937,9 +945,12 @@ class ValueSetExpander {
         for (const u of cset.valueSet) {
           const s = this.worker.pinValueSet(u);
           this.worker.deadCheck('processCodes#2');
-          const ivs = new ImportedValueSet(await this.expandValueSet(s, '', filter, notClosed));
+          let vs = await this.worker.findValueSet(s, '', vsSrc);
+          const ivs = new ImportedValueSet(await this.expandValueSet(s, '',  vs, filter, notClosed));
           this.checkResourceCanonicalStatus(expansion, ivs.valueSet, this.valueSet);
-          this.addParamUri(expansion, 'used-valueset', ivs.valueSet.vurl);
+          if (!vs.isContained) {
+            this.addParamUri(expansion, 'used-valueset', ivs.valueSet.vurl);
+          }
           valueSets.push(ivs);
         }
         this.excludeValueSet(valueSets[0].valueSet, expansion, valueSets, 1);
@@ -959,9 +970,12 @@ class ValueSetExpander {
         this.worker.deadCheck('processCodes#3');
         const s = this.worker.pinValueSet(u);
         this.worker.opContext.log('import value set ' + s);
-        const ivs = new ImportedValueSet(await this.expandValueSet(s, '', filter, notClosed));
+        let vs = await this.worker.findValueSet(s, '', vsSrc);
+        const ivs = new ImportedValueSet(await this.expandValueSet(s, '', vs, filter, notClosed));
         this.checkResourceCanonicalStatus(expansion, ivs.valueSet, this.valueSet);
-        this.addParamUri(expansion, 'used-valueset', this.worker.makeVurl(ivs.valueSet));
+        if (!vs.isContained) {
+          this.addParamUri(expansion, 'used-valueset', this.worker.makeVurl(ivs.valueSet));
+        }
         valueSets.push(ivs);
       }
 
@@ -1039,10 +1053,12 @@ class ValueSetExpander {
           Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed-reason", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
         }
 
+        let first = true;
         for (let fc of cset.filter) {
           this.worker.deadCheck('processCodes#4a');
           Extensions.checkNoModifiers(fc, 'ValueSetExpander.processCodes', 'filter', vsSrc.vurl);
-          await cs.filter(prep, fc.property, fc.op, fc.value);
+          await cs.filter(prep, first, fc.property, fc.op, fc.value);
+          first = false;
         }
 
         this.worker.opContext.log('iterate filters');
@@ -1150,12 +1166,12 @@ class ValueSetExpander {
     const ts = new Map();
     for (const c of source.jsonObj.compose.include || []) {
       this.worker.deadCheck('handleCompose#2');
-      await this.checkSource(c, expansion, filter, source.url, ts, vsInfo);
+      await this.checkSource(c, expansion, filter, source.url, ts, vsInfo, source);
     }
     for (const c of source.jsonObj.compose.exclude || []) {
       this.worker.deadCheck('handleCompose#3');
       this.hasExclusions = true;
-      await this.checkSource(c, expansion, filter, source.url, ts, null);
+      await this.checkSource(c, expansion, filter, source.url, ts, null, source);
     }
 
     this.worker.opContext.log('compose #2');
@@ -1215,6 +1231,7 @@ class ValueSetExpander {
       result.publisher = undefined;
       result.extension = undefined;
       result.text = undefined;
+      result.contained = undefined;
     }
 
     for (let s of this.params.supplements) this.requiredSupplements.add(s);
@@ -1909,7 +1926,7 @@ class ExpandWorker extends TerminologyWorker {
       const url = this.getParameterValue(urlParam);
       const version = versionParam ? this.getParameterValue(versionParam) : null;
 
-      valueSet = await this.findValueSet(url, version);
+      valueSet = await this.findValueSet(url, version, null);
       this.seeSourceVS(valueSet, url);
       if (!valueSet) {
         return res.status(422).json(this.operationOutcome('error', 'not-found',
@@ -2072,8 +2089,8 @@ class ExpandWorker extends TerminologyWorker {
 
     if (params.limit < -1) {
       params.limit = -1;
-    } else if (params.limit > EXTERNAL_DEFAULT_LIMIT) {
-      params.limit = EXTERNAL_DEFAULT_LIMIT; // can't ask for more than this externally, though you can internally
+    } else if (params.limit > this.externalLimit) {
+      params.limit = this.externalLimit; // can't ask for more than this externally, though you can internally
     }
 
     const filter = new SearchFilterText(params.filter);
@@ -2123,6 +2140,7 @@ module.exports = {
   EmptyFilterContext,
   EXTERNAL_DEFAULT_LIMIT,
   INTERNAL_DEFAULT_LIMIT,
+  EXTERNAL_TEST_DEFAULT_LIMIT,
   TotalStatus,
   EXPANSION_DEAD_TIME_SECS
 };

@@ -549,7 +549,7 @@ class OMOPServices extends BaseCSServices {
     return new OMOPPrep(iterate);
   }
 
-  async filter(filterContext, prop, op, value) {
+  async filter(filterContext, forIteration, prop, op, value) {
     
 
     if (prop === 'domain' && op === '=') {

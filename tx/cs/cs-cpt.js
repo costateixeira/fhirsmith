@@ -490,7 +490,7 @@ class CPTServices extends BaseCSServices {
     return new CPTPrep(iterate);
   }
 
-  async filter(filterContext, prop, op, value) {
+  async filter(filterContext, forIteration, prop, op, value) {
     
 
     let list;

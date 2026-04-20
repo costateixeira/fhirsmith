@@ -84,6 +84,14 @@ describe('simple-cases', () => {
     await runTest({"suite":"simple-cases","test":"simple-expand-isa"}, "4.0");
   });
 
+  it('simple-expand-child-ofR5', async () => {
+    await runTest({"suite":"simple-cases","test":"simple-expand-child-of"}, "5.0");
+  });
+
+  it('simple-expand-child-ofR4', async () => {
+    await runTest({"suite":"simple-cases","test":"simple-expand-child-of"}, "4.0");
+  });
+
   it('simple-expand-isa-o2R5', async () => {
     await runTest({"suite":"simple-cases","test":"simple-expand-isa-o2"}, "5.0");
   });
@@ -162,6 +170,10 @@ describe('simple-cases', () => {
 
   it('simple-expand-all-countR4', async () => {
     await runTest({"suite":"simple-cases","test":"simple-expand-all-count"}, "4.0");
+  });
+
+  it('simple-expand-containedR5', async () => {
+    await runTest({"suite":"simple-cases","test":"simple-expand-contained"}, "5.0");
   });
 
 });
@@ -1331,6 +1343,14 @@ describe('validation', () => {
 
   it('validation-cs-code-bad-codeR4', async () => {
     await runTest({"suite":"validation","test":"validation-cs-code-bad-code"}, "4.0");
+  });
+
+  it('validation-contained-badR5', async () => {
+    await runTest({"suite":"validation","test":"validation-contained-bad"}, "5.0");
+  });
+
+  it('validation-contained-badR4', async () => {
+    await runTest({"suite":"validation","test":"validation-contained-bad"}, "4.0");
   });
 
 });
@@ -3281,13 +3301,6 @@ describe('fragment', () => {
 describe('big', () => {
   // Testing handling a big code system
 
-  it('big-echo-no-limitR5', async () => {
-    await runTest({"suite":"big","test":"big-echo-no-limit"}, "5.0");
-  });
-
-  it('big-echo-no-limitR4', async () => {
-    await runTest({"suite":"big","test":"big-echo-no-limit"}, "4.0");
-  });
 
   it('big-echo-zero-fifty-limitR5', async () => {
     await runTest({"suite":"big","test":"big-echo-zero-fifty-limit"}, "5.0");
@@ -4906,20 +4919,20 @@ describe('snomed', () => {
     await runTest({"suite":"snomed","test":"snomed-inactive-display"}, "4.0");
   });
 
-  it('snomed-procedure-in-displayR5', async () => {
-    await runTest({"suite":"snomed","test":"snomed-procedure-in-display"}, "5.0");
+  it('snomed-isa-in-displayR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-isa-in-display"}, "5.0");
   });
 
-  it('snomed-procedure-in-displayR4', async () => {
-    await runTest({"suite":"snomed","test":"snomed-procedure-in-display"}, "4.0");
+  it('snomed-isa-in-displayR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-isa-in-display"}, "4.0");
   });
 
-  it('snomed-procedure-out-displayR5', async () => {
-    await runTest({"suite":"snomed","test":"snomed-procedure-out-display"}, "5.0");
+  it('snomed-isa-out-displayR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-isa-out-display"}, "5.0");
   });
 
-  it('snomed-procedure-out-displayR4', async () => {
-    await runTest({"suite":"snomed","test":"snomed-procedure-out-display"}, "4.0");
+  it('snomed-isa-out-displayR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-isa-out-display"}, "4.0");
   });
 
   it('snomed-expand-inactiveR5', async () => {
@@ -4930,20 +4943,276 @@ describe('snomed', () => {
     await runTest({"suite":"snomed","test":"snomed-expand-inactive"}, "4.0");
   });
 
-  it('snomed-expand-diabetesR5', async () => {
-    await runTest({"suite":"snomed","test":"snomed-expand-diabetes"}, "5.0");
+  it('snomed-expand-isaR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-isa"}, "5.0");
   });
 
-  it('snomed-expand-diabetesR4', async () => {
-    await runTest({"suite":"snomed","test":"snomed-expand-diabetes"}, "4.0");
+  it('snomed-expand-isaR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-isa"}, "4.0");
   });
 
-  it('snomed-expand-proceduresR5', async () => {
-    await runTest({"suite":"snomed","test":"snomed-expand-procedures"}, "5.0");
+  it('snomed-expand-ecl-descOrSelfR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-descOrSelf"}, "5.0");
   });
 
-  it('snomed-expand-proceduresR4', async () => {
-    await runTest({"suite":"snomed","test":"snomed-expand-procedures"}, "4.0");
+  it('snomed-expand-ecl-descOrSelfR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-descOrSelf"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-descendentsR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-descendents"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-descendentsR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-descendents"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-ancestorsR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-ancestors"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-ancestorsR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-ancestors"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-ancOrSelfR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-ancOrSelf"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-ancOrSelfR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-ancOrSelf"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-childrenOrSelfR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-childrenOrSelf"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-childrenOrSelfR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-childrenOrSelf"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-childrenR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-children"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-childrenR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-children"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-parentsR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-parents"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-parentsR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-parents"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-parentsOrSelfR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-parentsOrSelf"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-parentsOrSelfR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-parentsOrSelf"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-wildcardR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-wildcard"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-wildcardR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-wildcard"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-memberOf-refsetR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-memberOf-refset"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-memberOf-refsetR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-memberOf-refset"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-memberOf-nonRefsetR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-memberOf-nonRefset"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-memberOf-nonRefsetR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-memberOf-nonRefset"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-orR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-or"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-orR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-or"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-andR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-and"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-andR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-and"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-minusR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-minus"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-minusR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-minus"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-minus-emptyR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-minus-empty"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-minus-emptyR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-minus-empty"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-wildcard-minusR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-wildcard-minus"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-wildcard-minusR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-wildcard-minus"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-parens-precedenceR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-parens-precedence"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-parens-precedenceR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-parens-precedence"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-left-associativeR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-left-associative"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-left-associativeR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-left-associative"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-term-matchR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-term-match"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-term-matchR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-term-match"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-term-mismatchR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-term-mismatch"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-term-mismatchR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-term-mismatch"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-term-with-operatorR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-term-with-operator"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-term-with-operatorR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-term-with-operator"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-unknown-conceptR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-unknown-concept"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-unknown-conceptR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-unknown-concept"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-invalid-sctidR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-invalid-sctid"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-invalid-sctidR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-invalid-sctid"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-missing-focusR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-missing-focus"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-missing-focusR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-missing-focus"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-trailing-tokensR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-trailing-tokens"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-trailing-tokensR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-trailing-tokens"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-nested-parensR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-nested-parens"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-nested-parensR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-nested-parens"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-refinement-simpleR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-refinement-simple"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-refinement-simpleR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-refinement-simple"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-refinement-morphologyR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-refinement-morphology"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-refinement-morphologyR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-refinement-morphology"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-refinement-wildcardR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-refinement-wildcard"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-refinement-wildcardR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-refinement-wildcard"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-refinement-groupR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-refinement-group"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-refinement-groupR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-refinement-group"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-refinement-cardinalityR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-refinement-cardinality"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-refinement-cardinalityR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-refinement-cardinality"}, "4.0");
+  });
+
+  it('snomed-expand-ecl-dottedR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-dotted"}, "5.0");
+  });
+
+  it('snomed-expand-ecl-dottedR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-ecl-dotted"}, "4.0");
+  });
+
+  it('snomed-expand-too-bigR5', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-too-big"}, "5.0");
+  });
+
+  it('snomed-expand-too-bigR4', async () => {
+    await runTest({"suite":"snomed","test":"snomed-expand-too-big"}, "4.0");
   });
 
   it('lookupR5', async () => {
@@ -6195,7 +6464,7 @@ describe('permutations', () => {
 });
 
 describe('regex-bad', () => {
-  // Bad Regex - denial of service attack
+  // Bad Regex - checking defences against denial of service attack. These are unusual because servers have the option to succeed, or to refuse the request
 
   it('expand-regex-badR5', async () => {
     await runTest({"suite":"regex-bad","test":"expand-regex-bad"}, "5.0");
@@ -6211,6 +6480,22 @@ describe('regex-bad', () => {
 
   it('validate-regex-badR4', async () => {
     await runTest({"suite":"regex-bad","test":"validate-regex-bad"}, "4.0");
+  });
+
+  it('expand-regex-bad-2R5', async () => {
+    await runTest({"suite":"regex-bad","test":"expand-regex-bad-2"}, "5.0");
+  });
+
+  it('expand-regex-bad-2R4', async () => {
+    await runTest({"suite":"regex-bad","test":"expand-regex-bad-2"}, "4.0");
+  });
+
+  it('validate-regex-bad-2R5', async () => {
+    await runTest({"suite":"regex-bad","test":"validate-regex-bad-2"}, "5.0");
+  });
+
+  it('validate-regex-bad-2R4', async () => {
+    await runTest({"suite":"regex-bad","test":"validate-regex-bad-2"}, "4.0");
   });
 
 });

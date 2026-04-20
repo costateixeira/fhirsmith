@@ -240,7 +240,7 @@ describe('UCUM Provider Integration Tests', () => {
       const filterContext = new FilterExecutionContext();
 
       // Create filter for mass units (canonical: 'g')
-      await provider.filter(filterContext, 'canonical', '=', 'g');
+      await provider.filter(filterContext, true, 'canonical', '=', 'g');
       const filters = await provider.executeFilters(filterContext);
 
       // Test units that should match (all mass units)

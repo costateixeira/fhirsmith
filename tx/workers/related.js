@@ -188,7 +188,7 @@ class RelatedWorker extends TerminologyWorker {
     const url = this.getParameterValue(urlParam);
     const version = versionParam ? this.getParameterValue(versionParam) : null;
 
-    let valueSet = await this.findValueSet(url, version);
+    let valueSet = await this.findValueSet(url, version, null);
     this.seeSourceVS(valueSet, url);
     if (!valueSet) {
       return res.status(404).json(this.operationOutcome('error', 'not-found',

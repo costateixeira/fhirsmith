@@ -1217,7 +1217,7 @@ class FhirCodeSystemProvider extends BaseCSServices {
    * @param {string} value - Filter value
    * @returns {Promise<FhirCodeSystemProviderFilterContext>} Filter results
    */
-  async filter(filterContext, prop, op, value) {
+  async filter(filterContext, forIteration, prop, op, value) {
     
 
     let results = null;
