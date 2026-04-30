@@ -33,7 +33,8 @@ class RegistryAPI {
         const isAuth = codeSystem ? ServerRegistryUtilities.hasMatchingCodeSystem(
           codeSystem,
           server.authCSList,
-          true // support wildcards
+          true, // support wildcards,
+            false // allow version matching
         ) : false;
 
         server.versions.forEach(versionInfo => {
@@ -398,12 +399,6 @@ class RegistryAPI {
     const matchedServers = [];
     const data = this.crawler.getData();
 
-    // Extract base code system URL (before any pipe)
-    let baseCodeSystem = codeSystem;
-    if (codeSystem.includes('|')) {
-      baseCodeSystem = codeSystem.substring(0, codeSystem.indexOf('|'));
-    }
-
     data.registries.forEach(registry => {
       registry.servers.forEach(server => {
         let added = false;
@@ -421,9 +416,12 @@ class RegistryAPI {
               // Test against both the full URL and the base URL
               let content = {};
               const hasMatchingCS =
-                ServerRegistryUtilities.hasMatchingCodeSystem(baseCodeSystem, version.codeSystems, false, content) ||
-                (baseCodeSystem !== codeSystem &&
-                  ServerRegistryUtilities.hasMatchingCodeSystem(codeSystem, version.codeSystems, false, content));
+                // ServerRegistryUtilities.hasMatchingCodeSystem(baseCodeSystem, version.codeSystems, false, content) ||
+                // (baseCodeSystem !== codeSystem &&
+                  ServerRegistryUtilities.hasMatchingCodeSystem(codeSystem, version.codeSystems, false, content,
+                      // we don't want cross version matching at this point for SNOMED. If a version is specified, we want a match
+                      // to be decided: what about other code systems?
+                      codeSystem.includes("snomed"));
 
               if (hasMatchingCS) {
                 if (isAuth) {
