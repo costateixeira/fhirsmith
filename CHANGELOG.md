@@ -5,11 +5,31 @@ All notable changes to the Health Intersections Node Server will be documented i
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.9.4] - 2026-05-01
+
+### Added
+
+- Draft MCP specification from Ontoserver
+
+### Changed
+
+- Update Danish SNOMED CT Extension to 2026-03-31 version.
+
+### Fixed
+
+- fix problem with version specific code system resolution
+- fix hgvs handling of error response
+- update NPM dependencies
+
+### Tx Conformance Statement
+
+FHIRsmith passed all 1649 HL7 terminology service tests (modes tx.fhir.org+omop+general+snomed, tests v1.9.1, runner v6.9.7)
+
 ## [v0.9.3] - 2026-04-10
 
 ### Added
 
-- Add support for handling contained value sets 
+- Add support for handling contained value sets
 - Add beta support for ECL
 
 ### Changed
