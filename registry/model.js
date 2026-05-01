@@ -392,12 +392,12 @@ class ServerRegistryUtilities {
     return value === mask;
   }
 
-  static hasMatchingCodeSystem(cs, list, supportMask, content) {
+  static hasMatchingCodeSystem(cs, list, supportMask, content, noVersionIndependentMatching = false) {
     if (!cs || list.length === 0) return false;
 
     // Handle URLs with pipes - extract base URL
     let baseCs = cs;
-    if (cs.includes('|')) {
+    if (cs.includes('|') && !noVersionIndependentMatching) {
       baseCs = cs.substring(0, cs.indexOf('|'));
     }
 

@@ -103,38 +103,6 @@ describe('Registry Resolve Functional Tests', () => {
             "security": "open",
             "access_info": "This server is open to the public"
           }
-        ],
-        "candidates": [
-          {
-            "server-name": "tx.fhir.org",
-            "url": "http://tx.fhir.org/r4",
-            "security": "open",
-            "access_info": "This server is open to the public"
-          },
-          {
-            "server-name": "Canada Health Infoway Terminology Server",
-            "url": "https://terminologystandardsservice.ca/tx/fhir",
-            "security": "api-key",
-            "access_info": "This server requires an API Key - see https://infocentral.infoway-inforoute.ca/en/tools/standards-tools/terminology-server"
-          },
-          {
-            "server-name": "Agence du Numérique en Santé (ANS) Terminology Server",
-            "url": "https://smt.esante.gouv.fr/fhir",
-            "security": "open",
-            "access_info": "This server is open to the public"
-          },
-          {
-            "server-name": "HL7 Europe Terminology Server",
-            "url": "http://tx.hl7europe.eu/r4",
-            "security": "open",
-            "access_info": "Open"
-          },
-          {
-            "server-name": "HL7 Switzerland Terminology Server",
-            "url": "https://tx.fhir.ch/r4",
-            "security": "open",
-            "access_info": "Open"
-          }
         ]
       }
     });
@@ -283,45 +251,7 @@ describe('Registry Resolve Functional Tests', () => {
       url: 'http://snomed.info/sct|http://snomed.info/sct/11000172109',
       expected: {
         "formatVersion": "1",
-        "registry-url": "https://fhir.github.io/ig-registry/tx-servers.json",
-        "candidates": [
-          {
-            "server-name": "tx.fhir.org",
-            "url": "http://tx.fhir.org/r4",
-            "security": "open",
-            "access_info": "This server is open to the public"
-          },
-          {
-            "server-name": "HL7 Australia Server",
-            "url": "https://tx.ontoserver.csiro.au/fhir",
-            "security": "open",
-            "access_info": "This server is open to the public"
-          },
-          {
-            "server-name": "Canada Health Infoway Terminology Server",
-            "url": "https://terminologystandardsservice.ca/tx/fhir",
-            "security": "api-key",
-            "access_info": "This server requires an API Key - see https://infocentral.infoway-inforoute.ca/en/tools/standards-tools/terminology-server"
-          },
-          {
-            "server-name": "Agence du Numérique en Santé (ANS) Terminology Server",
-            "url": "https://smt.esante.gouv.fr/fhir",
-            "security": "open",
-            "access_info": "This server is open to the public"
-          },
-          {
-            "server-name": "HL7 Europe Terminology Server",
-            "url": "http://tx.hl7europe.eu/r4",
-            "security": "open",
-            "access_info": "Open"
-          },
-          {
-            "server-name": "HL7 Switzerland Terminology Server",
-            "url": "https://tx.fhir.ch/r4",
-            "security": "open",
-            "access_info": "Open"
-          }
-        ]
+        "registry-url": "https://fhir.github.io/ig-registry/tx-servers.json"
       }
     });
   });
@@ -333,45 +263,7 @@ describe('Registry Resolve Functional Tests', () => {
       usage: "validation",
       expected: {
         "formatVersion": "1",
-        "registry-url": "https://fhir.github.io/ig-registry/tx-servers.json",
-        "candidates": [
-          {
-            "server-name": "tx.fhir.org",
-            "url": "http://tx.fhir.org/r4",
-            "security": "open",
-            "access_info": "This server is open to the public"
-          },
-          {
-            "server-name": "HL7 Australia Server",
-            "url": "https://tx.ontoserver.csiro.au/fhir",
-            "security": "open",
-            "access_info": "This server is open to the public"
-          },
-          {
-            "server-name": "Canada Health Infoway Terminology Server",
-            "url": "https://terminologystandardsservice.ca/tx/fhir",
-            "security": "api-key",
-            "access_info": "This server requires an API Key - see https://infocentral.infoway-inforoute.ca/en/tools/standards-tools/terminology-server"
-          },
-          {
-            "server-name": "Agence du Numérique en Santé (ANS) Terminology Server",
-            "url": "https://smt.esante.gouv.fr/fhir",
-            "security": "open",
-            "access_info": "This server is open to the public"
-          },
-          {
-            "server-name": "HL7 Europe Terminology Server",
-            "url": "http://tx.hl7europe.eu/r4",
-            "security": "open",
-            "access_info": "Open"
-          },
-          {
-            "server-name": "HL7 Switzerland Terminology Server",
-            "url": "https://tx.fhir.ch/r4",
-            "security": "open",
-            "access_info": "Open"
-          }
-        ]
+        "registry-url": "https://fhir.github.io/ig-registry/tx-servers.json"
       }
     });
   });
@@ -390,44 +282,6 @@ describe('Registry Resolve Functional Tests', () => {
             "url": "https://apps.health.belgium.be/ontoserver/fhir",
             "security": "open",
             "access_info": "This server is open to publishers of IGs"
-          }
-        ],
-        "candidates": [
-          {
-            "server-name": "tx.fhir.org",
-            "url": "http://tx.fhir.org/r4",
-            "security": "open",
-            "access_info": "This server is open to the public"
-          },
-          {
-            "server-name": "HL7 Australia Server",
-            "url": "https://tx.ontoserver.csiro.au/fhir",
-            "security": "open",
-            "access_info": "This server is open to the public"
-          },
-          {
-            "server-name": "Canada Health Infoway Terminology Server",
-            "url": "https://terminologystandardsservice.ca/tx/fhir",
-            "security": "api-key",
-            "access_info": "This server requires an API Key - see https://infocentral.infoway-inforoute.ca/en/tools/standards-tools/terminology-server"
-          },
-          {
-            "server-name": "Agence du Numérique en Santé (ANS) Terminology Server",
-            "url": "https://smt.esante.gouv.fr/fhir",
-            "security": "open",
-            "access_info": "This server is open to the public"
-          },
-          {
-            "server-name": "HL7 Europe Terminology Server",
-            "url": "http://tx.hl7europe.eu/r4",
-            "security": "open",
-            "access_info": "Open"
-          },
-          {
-            "server-name": "HL7 Switzerland Terminology Server",
-            "url": "https://tx.fhir.ch/r4",
-            "security": "open",
-            "access_info": "Open"
           }
         ]
       }

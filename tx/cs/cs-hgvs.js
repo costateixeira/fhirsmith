@@ -136,16 +136,24 @@ class HGVSServices extends CodeSystemProvider {
             let valid = false;
             let message = '';
 
-            // Parse the FHIR Parameters response
-            if (json.parameter && Array.isArray(json.parameter)) {
-              for (const param of json.parameter) {
-                if (param.name === 'result' && param.valueBoolean) {
-                  valid = true;
-                } else if (param.name === 'message' && param.valueString) {
-                  if (message) message += ', ';
-                  message += param.valueString;
+            if (!json.resourceType) {
+              message = 'Invalid response format';
+            } else if (json.resourceType == 'OperationOutcome') {
+              message = json.issue?.[0]?.details?.text || 'Unknown error';
+            } else if (json.resourceType == 'Parameters') {
+              // Parse the FHIR Parameters response
+              if (json.parameter && Array.isArray(json.parameter)) {
+                for (const param of json.parameter) {
+                  if (param.name === 'result' && param.valueBoolean) {
+                    valid = true;
+                  } else if (param.name === 'message' && param.valueString) {
+                    if (message) message += ', ';
+                    message += param.valueString;
+                  }
                 }
               }
+            } else {
+              message = 'Invalid response resource type: ' + json.resourceType;
             }
 
             resolve({ valid, message });
