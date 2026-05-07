@@ -12,6 +12,7 @@ const { TxParameters } = require('../params');
 const { Parameters } = require('../library/parameters');
 const { Issue, OperationOutcome } = require('../library/operation-outcome');
 const {ConceptMap} = require("../library/conceptmap");
+const {debugLog} = require("../operation-context");
 
 class TranslateWorker extends TerminologyWorker {
   /**
@@ -44,6 +45,7 @@ class TranslateWorker extends TerminologyWorker {
       await this.handleTypeLevelTranslate(req, res);
     } catch (error) {
       this.log.error(error);
+      debugLog(error);
       if (error instanceof Issue) {
         const oo = new OperationOutcome();
         oo.addIssue(error);
@@ -66,6 +68,7 @@ class TranslateWorker extends TerminologyWorker {
       await this.handleInstanceLevelTranslate(req, res);
     } catch (error) {
       this.log.error(error);
+      debugLog(error);
       if (error instanceof Issue) {
         const oo = new OperationOutcome();
         oo.addIssue(error);
@@ -110,10 +113,15 @@ class TranslateWorker extends TerminologyWorker {
     let targetScope = null;
     let sourceScope = null;
     let targetSystem = null;
+    let reverse = false;
 
     // Get the source coding
+    // Accept both R5 names (sourceCoding, sourceCodeableConcept, sourceCode/sourceSystem)
+    // and R4 names (coding, codeableConcept, code/system) as aliases
     if (params.has('sourceCoding')) {
       coding = params.get('sourceCoding');
+    } else if (params.has('coding')) {
+      coding = params.get('coding');
     } else if (params.has('sourceCodeableConcept')) {
       const cc = params.get('sourceCodeableConcept');
       if (cc.coding && cc.coding.length > 0) {
@@ -122,19 +130,48 @@ class TranslateWorker extends TerminologyWorker {
         throw new Issue('error', 'invalid', null, null,
           'sourceCodeableConcept must contain at least one coding', null, 400);
       }
-    } else if (params.has('sourceCode')) {
-      if (!params.has('sourceSystem')) {
+    } else if (params.has('codeableConcept')) {
+      const cc = params.get('codeableConcept');
+      if (cc.coding && cc.coding.length > 0) {
+        coding = cc.coding[0];
+      } else {
         throw new Issue('error', 'invalid', null, null,
-          'sourceSystem parameter is required when using sourceCode', null, 400);
+          'codeableConcept must contain at least one coding', null, 400);
       }
-      coding = {
-        system: params.get('sourceSystem'),
-        version: params.get('sourceVersion'),
-        code: params.get('sourceCode')
-      };
+    } else if (params.has('sourceCode') || params.has('code')) {
+      const code = params.has('sourceCode') ? params.get('sourceCode') : params.get('code');
+      const system = params.has('sourceSystem') ? params.get('sourceSystem') : params.get('system');
+      if (!system) {
+        throw new Issue('error', 'invalid', null, null,
+          'system parameter is required when using code/sourceCode', null, 400);
+      }
+      const version = params.has('sourceVersion') ? params.get('sourceVersion') : params.get('version');
+      coding = {system, version, code};
+    } else if (params.has('targetCoding')) {
+      reverse = true;
+      coding = params.get('targetCoding');
+    } else if (params.has('targetCodeableConcept')) {
+      reverse = true;
+      const cc = params.get('targetCodeableConcept');
+      if (cc.coding && cc.coding.length > 0) {
+        coding = cc.coding[0]; // Use first coding
+      } else {
+        throw new Issue('error', 'invalid', null, null,
+          'sourceCodeableConcept must contain at least one coding', null, 400);
+      }
+    } else if (params.has('targetCode')) {
+      reverse = true;
+      const code = params.get('targetCode');
+      const system = params.get('targetSystem');
+      if (!system) {
+        throw new Issue('error', 'invalid', null, null,
+          'targetSystem parameter is required when using targetCode', null, 400);
+      }
+      const version = params.get('targetVersion');
+      coding = { system, version, code };
     } else {
       throw new Issue('error', 'invalid', null, null,
-        'Must provide sourceCode (with system), sourceCoding, or sourceCodeableConcept', null, 400);
+        'Must provide sourceCode+(source)system, sourceCoding, or sourceCodeableConcept, or targetCode+targetSystem), targetCoding, or targetCodeableConcept', null, 400);
     }
 
     // Get the concept map
@@ -159,21 +196,33 @@ class TranslateWorker extends TerminologyWorker {
     if (params.has('targetScope')) {
       targetScope = params.get('targetScope');
     }
-    if (params.has('targetSystem')) {
-      targetSystem = params.get('targetSystem');
+    if (reverse) {
+      if (params.has('sourceSystem')) {
+        targetSystem = params.get('sourceSystem');
+      }
+    } else {
+      if (params.has('targetSystem')) {
+        targetSystem = params.get('targetSystem');
+      }
     }
-
+    let explicit = true;
     // If no explicit concept map, we need to find one based on source/target
     if (conceptMaps.length == 0) {
-      await this.findConceptMapsInAdditionalResources(conceptMaps, coding.system, sourceScope, targetScope, targetSystem);
-      await this.provider.findConceptMapForTranslation(this.opContext, conceptMaps, coding.system, sourceScope, targetScope, targetSystem);
+      explicit = false;
+      if (reverse) {
+        await this.findConceptMapsInAdditionalResources(conceptMaps,targetSystem, targetScope, sourceScope, coding.system);
+        await this.provider.findConceptMapForTranslation(this.opContext, conceptMaps, targetSystem, targetScope, sourceScope, coding.system, coding.code);
+      } else {
+        await this.findConceptMapsInAdditionalResources(conceptMaps, coding.system, sourceScope, targetScope, targetSystem);
+        await this.provider.findConceptMapForTranslation(this.opContext, conceptMaps, coding.system, sourceScope, targetScope, targetSystem, coding.code);
+      }
       if (conceptMaps.length == 0) {
         throw new Issue('error', 'not-found', null, null, 'No suitable ConceptMaps found for the specified source and target', null, 404);
       }
     }
 
     // Perform the translation
-    const result = await this.doTranslate(conceptMaps, coding, targetScope, targetSystem, txp);
+    const result = await this.doTranslate(conceptMaps, coding, targetScope, targetSystem, txp, reverse, explicit);
     return res.status(200).json(result);
   }
 
@@ -205,10 +254,14 @@ class TranslateWorker extends TerminologyWorker {
     txp.readParams(params.jsonObj);
 
     // Get the source coding
+    // Accept both R5 names (sourceCoding, sourceCodeableConcept, sourceCode)
+    // and R4 names (coding, codeableConcept, code) as aliases
     let coding = null;
 
     if (params.has('sourceCoding')) {
       coding = params.get('sourceCoding');
+    } else if (params.has('coding')) {
+      coding = params.get('coding');
     } else if (params.has('sourceCodeableConcept')) {
       const cc = params.get('sourceCodeableConcept');
       if (cc.coding && cc.coding.length > 0) {
@@ -217,15 +270,25 @@ class TranslateWorker extends TerminologyWorker {
         throw new Issue('error', 'invalid', null, null,
           'sourceCodeableConcept must contain at least one coding', null, 400);
       }
-    } else if (params.has('sourceCode')) {
-      if (!params.has('system')) {
+    } else if (params.has('codeableConcept')) {
+      const cc = params.get('codeableConcept');
+      if (cc.coding && cc.coding.length > 0) {
+        coding = cc.coding[0];
+      } else {
         throw new Issue('error', 'invalid', null, null,
-          'system parameter is required when using sourceCode', null, 400);
+          'codeableConcept must contain at least one coding', null, 400);
+      }
+    } else if (params.has('sourceCode') || params.has('code')) {
+      const code = params.has('sourceCode') ? params.get('sourceCode') : params.get('code');
+      const system = params.has('system') ? params.get('system') : null;
+      if (!system) {
+        throw new Issue('error', 'invalid', null, null,
+          'system parameter is required when using code/sourceCode', null, 400);
       }
       coding = {
-        system: params.get('system'),
+        system,
         version: params.get('version'),
-        code: params.get('sourceCode')
+        code
       };
     } else {
       throw new Issue('error', 'invalid', null, null,
@@ -247,7 +310,7 @@ class TranslateWorker extends TerminologyWorker {
 
   checkCode(op, langList, path, code, system, version, display) {
     let result = false;
-    const cp = this.findCodeSystem(system, version, null, ['complete', 'fragment'], true, true, false, null);
+    const cp = this.findCodeSystem(system, version, null, ['complete', 'fragment'], true, true, false, null, this.requiredSupplements);
     if (cp != null) {
       const lct = cp.locate(this.opContext, code);
       if (op.error('InstanceValidator', 'invalid', path, lct != null, 'Unknown Code (' + system + '#' + code + ')')) {
@@ -259,7 +322,7 @@ class TranslateWorker extends TerminologyWorker {
     return result;
   }
 
-  translateUsingGroups(cm, coding, targetScope, targetSystem, params, output) {
+  translateUsingGroupsForwards(cm, coding, targetScope, targetSystem, params, output, explicit) {
     let result = false;
     const matches = cm.listTranslations(coding, targetScope, targetSystem);
     if (matches.length > 0) {
@@ -267,7 +330,13 @@ class TranslateWorker extends TerminologyWorker {
         const g = match.group;
         const em = match.match;
         for (const map of em.target || []) {
-          if (['null', 'equivalent', 'equal', 'wider', 'subsumes', 'narrower', 'specializes', 'inexact'].includes(map.relationship)) {
+          let ok = false;
+          if (map.equivalence) { // R4 mode
+            ok = ['null', 'relatedto', 'equivalent', 'equal', 'wider', 'subsumes', 'narrower', 'specializes', 'inexact'].includes(map.equivalence);
+          } else {
+            ok = ['null', 'related-to', 'equivalent',  'source-is-narrower-than-target', 'source-is-broader-than-target'].includes(map.relationship);
+          }
+          if (ok) {
             result = true;
 
             const outcome = {
@@ -275,22 +344,119 @@ class TranslateWorker extends TerminologyWorker {
               code: map.code
             };
 
+            if (!this.hasMatch(output, outcome)) {
+              const matchParts = [];
+              matchParts.push({
+                name: 'concept',
+                valueCoding: outcome
+              });
+              matchParts.push({
+                name: 'relationship',
+                valueCode: map.relationship
+              });
+              // equivalence vs relationship will be sorted out in the version transform for parameters
+              if (map.equivalence) {
+                matchParts.push({
+                  name: 'equivalence',
+                  valueCode: map.equivalence
+                });
+              }
+              if (map.comment) {
+                matchParts.push({
+                  name: 'message',
+                  valueString: map.comment
+                });
+              }
+              for (const prod of map.product || []) {
+                const productParts = [];
+                productParts.push({
+                  name: 'element',
+                  valueString: prod.property
+                });
+                productParts.push({
+                  name: 'concept',
+                  valueCoding: {
+                    system: prod.system,
+                    code: prod.value
+                  }
+                });
+                matchParts.push({
+                  name: 'product',
+                  part: productParts
+                });
+              }
+              if (!explicit) {
+                matchParts.push({
+                  name: 'originMap',
+                  valueCanonical: cm.vurl
+                });
+              }
+              output.push({
+                name: 'match',
+                part: matchParts
+              });
+            }
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  translateUsingGroupsReverse(cm, coding, targetScope, targetSystem, params, output, explicit) {
+    let result = false;
+    const matches = cm.listTranslationsReverse(coding, targetScope, targetSystem);
+    if (matches.length > 0) {
+      for (let match of matches) {
+        const g = match.group;
+        const em = match.match;
+        const map = match.target;
+        let ok = false;
+        if (map.equivalence) { // R4 mode
+          ok = ['null', 'relatedto', 'equivalent', 'equal', 'wider', 'subsumes', 'narrower', 'specializes', 'inexact'].includes(map.equivalence);
+        } else {
+          ok = ['null', 'related-to', 'equivalent',  'source-is-narrower-than-target', 'source-is-broader-than-target'].includes(map.relationship);
+        }
+        if (ok) {
+          result = true;
+
+          const outcome = {
+            system: g.source,
+            code: em.code
+          };
+          const t = {
+            system: g.target,
+            code: coding.code
+          };
+
+          if (!this.hasMatch(output, outcome)) {
             const matchParts = [];
             matchParts.push({
-              name: 'concept',
+              name: 'source',
               valueCoding: outcome
+            });
+            matchParts.push({
+              name: 'concept',
+              valueCoding: t
             });
             matchParts.push({
               name: 'relationship',
               valueCode: map.relationship
             });
-            if (map.comments) {
+            // equivalence vs relationship will be sorted out in the version transform for parameters
+            if (map.equivalence) {
               matchParts.push({
-                name: 'message',
-                valueString: map.comments
+                name: 'equivalence',
+                valueCode: map.equivalence
               });
             }
-            for (const prod of map.products || []) {
+            if (map.comment) {
+              matchParts.push({
+                name: 'message',
+                valueString: map.comment
+              });
+            }
+            for (const prod of map.product || []) {
               const productParts = [];
               productParts.push({
                 name: 'element',
@@ -308,6 +474,12 @@ class TranslateWorker extends TerminologyWorker {
                 part: productParts
               });
             }
+            if (!explicit) {
+              matchParts.push({
+                name: 'originMap',
+                valueCanonical: cm.vurl
+              });
+            }
             output.push({
               name: 'match',
               part: matchParts
@@ -319,7 +491,7 @@ class TranslateWorker extends TerminologyWorker {
     return result;
   }
 
-  async translateUsingCodeSystem(cm, coding, target, params, output) {
+  async translateUsingCodeSystem(cm, coding, target, params, output, reverse, explicit) {
     let result = false;
     const factory = cm.jsonObj.internalSource;
     let prov = await factory.build(this.opContext, []);
@@ -329,7 +501,7 @@ class TranslateWorker extends TerminologyWorker {
       valueUri: prov.system() + '|' + prov.version()
     });
 
-    let translations = await prov.getTranslations(coding, target);
+    let translations = await prov.getTranslations(cm, coding, target, reverse);
 
     if (translations.length > 0) {
       result = true;
@@ -343,7 +515,7 @@ class TranslateWorker extends TerminologyWorker {
         }
 
         const outcome = {
-          system: t.uri,
+          system: t.system,
           code: t.code,
           version: t.version,
           display: t.display
@@ -364,6 +536,12 @@ class TranslateWorker extends TerminologyWorker {
             valueString: t.message
           });
         }
+        if (!explicit) {
+          matchParts.push({
+            name: 'originMap',
+            valueCanonical: cm.vurl
+          });
+        }
         output.push({
           name: 'match',
           part: matchParts
@@ -380,9 +558,11 @@ class TranslateWorker extends TerminologyWorker {
    * @param {string} targetScope - Target value set scope (optional)
    * @param {string} targetSystem - Target code system (optional)
    * @param {Parameters} params - Full parameters object
+   * @param {boolean} reverse - Full parameters object*
+   * @param {boolean} explicit - If the concept map was named explicitly
    * @returns {Object} Parameters resource with translate result
    */
-  async doTranslate(conceptMaps, coding, targetScope, targetSystem, params) {
+  async doTranslate(conceptMaps, coding, targetScope, targetSystem, params, reverse, explicit) {
     this.deadCheck('doTranslate');
 
     const result = [];
@@ -391,9 +571,11 @@ class TranslateWorker extends TerminologyWorker {
       let added = false;
       for (const cm of conceptMaps) {
         if (cm.jsonObj.internalSource) {
-          added = await this.translateUsingCodeSystem(cm, coding, targetSystem, params, result) || added;
-        } else {
-          added = this.translateUsingGroups(cm, coding, targetScope, targetSystem, params, result) || added;
+          added = await this.translateUsingCodeSystem(cm, coding, targetSystem, params, result, reverse, explicit) || added;
+        } else if (reverse) {
+          added = this.translateUsingGroupsReverse(cm, coding, targetScope, targetSystem, params, result, reverse, explicit) || added;
+        } else{
+          added = this.translateUsingGroupsForwards(cm, coding, targetScope, targetSystem, params, result, reverse, explicit) || added;
         }
       }
       result.push({
@@ -406,14 +588,16 @@ class TranslateWorker extends TerminologyWorker {
           valueString: 'No translations found'
         });
       }
-    } catch (e) {
+    } catch (error) {
+      this.log.error(error);
+      debugLog(error);
       result.push({
         name: 'result',
         valueBoolean: false
       });
       result.push({
         name: 'message',
-        valueString: e.message
+        valueString: error.message
       });
     }
 
@@ -486,6 +670,16 @@ class TranslateWorker extends TerminologyWorker {
         }
       }
     }
+  }
+
+  hasMatch(output, outcome) {
+    for (let o of output) {
+      let c = o.part.find(x => x.name === 'concept');
+      if (c.valueCoding.code === outcome.code && c.valueCoding.system === outcome.system) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 

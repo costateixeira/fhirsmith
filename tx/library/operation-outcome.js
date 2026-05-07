@@ -28,9 +28,10 @@ class Issue extends Error {
       code: this.cause,
       details: {
         text: this.message
-      },
-      location: [ this.path ],
-      expression: [ this.path ]
+      }
+    }
+    if (this.path) {
+      res.expression = [this.path]
     }
     if (this.issueCode) {
       res.details.coding = [{ system: "http://hl7.org/fhir/tools/CodeSystem/tx-issue-type", code : this.issueCode }];
@@ -80,6 +81,10 @@ class OperationOutcome {
 
   constructor (jsonObj = null) {
     this.jsonObj = jsonObj ? jsonObj : { "resourceType": "OperationOutcome" };
+  }
+
+  addIssueIfNew(newIssue) {
+    return this.addIssue(newIssue, true);
   }
 
   addIssue(newIssue, ifNotDuplicate = false) {

@@ -1,6 +1,6 @@
 const { LanguagePartType, Languages, Language, LanguageDefinitions} = require('../../library/languages');
 const {validateParameter, validateOptionalParameter, validateArrayParameter} = require("../../library/utilities");
-
+const natural = require('natural');
 /**
  * Display checking modes for concept designations
  */
@@ -26,6 +26,7 @@ class SearchFilterText {
 
     this.filter = filter ? filter.toLowerCase() : null;
     this.stems = [];
+    this.stemmer = natural.PorterStemmer;
     if (filter) {
       this._process();
     }
@@ -59,7 +60,7 @@ class SearchFilterText {
           i++;
         }
         const word = value.substring(j, i).toLowerCase();
-        const stemmed = this._stem(word);
+        const stemmed = this.stemmer.stem(word);
 
         if (this._find(stemmed)) {
           if (returnRating) {
@@ -142,7 +143,7 @@ class SearchFilterText {
           i++;
         }
         const word = this.filter.substring(j, i);
-        this.stems.push(this._stem(word));
+        this.stems.push(this.stemmer.stem(word.toLowerCase()));
       } else {
         i++;
       }
@@ -153,11 +154,6 @@ class SearchFilterText {
 
   _isAlphaNumeric(char) {
     return /[0-9a-zA-Z]/.test(char);
-  }
-
-  _stem(word) {
-    // Simple stemming - in practice you'd want a proper stemmer
-    return word.toLowerCase();
   }
 
   _find(stem) {
@@ -408,6 +404,15 @@ class Designations {
     // }
   }
 
+  hasAnyDisplay(value) {
+    for (let designation of this.designations) {
+      if (designation.value === value) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /**
    * Check if a display value exists with specified matching criteria
    */
@@ -555,7 +560,7 @@ class Designations {
   /**
    * Find the preferred designation for given language preferences
    */
-  preferredDesignation(langList = null) {
+  preferredDesignation(langList = null, supplements = null) {
     if (this.designations.length === 0) {
       return null;
     }
@@ -563,14 +568,39 @@ class Designations {
     if (!langList || langList.length == 0) {
       // No language list, prefer base designations
       for (const cd of this.designations) {
+        if (this._isPreferred(cd) && cd.isActive()) {
+          if (supplements && cd.source) {
+            supplements.add(cd.source);
+          }
+          return cd;
+        }
+      }
+      for (const cd of this.designations) {
+        if (this.isDisplay(cd) && cd.isActive()) {
+          if (supplements && cd.source) {
+            supplements.add(cd.source);
+          }
+          return cd;
+        }
+      }
+      for (const cd of this.designations) {
         if (this.isDisplay(cd)) {
+          if (supplements && cd.source) {
+            supplements.add(cd.source);
+          }
           return cd;
         }
       }
       for (const cd of this.designations) {
         if (this._isPreferred(cd)) {
+          if (supplements && cd.source) {
+            supplements.add(cd.source);
+          }
           return cd;
         }
+      }
+      if (supplements && this.designations[0].source) {
+        supplements.add(this.designations[0].source);
       }
       return this.designations[0];
     }
@@ -583,22 +613,38 @@ class Designations {
       for (const matchType of matchTypes) {
         for (const cd of this.designations) {
           if (this._langMatches(lang, cd.language, matchType) && this.isDisplay(cd)) {
+            if (supplements && cd.source) {
+              supplements.add(cd.source);
+            }
             return cd;
           }
         }
         for (const cd of this.designations) {
           if (this._langMatches(lang, cd.language, matchType) && this._isPreferred(cd)) {
+            if (supplements && cd.source) {
+              supplements.add(cd.source);
+            }
             return cd;
           }
         }
         for (const cd of this.designations) {
           if (this._langMatches(lang, cd.language, matchType)) {
+            if (supplements && cd.source) {
+              supplements.add(cd.source);
+            }
             return cd;
           }
         }
       }
     }
-
+    for (const cd of this.designations) {
+      if (!cd.language && this.isDisplay(cd)) {
+        if (supplements && cd.source) {
+          supplements.add(cd.source);
+        }
+        return cd;
+      }
+    }
     return null;
   }
 
@@ -717,7 +763,10 @@ class Designations {
       (cd.use.system === DesignationUse.DISPLAY.system &&
         cd.use.code === DesignationUse.DISPLAY.code) ||
       (cd.use.system === DesignationUse.PREFERRED.system &&
-        cd.use.code === DesignationUse.PREFERRED.code);
+        cd.use.code === DesignationUse.PREFERRED.code) ||
+      // snomed
+      (cd.use.system === 'http://snomed.info/sct' &&
+        cd.use.code === '900000000000013009');
   }
 
   /**

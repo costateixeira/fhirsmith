@@ -1,6 +1,7 @@
 {
   "name": "fhirsmith",
-  "version": "0.3.0-SNAPSHOT",
+  "version": "0.9.4",
+  "txVersion": "1.9.1",
   "description": "A Node.js server that provides a collection of tools to serve the FHIR ecosystem",
   "main": "server.js",
   "engines": {
@@ -32,6 +33,7 @@
     "axios": "^1.13.4",
     "base45": "^3.0.0",
     "bcrypt": "^6.0.0",
+    "better-sqlite3": "^12.8.0",
     "cbor": "^9.0.1",
     "chalk": "^4.1.2",
     "chokidar": "^4.0.3",
@@ -44,11 +46,12 @@
     "express-rate-limit": "^7.4.1",
     "express-session": "^1.19.0",
     "fast-xml-parser": "^5.3.4",
-    "fhir-validator-wrapper": "1.2.1",
+    "fhir-validator-wrapper": "1.2.2",
     "fhirpath": "^4.8.3",
     "fs-extra": "^11.3.3",
+    "ini": "^6.0.0",
     "inquirer": "^8.2.5",
-    "liquidjs": "^10.24.0",
+    "liquidjs": "^10.25.5",
     "lusca": "^1.7.0",
     "natural": "^6.12.0",
     "node-cron": "^3.0.3",
@@ -58,6 +61,7 @@
     "passport-github2": "^0.1.12",
     "passport-google-oauth20": "^2.0.0",
     "properties-file": "^3.6.4",
+    "re2-wasm": "^1.0.2",
     "rimraf": "^5.0.10",
     "sqlite3": "^5.1.7",
     "tar": "^7.5.7",
@@ -98,13 +102,25 @@
     "smart-health-link",
     "smart-health-card"
   ],
-  "author": "",
-  "license": "MIT",
+  "author": "Health Intersections Pty Ltd",
+  "license": "BSD-3",
   "overrides": {
     "tar": "^7.5.7",
-    "fast-xml-parser": "^5.3.4"
+    "fast-xml-parser": "^5.3.4",
+    "inquirer": {
+      "lodash": "4.18.1"
+    }
   },
   "bin": {
-    "tx-import": "./tx-import.js"
-  }
+    "tx-import": "./tx/importers/tx-import.js",
+    "fhirsmith": "./server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/HealthIntersections/fhirsmith.git"
+  },
+  "bugs": {
+    "url": "https://github.com/HealthIntersections/fhirsmith/issues"
+  },
+  "homepage": "https://github.com/HealthIntersections/fhirsmith#readme"
 }

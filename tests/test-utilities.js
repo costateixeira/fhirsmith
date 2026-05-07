@@ -11,7 +11,7 @@ class TestUtilities {
 
   static async loadLanguageDefinitions() {
     if (!this.langDefs) {
-      this.langDefs = await LanguageDefinitions.fromFile(path.join(__dirname, '../tx/data/lang.dat'));
+      this.langDefs = await LanguageDefinitions.fromFiles(path.join(__dirname, '../tx/data'));
     }
     return this.langDefs;
   }

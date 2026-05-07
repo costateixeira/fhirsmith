@@ -1,4 +1,4 @@
-const {VersionUtilities} = require("../../library/version-utilities");
+const {namingSystemToR5, namingSystemFromR5} = require("../xversion/xv-namingsystem");
 
 /**
  * Represents a FHIR NamingSystem resource with version conversion support
@@ -40,7 +40,7 @@ class NamingSystem {
   constructor(jsonObj, version = 'R5') {
     this.version = version;
     // Convert to R5 format internally (modifies input for performance)
-    this.jsonObj = this._convertToR5(jsonObj, version);
+    this.jsonObj = namingSystemToR5(jsonObj, version);
     this.validate();
   }
 
@@ -50,96 +50,10 @@ class NamingSystem {
    * @returns {string} JSON string
    */
   toJSONString(version = 'R5') {
-    const outputObj = this._convertFromR5(this.jsonObj, version);
+    const outputObj = namingSystemFromR5(this.jsonObj, version);
     return JSON.stringify(outputObj);
   }
 
-  /**
-   * Converts input NamingSystem to R5 format (modifies input object for performance)
-   * @param {Object} jsonObj - The input NamingSystem object
-   * @param {string} version - Source FHIR version
-   * @returns {Object} The same object, potentially modified to R5 format
-   * @private
-   */
-  _convertToR5(jsonObj, version) {
-    if (version === 'R5') {
-      return jsonObj; // Already R5, no conversion needed
-    }
-
-    if (version === 'R3') {
-      // R3 to R5: Remove replacedBy field (we ignore it completely)
-      if (jsonObj.replacedBy !== undefined) {
-        delete jsonObj.replacedBy;
-      }
-      return jsonObj;
-    }
-
-    if (version === 'R4') {
-      // R4 to R5: No structural conversion needed
-      // R5 is backward compatible for the structural elements we care about
-      return jsonObj;
-    }
-
-    throw new Error(`Unsupported FHIR version: ${version}`);
-  }
-
-  /**
-   * Converts R5 NamingSystem to target version format (clones object first)
-   * @param {Object} r5Obj - The R5 format NamingSystem object
-   * @param {string} targetVersion - Target FHIR version
-   * @returns {Object} New object in target version format
-   * @private
-   */
-  _convertFromR5(r5Obj, targetVersion) {
-    if (VersionUtilities.isR5Ver(targetVersion)) {
-      return r5Obj; // No conversion needed
-    }
-
-    // Clone the object to avoid modifying the original
-    const cloned = JSON.parse(JSON.stringify(r5Obj));
-
-    if (VersionUtilities.isR4Ver(targetVersion)) {
-      return this._convertR5ToR4(cloned);
-    } else if (VersionUtilities.isR3Ver(targetVersion)) {
-      return this._convertR5ToR3(cloned);
-    }
-
-    throw new Error(`Unsupported target FHIR version: ${targetVersion}`);
-  }
-
-  /**
-   * Converts R5 NamingSystem to R4 format
-   * @param {Object} r5Obj - Cloned R5 NamingSystem object
-   * @returns {Object} R4 format NamingSystem
-   * @private
-   */
-  _convertR5ToR4(r5Obj) {
-    // Remove R5-specific elements that don't exist in R4
-    if (r5Obj.versionAlgorithmString) {
-      delete r5Obj.versionAlgorithmString;
-    }
-    if (r5Obj.versionAlgorithmCoding) {
-      delete r5Obj.versionAlgorithmCoding;
-    }
-
-    return r5Obj;
-  }
-
-  /**
-   * Converts R5 NamingSystem to R3 format
-   * @param {Object} r5Obj - Cloned R5 NamingSystem object
-   * @returns {Object} R3 format NamingSystem
-   * @private
-   */
-  _convertR5ToR3(r5Obj) {
-    // First apply R4 conversions
-    const r4Obj = this._convertR5ToR4(r5Obj);
-
-    // R3 doesn't have some R4/R5 fields, but we'll just let them through
-    // since most additions are backward compatible in JSON
-
-    return r4Obj;
-  }
 
   /**
    * Gets the FHIR version this NamingSystem was loaded from

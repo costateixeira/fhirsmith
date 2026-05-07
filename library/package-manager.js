@@ -380,7 +380,6 @@ class PackageManager {
             return cachedPath;
         }
 
-        console.log("Fetch Package "+packageId+"#"+version);
         // Not in cache, fetch from servers
         const packageData = await this.fetchFromServers(packageId, resolvedVersion);
 
@@ -413,6 +412,7 @@ class PackageManager {
                 }
             } catch (error) {
                 // Try next server
+                console.info("Error looking for "+packageId+" on "+server+": "+error);
                 continue;
             }
         }
@@ -583,6 +583,54 @@ class PackageManager {
                 throw new Error(`Package ${packageId}#${version} not found on ${server}`);
             }
             throw new Error(`HTTP ${error.response?.status || 'error'} from ${server}: ${error.message}`);
+        }
+    }
+
+    /**
+     * Fetch a package directly from a URL (e.g., a CI build .tgz)
+     * @param {string} url - URL to a package.tgz file
+     * @returns {Promise<string>} Path to extracted package folder
+     */
+    async fetchUrl(url) {
+        try {
+            const client = new CIBuildClient();
+            const packageData = await client.fetchFromUrlSpecific(url);
+
+            // Extract to a temp location to read package.json for name and version
+            const tempKey = `_url_temp_${Date.now()}`;
+            const tempPath = await this.extractToCache(tempKey, 'url', packageData);
+            const tempFullPath = path.join(this.cacheFolder, tempPath);
+
+            // Read package name and version from the extracted package
+            const pkgJsonPath = path.join(tempFullPath, 'package', 'package.json');
+            const pkgJson = JSON.parse(await fs.readFile(pkgJsonPath, 'utf8'));
+            const packageId = pkgJson.name;
+            const version = pkgJson.version;
+
+            if (!packageId || !version) {
+                throw new Error(`Package at ${url} has no name or version in package.json`);
+            }
+
+            // Use the same cache key format as npm packages
+            const finalName = `${packageId}#${version}`;
+            const finalPath = path.join(this.cacheFolder, finalName);
+
+            // If it already exists, the same package is already loaded - that's a config error
+            try {
+                await fs.access(finalPath);
+                await fs.rm(tempFullPath, { recursive: true, force: true });
+                throw new Error(`Package ${finalName} already exists in cache. Check library config for duplicates (url: ${url})`);
+            } catch (e) {
+                if (e.message.includes('already exists')) throw e;
+                // Doesn't exist yet, rename temp to final
+                await fs.rename(tempFullPath, finalPath);
+            }
+
+            this.totalDownloaded = this.totalDownloaded + packageData.length;
+            return finalName;
+        } catch (error) {
+            console.error(`Error fetching package from URL ${url}: ${error.message}`);
+            throw error;
         }
     }
 
@@ -862,7 +910,7 @@ class PackageContentLoader {
     }
 
     id() {
-        return this.package.name;
+        return this.package?.name;
     }
 
     version() {

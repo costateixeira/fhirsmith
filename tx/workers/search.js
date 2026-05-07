@@ -6,6 +6,8 @@
 //
 
 const { TerminologyWorker } = require('./worker');
+const {Utilities} = require("../../library/utilities");
+const {debugLog} = require("../operation-context");
 
 class SearchWorker extends TerminologyWorker {
   /**
@@ -33,14 +35,15 @@ class SearchWorker extends TerminologyWorker {
     '_offset', '_count', '_elements', '_sort', '_summary', '_total', '_format',
     'url', 'version', 'content-mode', 'date', 'description',
     'supplements', 'identifier', 'jurisdiction', 'name',
-    'publisher', 'status', 'system', 'title', 'text'
+    'publisher', 'status', 'system', 'title', 'text',
+    'source-system', 'target-system'
   ];
 
-  // Summary element fields for each resource type (FHIR summary elements)
+  // Summary elements for _summary=true (marked elements per resource type)
   static SUMMARY_ELEMENTS = {
-    CodeSystem: ['url', 'version', 'name', 'title', 'status', 'experimental', 'date', 'publisher', 'description', 'jurisdiction', 'content'],
-    ValueSet: ['url', 'version', 'name', 'title', 'status', 'experimental', 'date', 'publisher', 'description', 'jurisdiction'],
-    ConceptMap: ['url', 'version', 'name', 'title', 'status', 'experimental', 'date', 'publisher', 'description', 'jurisdiction']
+    CodeSystem: ['meta', 'url', 'version', 'name', 'title', 'status', 'experimental', 'date', 'publisher', 'description', 'jurisdiction', 'content'],
+    ValueSet: ['meta', 'url', 'version', 'name', 'title', 'status', 'experimental', 'date', 'publisher', 'description', 'jurisdiction'],
+    ConceptMap: ['meta', 'url', 'version', 'name', 'title', 'status', 'experimental', 'date', 'publisher', 'description', 'jurisdiction']
   };
 
   // Sortable fields
@@ -61,8 +64,27 @@ class SearchWorker extends TerminologyWorker {
     try {
       // Parse pagination parameters
       const offset = Math.max(0, parseInt(params._offset) || 0);
-      const elements = params._elements ? decodeURIComponent(params._elements).split(',').map(e => e.trim()) : null;
-      const count = Math.min(elements ? 2000 : 200, Math.max(1, parseInt(params._count) || 20));
+      const summary = params._summary || 'false';
+      const totalMode = params._total || 'accurate';
+
+      // Determine elements based on _summary parameter
+      let elements;
+      switch (summary) {
+        case 'true':
+          elements = SearchWorker.SUMMARY_ELEMENTS[resourceType] || [];
+          break;
+        case 'text':
+          elements = ['resourceType', 'id', 'meta', 'text'];
+          break;
+        case 'data':
+          elements = null; // no filter for terminology
+          break;
+        default:
+          elements = params._elements ? decodeURIComponent(params._elements).split(',').map(e => e.trim()) : null;
+          break;
+      }
+
+      const count = summary === 'count' ? 0 : Math.min(elements ? 2000 : 200, params._count && Utilities.isInteger(params._count) ? parseInt(params._count) : 20);
       const sort = params._sort || "id";
       const summary = params._summary; // true, text, data, count, false
       const total = params._total; // none, estimate, accurate
@@ -80,7 +102,7 @@ class SearchWorker extends TerminologyWorker {
 
         case 'ConceptMap':
           // Not implemented yet - return empty set
-          matches = [];
+          matches = await this.searchConceptMaps(params, elements);
           break;
 
         default:
@@ -92,14 +114,15 @@ class SearchWorker extends TerminologyWorker {
 
       // Build and return the bundle
       const bundle = this.buildSearchBundle(
-        req, resourceType, matches, offset, count, elements, summary, total
+        req, resourceType, matches, offset, count, elements, summary, totalMode
       );
       req.logInfo = `${bundle.entry ? bundle.entry.length : 0} matches`;
       return res.json(bundle);
 
     } catch (error) {
-      req.logInfo = "error "+(error.msgId || error.className);
       this.log.error(error);
+      debugLog(error);
+      req.logInfo = "error "+(error.msgId || error.className);
       return res.status(500).json({
         resourceType: 'OperationOutcome',
         issue: [{
@@ -121,61 +144,15 @@ class SearchWorker extends TerminologyWorker {
     const searchParams = {};
     for (const [key, value] of Object.entries(params)) {
       if (!key.startsWith('_') && value && SearchWorker.ALLOWED_PARAMS.includes(key)) {
-        searchParams[key] = value.toLowerCase();
+        searchParams[key] = key == 'url' ? value : value.toLowerCase();
       }
     }
 
     // If no search params, return all
     const hasSearchParams = Object.keys(searchParams).length > 0;
 
-    for (const [key, cs] of this.provider.codeSystems) {
-      this.deadCheck('searchCodeSystems');
-      if (key == cs.vurl) {
-        const json = cs.jsonObj;
-
-        if (!hasSearchParams) {
-          matches.push(json);
-          continue;
-        }
-
-        // Check each search parameter for partial match
-        let isMatch = true;
-        for (const [param, searchValue] of Object.entries(searchParams)) {
-          // 'system' doesn't do anything for CodeSystem search
-          if (param === 'system') {
-            continue;
-          }
-
-          // Map content-mode to content property
-          const jsonProp = param === 'content-mode' ? 'content' : param;
-
-          if (param === 'jurisdiction') {
-            // Special handling for jurisdiction - array of CodeableConcept
-            if (!this.matchJurisdiction(json.jurisdiction, searchValue)) {
-              isMatch = false;
-              break;
-            }
-          } else if (param === 'text') {
-            const propValue = json.title + json.description;
-            if (!this.matchValue(propValue, searchValue)) {
-              isMatch = false;
-              break;
-            }
-          } else {
-            // Standard partial text match
-            const propValue = json[jsonProp];
-            if (!this.matchValue(propValue, searchValue)) {
-              isMatch = false;
-              break;
-            }
-          }
-        }
-
-        if (isMatch) {
-          matches.push(json);
-        }
-      }
-    }
+    this.searchCodeSystemResources(searchParams, hasSearchParams, matches);
+    this.searchCodeSystemProviders(searchParams, hasSearchParams, matches);
 
     return matches;
   }
@@ -189,19 +166,60 @@ class SearchWorker extends TerminologyWorker {
     // Convert params object to array format expected by ValueSet providers
     // Exclude control params (_offset, _count, _elements, _sort)
     const searchParams = [];
+    let source = null;
     for (const [key, value] of Object.entries(params)) {
       if (!key.startsWith('_') && value && SearchWorker.ALLOWED_PARAMS.includes(key)) {
         searchParams.push({ name: key, value: value });
       }
+      if (key == 'source') {
+        source = value;
+      }
     }
 
     for (const vsp of this.provider.valueSetProviders) {
-      this.deadCheck('searchValueSets-providers');
-      const results = await vsp.searchValueSets(searchParams, elements);
-      if (results && Array.isArray(results)) {
-        for (const vs of results) {
-          this.deadCheck('searchValueSets-results');
-          allMatches.push(vs.jsonObj || vs);
+      if (!source || source == vsp.sourcePackage()) {
+        this.deadCheck('searchValueSets-providers');
+        const results = await vsp.searchValueSets(searchParams, elements);
+        if (results && Array.isArray(results)) {
+          for (const vs of results) {
+            this.deadCheck('searchValueSets-results');
+            allMatches.push(vs.jsonObj || vs);
+          }
+        }
+      }
+    }
+
+    return allMatches;
+  }
+
+  /**
+   * Search ConceptMaps by delegating to providers
+   */
+  async searchConceptMaps(params, elements) {
+    const allMatches = [];
+
+    // Convert params object to array format expected by ValueSet providers
+    // Exclude control params (_offset, _count, _elements, _sort)
+    const searchParams = [];
+    let source = null;
+    for (const [key, value] of Object.entries(params)) {
+      if (!key.startsWith('_') && value && SearchWorker.ALLOWED_PARAMS.includes(key)) {
+        searchParams.push({ name: key, value: value });
+      }
+      if (key == 'source') {
+        source = value;
+      }
+    }
+
+    for (const cmsp of this.provider.conceptMapProviders) {
+      if (!source || source == cmsp.sourcePackage()) {
+        this.deadCheck('searchConceptMaps-providers');
+        const results = await cmsp.searchConceptMaps(searchParams, elements);
+        if (results && Array.isArray(results)) {
+          for (const vs of results) {
+            this.deadCheck('searchConceptMaps-results');
+            allMatches.push(vs.jsonObj || vs);
+          }
         }
       }
     }
@@ -376,20 +394,16 @@ class SearchWorker extends TerminologyWorker {
       };
     });
 
-    // Build the bundle
     const bundle = {
       resourceType: 'Bundle',
       type: 'searchset',
-      total: totalCount,
       link: links,
       entry: entries
     };
-
     // Add total unless _total=none
     if (totalParam !== 'none') {
       bundle.total = totalCount;
     }
-
     return bundle;
   }
 
@@ -409,7 +423,138 @@ class SearchWorker extends TerminologyWorker {
       }
     }
 
+    // Mark as SUBSETTED per FHIR spec
+    filtered.meta = filtered.meta ? { ...filtered.meta } : {};
+    filtered.meta.tag = [
+      ...(filtered.meta.tag || []),
+      { system: 'http://terminology.hl7.org/CodeSystem/v3-ObservationValue', code: 'SUBSETTED' }
+    ];
+
     return filtered;
+  }
+
+  searchCodeSystemResources(searchParams, hasSearchParams, matches) {
+    for (const [key, cs] of this.provider.codeSystems) {
+      this.deadCheck('searchCodeSystems');
+
+      if (key == cs.vurl) {
+        const json = cs.jsonObj;
+
+        if (!hasSearchParams) {
+          matches.push(json);
+          continue;
+        }
+
+        // Check each search parameter for partial match
+        let isMatch = true;
+        for (const [param, searchValue] of Object.entries(searchParams)) {
+
+          // Map content-mode to content property
+          const jsonProp = param === 'content-mode' ? 'content' : param;
+
+          if (param === 'jurisdiction') {
+            // Special handling for jurisdiction - array of CodeableConcept
+            if (!this.matchJurisdiction(json.jurisdiction, searchValue)) {
+              isMatch = false;
+              break;
+            }
+          } else if (param === 'text') {
+            const propValue = json.title + json.description;
+            if (!this.matchValue(propValue, searchValue)) {
+              isMatch = false;
+              break;
+            }
+          } else if (param === 'url' || param === 'system') { // exact match
+            const propValue = json.url;
+            if (propValue !== searchValue) {
+              isMatch = false;
+              break;
+            }
+          } else {
+            // Standard partial text match
+            const propValue = json[jsonProp];
+            if (!this.matchValue(propValue, searchValue)) {
+              isMatch = false;
+              break;
+            }
+          }
+        }
+
+        if (isMatch) {
+          matches.push(json);
+        }
+      }
+    }
+  }
+
+  searchCodeSystemProviders(searchParams, hasSearchParams, matches) {
+    let seen = new Set();
+    for (const csp of this.provider.codeSystemFactories.values()) {
+      this.deadCheck('searchCodeSystems');
+
+      if (seen.has(csp.id())) {
+        continue;
+      }
+      seen.add(csp.id());
+
+      let json = {
+        resourceType: "CodeSystem",
+        id: "x-" + csp.id(),
+        url: csp.system(),
+        version: csp.version(),
+        name: csp.name(),
+        status: "active",
+        description: "This is a place holder for the code system which is fully supported through internal means (not by this code system)",
+        content: "not-present"
+      }
+      if (csp.webSource()) {
+        json.extension = [{ url: "http://hl7.org/fhir/StructureDefinition/web-source", valueUrl : csp.webSource()}];
+      }
+
+      if (!hasSearchParams) {
+        matches.push(json);
+        continue;
+      }
+
+      // Check each search parameter for partial match
+      let isMatch = true;
+      for (const [param, searchValue] of Object.entries(searchParams)) {
+
+        // Map content-mode to content property
+        const jsonProp = param === 'content-mode' ? 'content' : param;
+
+        if (param === 'jurisdiction') {
+          // Special handling for jurisdiction - array of CodeableConcept
+          if (!this.matchJurisdiction(json.jurisdiction, searchValue)) {
+            isMatch = false;
+            break;
+          }
+        } else if (param === 'text') {
+          const propValue = json.title + json.description;
+          if (!this.matchValue(propValue, searchValue)) {
+            isMatch = false;
+            break;
+          }
+        } else if (param === 'url' || param === 'system') { // exact match
+          const propValue = json.url;
+          if (propValue !== searchValue) {
+            isMatch = false;
+            break;
+          }
+        } else {
+          // Standard partial text match
+          const propValue = json[jsonProp];
+          if (!this.matchValue(propValue, searchValue)) {
+            isMatch = false;
+            break;
+          }
+        }
+      }
+
+      if (isMatch) {
+        matches.push(json);
+      }
+    }
   }
 }
 

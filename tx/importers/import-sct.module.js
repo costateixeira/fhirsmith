@@ -48,37 +48,37 @@ class SnomedModule extends BaseTerminologyModule {
   registerCommands(terminologyCommand, globalOptions) {
     // Import command
     terminologyCommand
-      .command('import')
-      .description('Import SNOMED CT data from RF2 source directory')
-      .option('-s, --source <directory>', 'Source directory containing RF2 files')
-      .option('-b, --base <directory>', 'Base edition directory (for extensions)')
-      .option('-d, --dest <file>', 'Destination cache file')
-      .option('-e, --edition <code>', 'Edition code (e.g., 900000000000207008 for International)')
-      .option('-v, --version <version>', 'Version in YYYYMMDD format (e.g., 20250801)')
-      .option('-u, --uri <uri>', 'Version URI (overrides edition/version if provided)')
-      .option('-l, --language <code>', 'Default language code (overrides edition default if provided)')
-      .option('-y, --yes', 'Skip confirmations')
-      .action(async (options) => {
-        await this.handleImportCommand({...globalOptions, ...options});
-      });
+        .command('import')
+        .description('Import SNOMED CT data from RF2 source directory')
+        .option('-s, --source <directory>', 'Source directory containing RF2 files')
+        .option('-b, --base <directory>', 'Base edition directory (for extensions)')
+        .option('-d, --dest <file>', 'Destination cache file')
+        .option('-e, --edition <code>', 'Edition code (e.g., 900000000000207008 for International)')
+        .option('-v, --version <version>', 'Version in YYYYMMDD format (e.g., 20250801)')
+        .option('-u, --uri <uri>', 'Version URI (overrides edition/version if provided)')
+        .option('-l, --language <code>', 'Default language code (overrides edition default if provided)')
+        .option('-y, --yes', 'Skip confirmations')
+        .action(async (options) => {
+          await this.handleImportCommand({...globalOptions, ...options});
+        });
 
     // Validate command
     terminologyCommand
-      .command('validate')
-      .description('Validate SNOMED CT RF2 directory structure')
-      .option('-s, --source <directory>', 'Source directory to validate')
-      .action(async (options) => {
-        await this.handleValidateCommand({...globalOptions, ...options});
-      });
+        .command('validate')
+        .description('Validate SNOMED CT RF2 directory structure')
+        .option('-s, --source <directory>', 'Source directory to validate')
+        .action(async (options) => {
+          await this.handleValidateCommand({...globalOptions, ...options});
+        });
 
     // Status command
     terminologyCommand
-      .command('status')
-      .description('Show status of SNOMED CT cache')
-      .option('-d, --dest <file>', 'Cache file to check')
-      .action(async (options) => {
-        await this.handleStatusCommand({...globalOptions, ...options});
-      });
+        .command('status')
+        .description('Show status of SNOMED CT cache')
+        .option('-d, --dest <file>', 'Cache file to check')
+        .action(async (options) => {
+          await this.handleStatusCommand({...globalOptions, ...options});
+        });
   }
 
   async handleImportCommand(options) {
@@ -154,8 +154,270 @@ class SnomedModule extends BaseTerminologyModule {
     return confirmed;
   }
 
+  /**
+   * Auto-detect edition and version from RF2 files
+   * Reads concept files to extract moduleId and effectiveTime
+   * Prefers non-International modules since national editions contain International content
+   */
+  async detectEditionAndVersion(sourceDir) {
+    const detected = {
+      edition: null,
+      version: null,
+      editionName: null
+    };
+
+    // Known editions mapping
+    const editions = {
+      "900000000000207008": "International",
+      "731000124108": "US Edition",
+      "32506021000036107": "Australian Edition",
+      "449081005": "Spanish Edition (International)",
+      "11000279109": "Czech Edition",
+      "554471000005108": "Danish Edition",
+      "11000146104": "Dutch Edition",
+      "45991000052106": "Swedish Edition",
+      "83821000000107": "UK Edition",
+      "11000172109": "Belgian Edition",
+      "11000221109": "Argentinian Edition",
+      "11000234105": "Austrian Edition",
+      "20621000087109": "Canadian Edition (English)",
+      "20611000087101": "Canadian Edition (French)",
+      "11000181102": "Estonian Edition",
+      "11000229106": "Finnish Edition",
+      "11000274103": "German Edition",
+      "1121000189102": "Indian Edition",
+      "11000220105": "Irish Edition",
+      "21000210109": "New Zealand Edition",
+      "51000202101": "Norwegian Edition",
+      "11000267109": "Korean Edition",
+      "900000001000122104": "Spanish Edition (Spain)",
+      "2011000195101": "Swiss Edition",
+      "999000021000000109": "UK Clinical Edition",
+      "5631000179106": "Uruguayan Edition",
+      "21000325107": "Chilean Edition",
+      "5991000124107": "US Edition + ICD10CM"
+    };
+
+    // Filename patterns for edition codes (2-letter country codes in filenames)
+    const filenameEditionCodes = {
+      'INT': '900000000000207008',
+      'US': '731000124108',
+      'AU': '32506021000036107',
+      'UK': '83821000000107',
+      'BE': '11000172109',
+      'NL': '11000146104',
+      'SE': '45991000052106',
+      'DK': '554471000005108',
+      'NO': '51000202101',
+      'FI': '11000229106',
+      'DE': '11000274103',
+      'AT': '11000234105',
+      'CH': '2011000195101',
+      'ES': '900000001000122104',
+      'AR': '11000221109',
+      'CL': '21000325107',
+      'UY': '5631000179106',
+      'NZ': '21000210109',
+      'IE': '11000220105',
+      'EE': '11000181102',
+      'CZ': '11000279109',
+      'KR': '11000267109',
+      'IN': '1121000189102'
+    };
+
+    const INTERNATIONAL_MODULE = "900000000000207008";
+
+    try {
+      const files = this.discoverRF2Files(sourceDir);
+
+      if (files.concepts.length > 0) {
+        const conceptFile = files.concepts[0];
+        const fileName = path.basename(conceptFile);
+
+        // Try to extract edition and version from filename
+        // Patterns: sct2_Concept_Snapshot_BE1000172_20260215.txt
+        //           sct2_Concept_Snapshot_INT_20250201.txt
+        //           sct2_Concept_Snapshot-BE_20260215.txt
+        //           sct2_Concept_Snapshot-en-BE_20260215.txt
+
+        // First, extract the version (8-digit date) - it's always at the end before .txt
+        const versionMatch = fileName.match(/_(\d{8})\.txt$/i);
+        if (versionMatch) {
+          detected.version = versionMatch[1];
+        }
+
+        // Then extract the edition code (2-3 letters after Snapshot)
+        const editionMatch = fileName.match(/Snapshot[_-](?:en-)?([A-Z]{2,3})/i);
+        if (editionMatch) {
+          const editionCode = editionMatch[1].toUpperCase();
+
+          // Look up edition from the 2-3 letter code
+          if (filenameEditionCodes[editionCode]) {
+            detected.edition = filenameEditionCodes[editionCode];
+            detected.editionName = editions[detected.edition];
+          }
+        }
+
+        // If we didn't detect edition from filename, scan the file for non-International modules
+        if (!detected.edition) {
+          const moduleIds = new Map(); // moduleId -> count
+          let latestEffectiveTime = null;
+
+          const rl = readline.createInterface({
+            input: fs.createReadStream(conceptFile),
+            crlfDelay: Infinity
+          });
+
+          let lineCount = 0;
+          const MAX_LINES_TO_SCAN = 50000; // Scan enough lines to find edition-specific content
+
+          for await (const line of rl) {
+            lineCount++;
+            if (lineCount === 1) continue; // Skip header
+
+            const parts = line.split('\t');
+            if (parts.length >= 4) {
+              const effectiveTime = parts[1];
+              const moduleId = parts[3];
+
+              // Track the latest effectiveTime for version
+              if (effectiveTime && /^\d{8}$/.test(effectiveTime)) {
+                if (!latestEffectiveTime || effectiveTime > latestEffectiveTime) {
+                  latestEffectiveTime = effectiveTime;
+                }
+              }
+
+              // Count module occurrences
+              if (moduleId) {
+                moduleIds.set(moduleId, (moduleIds.get(moduleId) || 0) + 1);
+              }
+            }
+
+            if (lineCount >= MAX_LINES_TO_SCAN) break;
+          }
+
+          rl.close();
+
+          // Use latest effectiveTime as version if not already detected
+          if (!detected.version && latestEffectiveTime) {
+            detected.version = latestEffectiveTime;
+          }
+
+          // Find the best edition - prefer non-International modules
+          let bestModule = null;
+          let bestCount = 0;
+
+          for (const [moduleId, count] of moduleIds) {
+            // Skip International module if we have other known editions
+            if (moduleId === INTERNATIONAL_MODULE) {
+              continue;
+            }
+
+            // Prefer known editions with highest count
+            if (editions[moduleId] && count > bestCount) {
+              bestModule = moduleId;
+              bestCount = count;
+            }
+          }
+
+          // If no non-International module found, fall back to International
+          if (!bestModule && moduleIds.has(INTERNATIONAL_MODULE)) {
+            bestModule = INTERNATIONAL_MODULE;
+          }
+
+          if (bestModule) {
+            detected.edition = bestModule;
+            detected.editionName = editions[bestModule] || `Unknown Edition (${bestModule})`;
+          }
+        }
+
+        // If we still don't have version, read first few lines
+        if (!detected.version) {
+          const fd = fs.openSync(conceptFile, 'r');
+          try {
+            const buffer = Buffer.alloc(2000);
+            const bytesRead = fs.readSync(fd, buffer, 0, 2000, 0);
+            const content = buffer.toString('utf8', 0, bytesRead);
+            const lines = content.split('\n');
+
+            if (lines.length >= 2) {
+              const parts = lines[1].split('\t');
+              if (parts.length >= 2 && /^\d{8}$/.test(parts[1])) {
+                detected.version = parts[1];
+              }
+            }
+          } finally {
+            fs.closeSync(fd);
+          }
+        }
+      }
+    } catch (error) {
+      // Silent fail - auto-detection is best-effort
+      if (this.config?.verbose) {
+        console.log(`Auto-detection warning: ${error.message}`);
+      }
+    }
+
+    return detected;
+  }
+
+  /**
+   * Check if the source directory contains International content
+   * (i.e., concepts with the International module ID)
+   * If true, this is a combined/complete release that doesn't need a separate base
+   */
+  async checkForInternationalContent(sourceDir) {
+    const INTERNATIONAL_MODULE = "900000000000207008";
+
+    try {
+      const files = this.discoverRF2Files(sourceDir);
+      if (files.concepts.length === 0) return false;
+
+      const conceptFile = files.concepts[0];
+      const rl = readline.createInterface({
+        input: fs.createReadStream(conceptFile),
+        crlfDelay: Infinity
+      });
+
+      let lineCount = 0;
+      let hasInternational = false;
+
+      for await (const line of rl) {
+        lineCount++;
+        if (lineCount === 1) continue; // Skip header
+
+        const parts = line.split('\t');
+        if (parts.length >= 4 && parts[3] === INTERNATIONAL_MODULE) {
+          hasInternational = true;
+          break;
+        }
+
+        // Only check first 100 lines - International concepts are always at the start
+        if (lineCount > 100) break;
+      }
+
+      rl.close();
+      return hasInternational;
+    } catch (error) {
+      return false;
+    }
+  }
+
   async gatherSnomedConfig(options) {
     const baseConfig = await this.gatherCommonConfig(options);
+
+    // Try to auto-detect edition and version from RF2 files
+    let autoDetected = { edition: null, version: null, editionName: null };
+    if (baseConfig.source && !options.edition && !options.version && !options.uri) {
+      this.logInfo('Auto-detecting edition and version from RF2 files...');
+      autoDetected = await this.detectEditionAndVersion(baseConfig.source);
+
+      if (autoDetected.edition && autoDetected.version) {
+        this.logSuccess(`Detected: ${autoDetected.editionName} version ${autoDetected.version}`);
+      } else if (autoDetected.version) {
+        this.logInfo(`Detected version: ${autoDetected.version}`);
+      }
+    }
 
     const editions = {
       "900000000000207008": { name: "International", needsBase: false, lang: "en-US" },
@@ -193,50 +455,112 @@ class SnomedModule extends BaseTerminologyModule {
 
     // Edition selection (if not provided via options and no URI override)
     if (!options.edition && !options.uri) {
-      const editionChoices = Object.entries(editions).map(([id, info]) => ({
-        name: info.name,
-        value: id
-      }));
+      // If we auto-detected the edition, use confirm instead of list
+      if (autoDetected.edition) {
+        questions.push({
+          type: 'confirm',
+          name: 'useDetectedEdition',
+          message: `Use detected edition: ${autoDetected.editionName} (${autoDetected.edition})?`,
+          default: true
+        });
 
-      questions.push({
-        type: 'list',
-        name: 'edition',
-        message: 'Select SNOMED CT Edition:',
-        choices: editionChoices,
-        default: '900000000000207008' // International edition
-      });
+        questions.push({
+          type: 'list',
+          name: 'edition',
+          message: 'Select SNOMED CT Edition:',
+          choices: Object.entries(editions).map(([id, info]) => ({
+            name: info.name,
+            value: id
+          })),
+          default: autoDetected.edition,
+          when: (answers) => !answers.useDetectedEdition
+        });
+      } else {
+        const editionChoices = Object.entries(editions).map(([id, info]) => ({
+          name: info.name,
+          value: id
+        }));
+
+        questions.push({
+          type: 'list',
+          name: 'edition',
+          message: 'Select SNOMED CT Edition:',
+          choices: editionChoices,
+          default: '900000000000207008' // International edition
+        });
+      }
     }
 
     // Version in YYYYMMDD format (if not provided and no URI override)
     if (!options.version && !options.uri) {
-      questions.push({
-        type: 'input',
-        name: 'version',
-        message: 'Version (YYYYMMDD format, e.g., 20250801):',
-        validate: (input) => {
-          if (!input) return 'Version is required';
-          if (!/^\d{8}$/.test(input)) return 'Version must be in YYYYMMDD format (8 digits)';
+      // If we auto-detected the version, use confirm instead of input
+      if (autoDetected.version) {
+        questions.push({
+          type: 'confirm',
+          name: 'useDetectedVersion',
+          message: `Use detected version: ${autoDetected.version}?`,
+          default: true
+        });
 
-          // Basic date validation
-          const year = parseInt(input.substring(0, 4));
-          const month = parseInt(input.substring(4, 6));
-          const day = parseInt(input.substring(6, 8));
+        questions.push({
+          type: 'input',
+          name: 'version',
+          message: 'Version (YYYYMMDD format, e.g., 20250801):',
+          default: autoDetected.version,
+          when: (answers) => !answers.useDetectedVersion,
+          validate: (input) => {
+            if (!input) return 'Version is required';
+            if (!/^\d{8}$/.test(input)) return 'Version must be in YYYYMMDD format (8 digits)';
 
-          if (year < 1900 || year > 2100) return 'Invalid year';
-          if (month < 1 || month > 12) return 'Invalid month';
-          if (day < 1 || day > 31) return 'Invalid day';
+            const year = parseInt(input.substring(0, 4));
+            const month = parseInt(input.substring(4, 6));
+            const day = parseInt(input.substring(6, 8));
 
-          return true;
-        }
-      });
+            if (year < 1900 || year > 2100) return 'Invalid year';
+            if (month < 1 || month > 12) return 'Invalid month';
+            if (day < 1 || day > 31) return 'Invalid day';
+
+            return true;
+          }
+        });
+      } else {
+        questions.push({
+          type: 'input',
+          name: 'version',
+          message: 'Version (YYYYMMDD format, e.g., 20250801):',
+          validate: (input) => {
+            if (!input) return 'Version is required';
+            if (!/^\d{8}$/.test(input)) return 'Version must be in YYYYMMDD format (8 digits)';
+
+            // Basic date validation
+            const year = parseInt(input.substring(0, 4));
+            const month = parseInt(input.substring(4, 6));
+            const day = parseInt(input.substring(6, 8));
+
+            if (year < 1900 || year > 2100) return 'Invalid year';
+            if (month < 1 || month > 12) return 'Invalid month';
+            if (day < 1 || day > 31) return 'Invalid day';
+
+            return true;
+          }
+        });
+      }
     }
 
     // Get answers for edition and version first
     const primaryAnswers = await inquirer.prompt(questions);
 
-    // Determine the selected edition and version
-    const selectedEdition = options.edition || primaryAnswers.edition;
-    const selectedVersion = options.version || primaryAnswers.version;
+    // Determine the selected edition and version (use auto-detected if confirmed)
+    let selectedEdition = options.edition || primaryAnswers.edition;
+    let selectedVersion = options.version || primaryAnswers.version;
+
+    // If user confirmed auto-detected values, use them
+    if (primaryAnswers.useDetectedEdition !== false && autoDetected.edition && !selectedEdition) {
+      selectedEdition = autoDetected.edition;
+    }
+    if (primaryAnswers.useDetectedVersion !== false && autoDetected.version && !selectedVersion) {
+      selectedVersion = autoDetected.version;
+    }
 
     let editionInfo = null;
     let needsBase = false;
@@ -268,8 +592,20 @@ class SnomedModule extends BaseTerminologyModule {
     // Additional questions based on edition requirements
     const additionalQuestions = [];
 
+    // Check if base is actually needed - modern releases often include International content
+    // If we detected International module in the source, it's a combined release
+    let actuallyNeedsBase = needsBase && !options.base;
+    if (actuallyNeedsBase && baseConfig.source) {
+      // Check if source already contains International content
+      const hasInternational = await this.checkForInternationalContent(baseConfig.source);
+      if (hasInternational) {
+        actuallyNeedsBase = false;
+        this.logInfo('Source contains International content - no base edition needed');
+      }
+    }
+
     // Base directory for extensions (only if edition needs base and not already provided)
-    if (needsBase && !options.base) {
+    if (actuallyNeedsBase) {
       additionalQuestions.push({
         type: 'input',
         name: 'base',
@@ -297,7 +633,7 @@ class SnomedModule extends BaseTerminologyModule {
     }
 
     const additionalAnswers = additionalQuestions.length > 0 ?
-      await inquirer.prompt(additionalQuestions) : {};
+        await inquirer.prompt(additionalQuestions) : {};
 
     // Build the final configuration
     const config = {
@@ -438,7 +774,7 @@ class SnomedModule extends BaseTerminologyModule {
       } else if (firstLine.startsWith('id\teffectiveTime\tactive\tmoduleId\tconceptId\tlanguageCode\ttypeId\tterm\tcaseSignificanceId')) {
         files.descriptions.push(filePath);
       } else if (firstLine.startsWith('id\teffectiveTime\tactive\tmoduleId\tsourceId\tdestinationId\trelationshipGroup\ttypeId\tcharacteristicTypeId\tmodifierId') &&
-        !filePath.includes('StatedRelationship')) {
+          !filePath.includes('StatedRelationship')) {
         files.relationships.push(filePath);
       }
     } catch (error) {
@@ -829,6 +1165,19 @@ class SnomedImporter {
       refsetDirectories: []
     };
 
+    // For extensions: load base edition files first so that all International
+    // Edition concepts, descriptions, and relationships are present before the
+    // extension content is layered on top.
+    if (this.config.base) {
+      if (this.config.verbose) {
+        console.log(`Loading base edition from: ${this.config.base}`);
+      }
+      this._scanDirectory(this.config.base, files);
+    }
+
+    // Then load the extension (or standalone edition) source files.
+    // For extensions these come second so that extension rows can override
+    // base rows where the same component has been updated.
     this._scanDirectory(this.config.source, files);
     return files;
   }
@@ -864,7 +1213,7 @@ class SnomedImporter {
       } else if (firstLine.startsWith('id\teffectiveTime\tactive\tmoduleId\tconceptId\tlanguageCode\ttypeId\tterm\tcaseSignificanceId')) {
         files.descriptions.push(filePath);
       } else if (firstLine.startsWith('id\teffectiveTime\tactive\tmoduleId\tsourceId\tdestinationId\trelationshipGroup\ttypeId\tcharacteristicTypeId\tmodifierId') &&
-        !filePath.includes('StatedRelationship')) {
+          !filePath.includes('StatedRelationship')) {
         files.relationships.push(filePath);
       }
     } catch (error) {
@@ -914,6 +1263,9 @@ class SnomedImporter {
     this.conceptList = [];
     let processedLines = 0;
 
+    // When loading base + extension, track list indices for fast replacement
+    const conceptIdToListIndex = this.config.base ? new Map() : null;
+
     for (let i = 0; i < this.files.concepts.length; i++) {
       const file = this.files.concepts[i];
       const rl = readline.createInterface({
@@ -939,8 +1291,23 @@ class SnomedImporter {
           };
 
           if (this.conceptMap.has(concept.id)) {
-            throw new Error(`Duplicate Concept Id at line ${lineCount}: ${concept.id} - check you are processing the snapshot not the full edition`);
+            // When loading base + extension, the same concept may appear in both.
+            // The extension snapshot row takes precedence (it is loaded second).
+            // If there is no base directory this is a genuine duplicate in a single
+            // snapshot and we should still raise an error.
+            if (!this.config.base) {
+              throw new Error(`Duplicate Concept Id at line ${lineCount}: ${concept.id} - check you are processing the snapshot not the full edition`);
+            }
+            // Replace the base edition row with the extension row
+            const idx = conceptIdToListIndex.get(concept.id);
+            if (idx !== undefined) {
+              this.conceptList[idx] = concept;
+            }
+            this.conceptMap.set(concept.id, concept);
           } else {
+            if (conceptIdToListIndex) {
+              conceptIdToListIndex.set(concept.id, this.conceptList.length);
+            }
             this.conceptList.push(concept);
             this.conceptMap.set(concept.id, concept);
           }
@@ -1011,6 +1378,12 @@ class SnomedImporter {
     const descriptionList = [];
     let processedLines = 0;
 
+    // Build a lookup from description id -> index in descriptionList so that
+    // extension rows can replace base rows for the same description.
+    if (this.config.base) {
+      this._descriptionIdSet = new Map();
+    }
+
     for (const file of this.files.descriptions) {
       const rl = readline.createInterface({
         input: fs.createReadStream(file),
@@ -1036,7 +1409,19 @@ class SnomedImporter {
             caseSignificanceId: BigInt(parts[8])
           };
 
-          descriptionList.push(desc);
+          // When loading base + extension, the same description may appear in
+          // both.  The extension row (loaded second) takes precedence.
+          if (this.config.base && this._descriptionIdSet) {
+            const existingIdx = this._descriptionIdSet.get(desc.id);
+            if (existingIdx !== undefined) {
+              descriptionList[existingIdx] = desc;
+            } else {
+              this._descriptionIdSet.set(desc.id, descriptionList.length);
+              descriptionList.push(desc);
+            }
+          } else {
+            descriptionList.push(desc);
+          }
         }
 
         processedLines++;
@@ -1081,8 +1466,8 @@ class SnomedImporter {
         const caps = this.conceptMap.get(desc.caseSignificanceId);
 
         const descOffset = this.descriptions.addDescription(
-          termOffset, desc.id, effectiveTime, concept.index,
-          module.index, kind.index, caps.index, desc.active, lang
+            termOffset, desc.id, effectiveTime, concept.index,
+            module.index, kind.index, caps.index, desc.active, lang
         );
 
         // Track description on concept
@@ -1356,6 +1741,11 @@ class SnomedImporter {
     }
     this.isAIndex = isAConcept.index;
 
+    // Pass 1: collect all relationship rows, deduplicating so that extension
+    // rows (loaded second) override base rows with the same relationship id.
+    const relationshipRows = [];
+    const relationshipIdMap = this.config.base ? new Map() : null; // id -> index in relationshipRows
+
     for (const file of this.files.relationships) {
       const rl = readline.createInterface({
         input: fs.createReadStream(file),
@@ -1382,40 +1772,16 @@ class SnomedImporter {
             modifierId: BigInt(parts[9])
           };
 
-          const source = this.conceptMap.get(rel.sourceId);
-          const destination = this.conceptMap.get(rel.destinationId);
-          const type = this.conceptMap.get(rel.typeId);
-
-          if (source && destination && type) {
-            const effectiveTime = this.convertDateToSnomedDate(rel.effectiveTime);
-
-            // Check if this is a defining relationship
-            const defining = rel.characteristicTypeId === RF2_MAGIC_RELN_DEFINING ||
-              rel.characteristicTypeId === RF2_MAGIC_RELN_STATED ||
-              rel.characteristicTypeId === RF2_MAGIC_RELN_INFERRED;
-
-            const relationshipIndex = this.relationships.addRelationship(
-              rel.id, source.index, destination.index, type.index,
-              0, 0, 0, effectiveTime, rel.active, defining, rel.relationshipGroup
-            );
-
-            // Track parent/child relationships for is-a relationships
-            if (type.index === this.isAIndex && defining) {
-              const sourceTracker = this.getOrCreateConceptTracker(source.index);
-              if (rel.active) {
-                sourceTracker.addActiveParent(destination.index);
-              } else {
-                sourceTracker.addInactiveParent(destination.index);
-              }
+          if (relationshipIdMap) {
+            const existingIdx = relationshipIdMap.get(rel.id);
+            if (existingIdx !== undefined) {
+              relationshipRows[existingIdx] = rel;
+            } else {
+              relationshipIdMap.set(rel.id, relationshipRows.length);
+              relationshipRows.push(rel);
             }
-
-            // Track inbound/outbound relationships
-            const sourceTracker = this.getOrCreateConceptTracker(source.index);
-            const destTracker = this.getOrCreateConceptTracker(destination.index);
-
-            sourceTracker.addOutbound(relationshipIndex);
-            destTracker.addInbound(relationshipIndex);
-
+          } else {
+            relationshipRows.push(rel);
           }
         }
 
@@ -1426,10 +1792,62 @@ class SnomedImporter {
       }
     }
 
+    if (this.progressReporter) {
+      this.progressReporter.completeTask('Reading Relationships', processedLines, totalLines);
+    }
+
+    // Pass 2: process the deduplicated relationship rows into the binary
+    // structures and concept trackers.
+    const buildProgressBar = this.progressReporter?.createTaskProgressBar('Building Relationships');
+    buildProgressBar?.start(relationshipRows.length, 0);
+
+    for (let i = 0; i < relationshipRows.length; i++) {
+      const rel = relationshipRows[i];
+
+      const source = this.conceptMap.get(rel.sourceId);
+      const destination = this.conceptMap.get(rel.destinationId);
+      const type = this.conceptMap.get(rel.typeId);
+
+      if (source && destination && type) {
+        const effectiveTime = this.convertDateToSnomedDate(rel.effectiveTime);
+
+        // Check if this is a defining relationship
+        const defining = rel.characteristicTypeId === RF2_MAGIC_RELN_DEFINING ||
+            rel.characteristicTypeId === RF2_MAGIC_RELN_STATED ||
+            rel.characteristicTypeId === RF2_MAGIC_RELN_INFERRED;
+
+        const relationshipIndex = this.relationships.addRelationship(
+            rel.id, source.index, destination.index, type.index,
+            0, 0, 0, effectiveTime, rel.active, defining, rel.relationshipGroup
+        );
+
+        // Track parent/child relationships for is-a relationships
+        if (type.index === this.isAIndex && defining) {
+          const sourceTracker = this.getOrCreateConceptTracker(source.index);
+          if (rel.active) {
+            sourceTracker.addActiveParent(destination.index);
+          } else {
+            sourceTracker.addInactiveParent(destination.index);
+          }
+        }
+
+        // Track inbound/outbound relationships
+        const sourceTracker = this.getOrCreateConceptTracker(source.index);
+        const destTracker = this.getOrCreateConceptTracker(destination.index);
+
+        sourceTracker.addOutbound(relationshipIndex);
+        destTracker.addInbound(relationshipIndex);
+      }
+
+      if (i % 1000 === 0) {
+        buildProgressBar?.update(i);
+      }
+    }
+
     this.relationships.doneBuild();
 
     if (this.progressReporter) {
-      this.progressReporter.completeTask('Reading Relationships', processedLines, totalLines);
+      this.progressReporter.completeTask('Building Relationships', relationshipRows.length, relationshipRows.length);
     }
   }
 
@@ -1464,9 +1882,9 @@ class SnomedImporter {
         // Set parents if concept has any
         if (tracker.activeParents.length > 0 || tracker.inactiveParents.length > 0) {
           const activeParentsRef = tracker.activeParents.length > 0 ?
-            this.refs.addReferences(tracker.activeParents) : 0;
+              this.refs.addReferences(tracker.activeParents) : 0;
           const inactiveParentsRef = tracker.inactiveParents.length > 0 ?
-            this.refs.addReferences(tracker.inactiveParents) : 0;
+              this.refs.addReferences(tracker.inactiveParents) : 0;
 
           this.concepts.setParents(concept.index, activeParentsRef, inactiveParentsRef);
         } else {
@@ -1768,14 +2186,14 @@ class SnomedImporter {
     // NOTE: This calls addString() so it must happen AFTER strings.reopen()
     for (const refSet of refSetsArray) {
       this.refsetIndex.addReferenceSet(
-        this.addString(refSet.title),    // This needs strings builder to be active
-        refSet.filename,
-        refSet.index,
-        refSet.membersByRef,
-        refSet.membersByName,
-        refSet.fieldTypes,
-        refSet.fieldNames,
-        refSet.langs
+          this.addString(refSet.title),    // This needs strings builder to be active
+          refSet.filename,
+          refSet.index,
+          refSet.membersByRef,
+          refSet.membersByName,
+          refSet.fieldTypes,
+          refSet.fieldNames,
+          refSet.langs
       );
     }
   }
@@ -1880,7 +2298,13 @@ class SnomedImporter {
         if (!refSet || currentRefSetId !== refSetId) {
           currentRefSetId = refSetId;
           refSet = this.getOrCreateRefSet(refSetId, displayName, isLangRefset);
-          refSet.filename = this.addString(path.relative(this.config.source, filePath));
+          // Compute relative path — the file may live under the base directory
+          // rather than the extension source directory.
+          let relPath = path.relative(this.config.source, filePath);
+          if (this.config.base && relPath.startsWith('..')) {
+            relPath = path.relative(this.config.base, filePath);
+          }
+          refSet.filename = this.addString(relPath);
           refSet.fieldTypes = this.getOrCreateFieldTypes(fieldTypes);
           refSet.fieldNames = this.getOrCreateFieldNames(headers.slice(6), fieldTypes); // Additional fields beyond standard 6
         }
@@ -2241,8 +2665,8 @@ class SnomedImporter {
     };
 
     const services = new SnomedExpressionServices(
-      snomedStructures,
-      this.isAIndex
+        snomedStructures,
+        this.isAIndex
     );
 
     // Set building flag to true so services will generate normal forms dynamically

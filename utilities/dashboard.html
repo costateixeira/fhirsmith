@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FHIR Server Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: #111;
+      color: #e0e0e0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 16px;
+      background: #1a1a1a;
+      border-bottom: 1px solid #333;
+      flex-shrink: 0;
+    }
+
+    header h1 {
+      font-size: 15px;
+      font-weight: 500;
+      color: #ccc;
+      letter-spacing: 0.03em;
+    }
+
+    #global-status {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 1px;
+      background: #222;
+      overflow: hidden;
+    }
+
+    .panel {
+      background: #0e0e0e;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      background: #181818;
+      border-bottom: 1px solid #2a2a2a;
+      flex-shrink: 0;
+    }
+
+    .panel-header .hostname {
+      font-size: 13px;
+      font-weight: 500;
+      color: #bbb;
+    }
+
+    .panel-header .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #444;
+      flex-shrink: 0;
+      transition: background 0.4s;
+    }
+    .status-dot.ok    { background: #3a9c5a; }
+    .status-dot.error { background: #b84040; }
+    .status-dot.loading { background: #888; animation: pulse 1s ease-in-out infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .panel-header .last-updated {
+      margin-left: auto;
+      font-size: 11px;
+      color: #555;
+    }
+
+    .countdown {
+      font-size: 11px;
+      color: #444;
+      margin-left: 6px;
+    }
+
+    .panel-body {
+      flex: 1;
+      overflow: auto;
+      padding: 0;
+      position: relative;
+    }
+
+    .panel-body iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+      background: #fff;
+    }
+
+    .panel-body .message {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: #555;
+      font-size: 13px;
+      text-align: center;
+      padding: 16px;
+    }
+
+    .message .error-detail {
+      font-size: 11px;
+      color: #3d3d3d;
+      max-width: 340px;
+      line-height: 1.5;
+    }
+
+    .refresh-btn {
+      font-size: 11px;
+      padding: 4px 10px;
+      background: transparent;
+      border: 1px solid #333;
+      border-radius: 4px;
+      color: #666;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+    .refresh-btn:hover { border-color: #555; color: #999; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>FHIR Server Dashboard</h1>
+  <span id="global-status">Initialising...</span>
+</header>
+
+<div class="grid" id="grid"></div>
+
+<script>
+  const SERVERS = [
+    { id: 'npm',    host: 'npm.fhir.org' },
+    { id: 'tx',     host: 'tx.fhir.org' },
+    { id: 'www',    host: 'www.fhir.org' },
+    { id: 'health', host: 'www.healthintersections.com.au' },
+  ];
+
+  const INTERVAL_MS = 60_000;
+
+  function dashboardUrl(host) {
+    return `https://${host}/dashboard`;
+  }
+
+  function now() {
+    return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  const panels = {};
+
+  function buildPanels() {
+    const grid = document.getElementById('grid');
+    for (const srv of SERVERS) {
+      const panel = document.createElement('div');
+      panel.className = 'panel';
+      panel.innerHTML = `
+      <div class="panel-header">
+        <div class="status-dot loading" id="dot-${srv.id}"></div>
+        <span class="hostname">${srv.host}</span>
+        <span class="last-updated" id="updated-${srv.id}">—</span>
+        <span class="countdown" id="countdown-${srv.id}"></span>
+      </div>
+      <div class="panel-body" id="body-${srv.id}">
+        <div class="message"><span>Loading...</span></div>
+      </div>`;
+      grid.appendChild(panel);
+      panels[srv.id] = srv;
+    }
+  }
+
+  async function fetchDashboard(srv) {
+    const dot = document.getElementById(`dot-${srv.id}`);
+    const body = document.getElementById(`body-${srv.id}`);
+    const updatedEl = document.getElementById(`updated-${srv.id}`);
+
+    dot.className = 'status-dot loading';
+
+    const url = dashboardUrl(srv.host);
+
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const html = await res.text();
+
+      dot.className = 'status-dot ok';
+      updatedEl.textContent = now();
+
+      const iframe = document.createElement('iframe');
+      iframe.sandbox = 'allow-same-origin allow-scripts';
+      body.innerHTML = '';
+      body.appendChild(iframe);
+
+      const doc = iframe.contentDocument || iframe.contentWindow.document;
+      doc.open();
+      doc.write(html);
+      doc.close();
+
+    } catch (err) {
+      dot.className = 'status-dot error';
+      updatedEl.textContent = now();
+      body.innerHTML = `
+      <div class="message">
+        <span>Could not load dashboard</span>
+        <span class="error-detail">${url}<br>${err.message}</span>
+        <button class="refresh-btn" onclick="fetchDashboard(panels['${srv.id}'])">Retry now</button>
+      </div>`;
+    }
+  }
+
+  const nextRefresh = {};
+
+  function scheduleRefresh(srv) {
+    nextRefresh[srv.id] = Date.now() + INTERVAL_MS;
+    setTimeout(() => {
+      fetchDashboard(srv).then(() => scheduleRefresh(srv));
+    }, INTERVAL_MS);
+  }
+
+  function updateCountdowns() {
+    for (const srv of SERVERS) {
+      const el = document.getElementById(`countdown-${srv.id}`);
+      if (!el || !nextRefresh[srv.id]) continue;
+      const secs = Math.max(0, Math.round((nextRefresh[srv.id] - Date.now()) / 1000));
+      el.textContent = secs > 0 ? `↻ ${secs}s` : '';
+    }
+
+    const gs = document.getElementById('global-status');
+    gs.textContent = `Auto-refresh every ${INTERVAL_MS / 1000}s`;
+  }
+
+  buildPanels();
+
+  for (const srv of SERVERS) {
+    fetchDashboard(srv).then(() => scheduleRefresh(srv));
+  }
+
+  setInterval(updateCountdowns, 1000);
+</script>
+</body>
+</html>

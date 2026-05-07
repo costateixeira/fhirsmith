@@ -5,7 +5,7 @@ const {CodeSystem} = require('../../tx/library/codesystem');
 const {FhirCodeSystemFactory, FhirCodeSystemProvider, FhirCodeSystemProviderContext} = require('../../tx/cs/cs-cs');
 const {Languages, Language} = require('../../library/languages');
 const {OperationContext} = require("../../tx/operation-context");
-const {Designations} = require("../../tx/library/designations");
+const {Designations, SearchFilterText} = require("../../tx/library/designations");
 const {TestUtilities} = require("../test-utilities");
 
 describe('FHIR CodeSystem Provider', () => {
@@ -1416,7 +1416,7 @@ describe('FHIR CodeSystem Provider', () => {
 
       describe('Search Filter', () => {
         test('should find concepts by exact code match', async () => {
-          const results = await simpleProvider.searchFilter(filterContext, 'code1', true);
+          const results = await simpleProvider.searchFilter(filterContext, new SearchFilterText('code1'), true);
           expect(results.size()).toBeGreaterThan(0);
 
           const concept = results.findConceptByCode('code1');
@@ -1425,7 +1425,7 @@ describe('FHIR CodeSystem Provider', () => {
         });
 
         test('should find concepts by display text match', async () => {
-          const results = await simpleProvider.searchFilter(filterContext, 'Display 1', true);
+          const results = await simpleProvider.searchFilter(filterContext, new SearchFilterText('Display 1'), true);
           expect(results.size()).toBeGreaterThan(0);
 
           const concept = results.findConceptByCode('code1');
@@ -1433,22 +1433,22 @@ describe('FHIR CodeSystem Provider', () => {
         });
 
         test('should find concepts by partial match', async () => {
-          const results = await simpleProvider.searchFilter(filterContext, 'Display', true);
+          const results = await simpleProvider.searchFilter(filterContext, new SearchFilterText('Display'), true);
           expect(results.size()).toBeGreaterThan(1); // Should find multiple concepts
         });
 
         test('should find concepts by definition match', async () => {
-          const results = await simpleProvider.searchFilter(filterContext, 'first', true);
+          const results = await simpleProvider.searchFilter(filterContext, new SearchFilterText('first'), true);
           expect(results.size()).toBeGreaterThan(0);
         });
 
         test('should return empty results for non-matching search', async () => {
-          const results = await simpleProvider.searchFilter(filterContext, 'nonexistent', true);
+          const results = await simpleProvider.searchFilter(filterContext, new SearchFilterText('nonexistent'), true);
           expect(results.size()).toBe(0);
         });
 
         test('should sort results by relevance when requested', async () => {
-          const results = await simpleProvider.searchFilter(filterContext, 'code', true);
+          const results = await simpleProvider.searchFilter(filterContext, new SearchFilterText('code'), true);
           expect(results.size()).toBeGreaterThan(1);
 
           // Results should be sorted by rating (exact matches first)
@@ -1462,7 +1462,7 @@ describe('FHIR CodeSystem Provider', () => {
 
       describe('Concept/Code Filters', () => {
         test('should filter by is-a relationship', async () => {
-          const results = await simpleProvider.filter(filterContext, 'concept', 'is-a', 'code2');
+          const results = await simpleProvider.filter(filterContext, true, 'concept', 'is-a', 'code2');
           expect(results.size()).toBe(5); // code2a + children, code2b
 
           expect(results.findConceptByCode('code2a')).toBeDefined();
@@ -1471,7 +1471,7 @@ describe('FHIR CodeSystem Provider', () => {
         });
 
         test('should filter by descendent-of relationship', async () => {
-          const results = await simpleProvider.filter(filterContext, 'code', 'descendent-of', 'code2');
+          const results = await simpleProvider.filter(filterContext, true, 'code', 'descendent-of', 'code2');
           expect(results.size()).toBe(4); // code2a, code2aI, code2aII, code2b (not code2 itself)
 
           expect(results.findConceptByCode('code2')).toBeNull(); // Root not included
@@ -1482,7 +1482,7 @@ describe('FHIR CodeSystem Provider', () => {
         });
 
         test('should filter by is-not-a relationship', async () => {
-          const results = await simpleProvider.filter(filterContext, 'concept', 'is-not-a', 'code2');
+          const results = await simpleProvider.filter(filterContext, true, 'concept', 'is-not-a', 'code2');
           expect(results.size()).toBe(2); // code1 and code3 (not descendants of code2)
 
           expect(results.findConceptByCode('code1')).toBeDefined();
@@ -1492,7 +1492,7 @@ describe('FHIR CodeSystem Provider', () => {
         });
 
         test('should filter by in relationship', async () => {
-          const results = await simpleProvider.filter(filterContext, 'code', 'in', 'code1,code3');
+          const results = await simpleProvider.filter(filterContext, true, 'code', 'in', 'code1,code3');
           expect(results.size()).toBe(2);
 
           expect(results.findConceptByCode('code1')).toBeDefined();
@@ -1501,7 +1501,7 @@ describe('FHIR CodeSystem Provider', () => {
         });
 
         test('should filter by exact match', async () => {
-          const results = await simpleProvider.filter(filterContext, 'code', '=', 'code1');
+          const results = await simpleProvider.filter(filterContext, true, 'code', '=', 'code1');
           expect(results.size()).toBe(1);
 
           expect(results.findConceptByCode('code1')).toBeDefined();
@@ -1509,7 +1509,7 @@ describe('FHIR CodeSystem Provider', () => {
         });
 
         test('should filter by regex pattern', async () => {
-          const results = await simpleProvider.filter(filterContext, 'code', 'regex', 'code2.*');
+          const results = await simpleProvider.filter(filterContext, true, 'code', 'regex', 'code2.*');
           expect(results.size()).toBeGreaterThan(1); // Should match code2, code2a, code2b, etc.
 
           expect(results.findConceptByCode('code2')).toBeDefined();
@@ -1519,14 +1519,14 @@ describe('FHIR CodeSystem Provider', () => {
 
         test('should handle invalid regex gracefully', async () => {
           await expect(
-            simpleProvider.filter(filterContext, 'code', 'regex', '[invalid')
-          ).rejects.toThrow('Invalid regex pattern');
+            simpleProvider.filter(filterContext, true, 'code', 'regex', '[invalid')
+          ).rejects.toThrow('The regex \'[invalid\' is not valid: Invalid regular expression: /^[invalid$/u: missing ]: [invalid$');
         });
       });
 
       describe('Child Existence Filter', () => {
         test('should find concepts with children', async () => {
-          const results = await simpleProvider.filter(filterContext, 'child', 'exists', 'true');
+          const results = await simpleProvider.filter(filterContext, true, 'child', 'exists', 'true');
           expect(results.size()).toBe(2); // code2 and code2a have children
 
           expect(results.findConceptByCode('code2')).toBeDefined();
@@ -1535,7 +1535,7 @@ describe('FHIR CodeSystem Provider', () => {
         });
 
         test('should find concepts without children (leaf nodes)', async () => {
-          const results = await simpleProvider.filter(filterContext, 'child', 'exists', 'false');
+          const results = await simpleProvider.filter(filterContext, true, 'child', 'exists', 'false');
           expect(results.size()).toBe(5); // code1, code2aI, code2aII, code2b, code3
 
           expect(results.findConceptByCode('code1')).toBeDefined();
@@ -1549,7 +1549,7 @@ describe('FHIR CodeSystem Provider', () => {
 
       describe('Property-Based Filters', () => {
         test('should filter by property equality', async () => {
-          const results = await simpleProvider.filter(filterContext, 'prop', '=', 'old');
+          const results = await simpleProvider.filter(filterContext, true, 'prop', '=', 'old');
           expect(results.size()).toBeGreaterThan(0);
 
           // code1 has prop=old
@@ -1557,7 +1557,7 @@ describe('FHIR CodeSystem Provider', () => {
         });
 
         test('should filter by property in values', async () => {
-          const results = await simpleProvider.filter(filterContext, 'prop', 'in', 'old,new');
+          const results = await simpleProvider.filter(filterContext, true, 'prop', 'in', 'old,new');
           expect(results.size()).toBeGreaterThan(0);
 
           // Should find concepts with either old or new values
@@ -1565,7 +1565,7 @@ describe('FHIR CodeSystem Provider', () => {
         });
 
         test('should filter by property not in values', async () => {
-          const results = await simpleProvider.filter(filterContext, 'prop', 'not-in', 'retired');
+          const results = await simpleProvider.filter(filterContext, true, 'prop', 'not-in', 'retired');
           expect(results.size()).toBeGreaterThan(0);
 
           // Should exclude concepts with retired status
@@ -1573,7 +1573,7 @@ describe('FHIR CodeSystem Provider', () => {
         });
 
         test('should filter by property regex', async () => {
-          const results = await simpleProvider.filter(filterContext, 'prop', 'regex', 'ol.*');
+          const results = await simpleProvider.filter(filterContext, true, 'prop', 'regex', 'ol.*');
           expect(results.size()).toBeGreaterThan(0);
 
           // Should match "old" values
@@ -1583,7 +1583,7 @@ describe('FHIR CodeSystem Provider', () => {
 
       describe('Known Property Filters', () => {
         test('should filter by notSelectable property', async () => {
-          const results = await simpleProvider.filter(filterContext, 'notSelectable', '=', 'true');
+          const results = await simpleProvider.filter(filterContext, true, 'notSelectable', '=', 'true');
           expect(results.size()).toBe(1);
 
           // code2 has notSelectable=true
@@ -1591,7 +1591,7 @@ describe('FHIR CodeSystem Provider', () => {
         });
 
         test('should filter by status property', async () => {
-          const results = await simpleProvider.filter(filterContext, 'status', '=', 'retired');
+          const results = await simpleProvider.filter(filterContext, true, 'status', '=', 'retired');
           expect(results.size()).toBe(1);
 
           // code2 has status=retired
@@ -1599,14 +1599,14 @@ describe('FHIR CodeSystem Provider', () => {
         });
 
         test('should filter by status in values', async () => {
-          const results = await simpleProvider.filter(filterContext, 'status', 'in', 'active,retired');
+          const results = await simpleProvider.filter(filterContext, true, 'status', 'in', 'active,retired');
           expect(results.size()).toBeGreaterThan(0);
         });
       });
 
       describe('Filter Iteration', () => {
         test('should iterate through filter results', async () => {
-          const results = await simpleProvider.filter(filterContext, 'code', 'in', 'code1,code2,code3');
+          const results = await simpleProvider.filter(filterContext, true, 'code', 'in', 'code1,code2,code3');
           expect(results.size()).toBe(3);
 
           results.reset();
@@ -1621,7 +1621,7 @@ describe('FHIR CodeSystem Provider', () => {
         });
 
         test('should locate specific code in filter results', async () => {
-          const results = await simpleProvider.filter(filterContext, 'code', 'in', 'code1,code2');
+          const results = await simpleProvider.filter(filterContext, true, 'code', 'in', 'code1,code2');
 
           const located = await simpleProvider.filterLocate(filterContext, results, 'code1');
           expect(located).toBeInstanceOf(FhirCodeSystemProviderContext);
@@ -1632,7 +1632,7 @@ describe('FHIR CodeSystem Provider', () => {
         });
 
         test('should check if concept is in filter results', async () => {
-          const results = await simpleProvider.filter(filterContext, 'code', 'in', 'code1,code2');
+          const results = await simpleProvider.filter(filterContext, true, 'code', 'in', 'code1,code2');
 
           const concept1 = new FhirCodeSystemProviderContext('code1', simpleCS.getConceptByCode('code1'));
           const concept3 = new FhirCodeSystemProviderContext('code3', simpleCS.getConceptByCode('code3'));
@@ -1645,7 +1645,7 @@ describe('FHIR CodeSystem Provider', () => {
         });
 
         test('should get filter size correctly', async () => {
-          const results = await simpleProvider.filter(filterContext, 'code', 'in', 'code1,code2,code3');
+          const results = await simpleProvider.filter(filterContext, true, 'code', 'in', 'code1,code2,code3');
 
           const size = await simpleProvider.filterSize(filterContext, results);
           expect(size).toBe(3);
@@ -1656,7 +1656,7 @@ describe('FHIR CodeSystem Provider', () => {
 
         test('should execute and finish filters properly', async () => {
           filterContext.filters = [];
-          await simpleProvider.filter(filterContext, 'code', '=', 'code1');
+          await simpleProvider.filter(filterContext, true, 'code', '=', 'code1');
 
           const executed = await simpleProvider.executeFilters(filterContext);
           expect(Array.isArray(executed)).toBe(true);
@@ -1683,22 +1683,22 @@ describe('FHIR CodeSystem Provider', () => {
 
       describe('Complex Filter Scenarios', () => {
         test('should work with German CodeSystem', async () => {
-          const results = await deProvider.searchFilter(filterContext, 'Anzeige', true);
+          const results = await deProvider.searchFilter(filterContext, new SearchFilterText('Anzeige'), true);
           expect(results.size()).toBeGreaterThan(0);
         });
 
         test('should work with Extensions CodeSystem', async () => {
-          const results = await extensionsProvider.filter(filterContext, 'code', 'regex', 'code[1-3]');
+          const results = await extensionsProvider.filter(filterContext, true, 'code', 'regex', 'code[1-3]');
           expect(results.size()).toBe(3);
         });
 
         test('should handle multiple filters in sequence', async () => {
           // First filter: get all concepts with children
-          const withChildren = await simpleProvider.filter(filterContext, 'child', 'exists', 'true');
+          const withChildren = await simpleProvider.filter(filterContext, true, 'child', 'exists', 'true');
           expect(withChildren.size()).toBe(2);
 
           // Second filter: get concepts with specific property
-          const withProperty = await simpleProvider.filter(filterContext, 'prop', '=', 'new');
+          const withProperty = await simpleProvider.filter(filterContext, true, 'prop', '=', 'new');
           expect(withProperty.size()).toBeGreaterThan(0);
 
           // Both filters should be in context

@@ -12,17 +12,18 @@ const { TerminologyWorker } = require('./worker');
 const {TxParameters} = require("../params");
 const {Designations, SearchFilterText} = require("../library/designations");
 const {Extensions} = require("../library/extensions");
-const {getValuePrimitive, getValueName} = require("../../library/utilities");
+const {getValuePrimitive, getValueName, validateParameter} = require("../../library/utilities");
 const {div} = require("../../library/html");
 const {Issue, OperationOutcome} = require("../library/operation-outcome");
 const crypto = require('crypto');
 const ValueSet = require("../library/valueset");
 const {VersionUtilities} = require("../../library/version-utilities");
+const {debugLog} = require("../operation-context");
 
 // Expansion limits (from Pascal constants)
-const UPPER_LIMIT_NO_TEXT = 1000;
-const UPPER_LIMIT_TEXT = 1000;
-const INTERNAL_LIMIT = 10000;
+const EXTERNAL_DEFAULT_LIMIT = 1000;
+const EXTERNAL_TEST_DEFAULT_LIMIT = 3000;
+const INTERNAL_DEFAULT_LIMIT = 10000;
 const EXPANSION_DEAD_TIME_SECS = 30;
 const CACHE_WHEN_DEBUGGING = false;
 
@@ -198,29 +199,24 @@ class ValueSetCounter {
 class ValueSetExpander {
   worker;
   params;
+  doingVersion = true;
+  excludedSystems = new Set();
   excluded = new Set();
   hasExclusions = false;
+  requiredSupplements = new Set();
+  usedSupplements = new Set();
+  reportedSupplements = new Set();
+  internalLimit = INTERNAL_DEFAULT_LIMIT;
+  externalLimit = EXTERNAL_DEFAULT_LIMIT;
+  noDetails = false;
 
   constructor(worker, params) {
     this.worker = worker;
     this.params = params;
+    this.internalLimit = worker.internalLimit;
+    this.externalLimit = worker.externalLimit;
 
     this.csCounter = new Map();
-  }
-
-  addDefinedCode(cs, system, c, imports, parent, excludeInactive, srcURL) {
-    this.worker.deadCheck('addDefinedCode');
-    let n = null;
-    if (!this.params.excludeNotForUI || !cs.isAbstract(c)) {
-      const cds = new Designations(this.worker.opContext.i18n.languageDefinitions);
-      this.listDisplays(cds, c);
-      n = this.includeCode(null, parent, system, '', c.code, cs.isAbstract(c), cs.isInactive(c), cs.isDeprecated(c), cs.codeStatus(c), cds, c.definition, c.itemWeight,
-        null, imports, c.getAllExtensionsW(), null, c.properties, null, excludeInactive, srcURL);
-    }
-    for (let i = 0; i < c.concept.length; i++) {
-      this.worker.deadCheck('addDefinedCode');
-      this.addDefinedCode(cs, system, c.concept[i], imports, n, excludeInactive, srcURL);
-    }
   }
 
   async listDisplaysFromProvider(displays, cs, context) {
@@ -255,7 +251,6 @@ class ValueSetExpander {
   }
 
   passesImport(imp, system, code) {
-    imp.buildMap();
     return imp.hasCode(system, code);
   }
 
@@ -333,22 +328,23 @@ class ValueSetExpander {
 
     if (this.limitCount > 0 && this.fullList.length >= this.limitCount && !this.hasExclusions) {
       if (this.count > -1 && this.offset > -1 && this.count + this.offset > 0 && this.fullList.length >= this.count + this.offset) {
+        this.noTotal();
         throw new Issue('information', 'informational', null, null, null, null).setFinished();
       } else {
         if (!srcURL) {
           srcURL = '??';
         }
-        throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [srcURL, '>' + this.limitCount]), null, 400).withDiagnostics(this.worker.opContext.diagnostics());
+        throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [srcURL, '>' + this.limitCount]), null, 422).withDiagnostics(this.worker.opContext.diagnostics());
       }
     }
 
-    if (expansion) {
+    if (expansion && !this.noDetails) {
       const s = this.canonical(system, version);
       this.addParamUri(expansion, 'used-codesystem', s);
       if (cs != null) {
-        const ts = cs.listSupplements();
+        const ts = cs.listSupplements(false);
         for (const vs of ts) {
-          this.addParamUri(expansion, 'used-supplement', vs);
+          this.reportedSupplements.add(vs);
         }
       }
     }
@@ -368,107 +364,115 @@ class ValueSetExpander {
       if (isInactive) {
         n.inactive = true;
       }
-
-      if (status && status.toLowerCase() !== 'active') {
-        this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#status', 'status', "valueCode", status);
-      } else if (deprecated) {
-        this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#status', 'status', "valueCode", 'deprecated');
-      }
-
-      if (Extensions.has(csExtList, 'http://hl7.org/fhir/StructureDefinition/codesystem-label')) {
-        this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#label', 'label', "valueString", Extensions.readString(csExtList, 'http://hl7.org/fhir/StructureDefinition/codesystem-label'));
-      }
-      if (Extensions.has(vsExtList, 'http://hl7.org/fhir/StructureDefinition/valueset-label')) {
-        this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#label', 'label', "valueString", Extensions.readString(vsExtList, 'http://hl7.org/fhir/StructureDefinition/valueset-label'));
-      }
-
-      if (Extensions.has(csExtList, 'http://hl7.org/fhir/StructureDefinition/codesystem-conceptOrder')) {
-        this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#order', 'order', "valueDecimal", Extensions.readNumber(csExtList, 'http://hl7.org/fhir/StructureDefinition/codesystem-conceptOrder', undefined));
-      }
-      if (Extensions.has(vsExtList, 'http://hl7.org/fhir/StructureDefinition/valueset-conceptOrder')) {
-        this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#order', 'order', "valueDecimal", Extensions.readNumber(vsExtList, 'http://hl7.org/fhir/StructureDefinition/valueset-conceptOrder', undefined));
-      }
-
-      if (Extensions.has(csExtList, 'http://hl7.org/fhir/StructureDefinition/itemWeight')) {
-        this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#itemWeight', 'weight', "valueDecimal", Extensions.readNumber(csExtList, 'http://hl7.org/fhir/StructureDefinition/itemWeight', undefined));
-      }
-      if (Extensions.has(vsExtList, 'http://hl7.org/fhir/StructureDefinition/itemWeight')) {
-        this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#itemWeight', 'weight', "valueDecimal", Extensions.readNumber(vsExtList, 'http://hl7.org/fhir/StructureDefinition/itemWeight', undefined));
-      }
-
-      if (csExtList != null) {
-        for (const ext of csExtList) {
-          if (['http://hl7.org/fhir/StructureDefinition/coding-sctdescid', 'http://hl7.org/fhir/StructureDefinition/rendering-style',
-            'http://hl7.org/fhir/StructureDefinition/rendering-xhtml', 'http://hl7.org/fhir/StructureDefinition/codesystem-alternate'].includes(ext.url)) {
-            if (!n.extension) {n.extension = []}
-            n.extension.push(ext);
-          }
-          if (['http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status'].includes(ext.url)) {
-            this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#status', 'status', "valueCode", getValuePrimitive(ext));
-          }
+      if (!this.noDetails) {
+        if (status && status.toLowerCase() !== 'active') {
+          this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#status', 'status', "valueCode", status);
+        } else if (deprecated) {
+          this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#status', 'status', "valueCode", 'deprecated');
         }
-      }
 
-      if (vsExtList != null) {
-        for (const ext of vsExtList || []) {
-          if (['http://hl7.org/fhir/StructureDefinition/valueset-supplement', 'http://hl7.org/fhir/StructureDefinition/valueset-deprecated',
-            'http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status',
-            'http://hl7.org/fhir/StructureDefinition/valueset-concept-definition', 'http://hl7.org/fhir/StructureDefinition/coding-sctdescid',
-            'http://hl7.org/fhir/StructureDefinition/rendering-style', 'http://hl7.org/fhir/StructureDefinition/rendering-xhtml'].includes(ext.url)) {
-            if (!n.extension) {n.extension = []}
-            n.extension.push(ext);
-          }
+        if (Extensions.has(csExtList, 'http://hl7.org/fhir/StructureDefinition/codesystem-label')) {
+          this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#label', 'label', "valueString", Extensions.readString(csExtList, 'http://hl7.org/fhir/StructureDefinition/codesystem-label'));
         }
-      }
+        if (Extensions.has(vsExtList, 'http://hl7.org/fhir/StructureDefinition/valueset-label')) {
+          this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#label', 'label', "valueString", Extensions.readString(vsExtList, 'http://hl7.org/fhir/StructureDefinition/valueset-label'));
+        }
 
-      // display and designations
-      const pref = displays.preferredDesignation(this.params.workingLanguages());
-      if (pref && pref.value) {
-        n.display = pref.value;
-      }
+        if (Extensions.has(csExtList, 'http://hl7.org/fhir/StructureDefinition/codesystem-conceptOrder')) {
+          this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#order', 'order', "valueDecimal", Extensions.readNumber(csExtList, 'http://hl7.org/fhir/StructureDefinition/codesystem-conceptOrder', undefined));
+        }
+        if (Extensions.has(vsExtList, 'http://hl7.org/fhir/StructureDefinition/valueset-conceptOrder')) {
+          this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#order', 'order', "valueDecimal", Extensions.readNumber(vsExtList, 'http://hl7.org/fhir/StructureDefinition/valueset-conceptOrder', undefined));
+        }
 
-      if (this.params.includeDesignations) {
-        for (const t of displays.designations) {
-          if (t !== pref && this.useDesignation(t) && t.value != null && !this.redundantDisplay(n, t.language, t.use, t.value)) {
-            if (!n.designation) {
-              n.designation = [];
+        if (Extensions.has(csExtList, 'http://hl7.org/fhir/StructureDefinition/itemWeight')) {
+          this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#itemWeight', 'weight', "valueDecimal", Extensions.readNumber(csExtList, 'http://hl7.org/fhir/StructureDefinition/itemWeight', undefined));
+        }
+        if (Extensions.has(vsExtList, 'http://hl7.org/fhir/StructureDefinition/itemWeight')) {
+          this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#itemWeight', 'weight', "valueDecimal", Extensions.readNumber(vsExtList, 'http://hl7.org/fhir/StructureDefinition/itemWeight', undefined));
+        }
+
+        if (csExtList != null) {
+          for (const ext of csExtList) {
+            if (['http://hl7.org/fhir/StructureDefinition/coding-sctdescid', 'http://hl7.org/fhir/StructureDefinition/rendering-style',
+              'http://hl7.org/fhir/StructureDefinition/rendering-xhtml', 'http://hl7.org/fhir/StructureDefinition/codesystem-alternate'].includes(ext.url)) {
+              if (!n.extension) {
+                n.extension = []
+              }
+              n.extension.push(ext);
             }
-            n.designation.push(t.asObject());
-          }
-        }
-      }
-
-      for (const pn of this.params.properties) {
-        if (pn === 'definition') {
-          if (definition) {
-            this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#definition', pn, "valueString", definition);
-          }
-        } else if (csProps != null && cs != null) {
-          for (const cp of csProps) {
-            if (cp.code === pn) {
-              let vn = getValueName(cp);
-              let v = cp[vn];
-              this.defineProperty(expansion, n, this.getPropUrl(cs, pn), pn, vn, v);
+            if (['http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status'].includes(ext.url)) {
+              this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#status', 'status', "valueCode", getValuePrimitive(ext));
             }
           }
         }
-      }
 
-      if (!this.map.has(s)) {
-        this.fullList.push(n);
-        this.map.set(s, n);
-        if (parent != null) {
-          if (!parent.contains) {
-            parent.contains = [];
+        if (vsExtList != null) {
+          for (const ext of vsExtList || []) {
+            if (['http://hl7.org/fhir/StructureDefinition/valueset-supplement', 'http://hl7.org/fhir/StructureDefinition/valueset-deprecated',
+              'http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status',
+              'http://hl7.org/fhir/StructureDefinition/valueset-concept-definition', 'http://hl7.org/fhir/StructureDefinition/coding-sctdescid',
+              'http://hl7.org/fhir/StructureDefinition/rendering-style', 'http://hl7.org/fhir/StructureDefinition/rendering-xhtml'].includes(ext.url)) {
+              if (!n.extension) {
+                n.extension = []
+              }
+              n.extension.push(ext);
+            }
           }
-          parent.contains.push(n);
-        } else {
-          this.rootList.push(n);
         }
+
+        // display and designations
+        const pref = displays.preferredDesignation(this.params.workingLanguages(), this.reportedSupplements);
+        if (pref && pref.value) {
+          n.display = pref.value;
+        }
+
+        if (this.params.includeDesignations) {
+          for (const t of displays.designations) {
+            if (t !== pref && this.useDesignation(t) && t.value != null && !this.redundantDisplay(n, t.language, t.use, t.value)) {
+              if (!n.designation) {
+                n.designation = [];
+              }
+              if (t.source) {
+                this.reportedSupplements.add(t.source);
+              }
+              n.designation.push(t.asObject());
+            }
+          }
+        }
+
+        for (const pn of this.params.properties) {
+          if (pn === 'definition') {
+            if (definition) {
+              this.defineProperty(expansion, n, 'http://hl7.org/fhir/concept-properties#definition', pn, "valueString", definition);
+            }
+          } else if (pn === 'usage-count') {
+            let counter = cs.usages().get(code);
+            this.defineProperty(expansion, n, 'http://fhir.org/FHIRsmith/CodeSystem/concept-properties#usage-count', pn, "valueInteger", counter ? counter.count : 0);
+          } else if (csProps != null && cs != null) {
+            for (const cp of csProps) {
+              if (cp.code === pn) {
+                let vn = getValueName(cp);
+                let v = cp[vn];
+                this.defineProperty(expansion, n, this.getPropUrl(cs, pn, cp), pn, vn, v);
+              }
+            }
+          }
+        }
+      }
+      this.fullList.push(n);
+      this.map.set(s, n);
+      if (parent != null && !this.noDetails) {
+        if (!parent.contains) {
+          parent.contains = [];
+        }
+        parent.contains.push(n);
       } else {
-        this.canBeHierarchy = false;
+        this.rootList.push(n);
       }
       result = n;
+    } else {
+      this.canBeHierarchy = false;
     }
     return result;
   }
@@ -486,7 +490,7 @@ class ValueSetExpander {
         if (!srcURL) {
           srcURL = '??';
         }
-        throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [srcURL, '>' + this.limitCount]), null, 400).withDiagnostics(this.worker.opContext.diagnostics());
+        throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [srcURL, '>' + this.limitCount]), null, 422).withDiagnostics(this.worker.opContext.diagnostics());
       }
     }
 
@@ -494,48 +498,53 @@ class ValueSetExpander {
       const s = this.canonical(system, version);
       this.addParamUri(expansion, 'used-codesystem', s);
       if (cs) {
-        const ts= cs.listSupplements();
+        const ts= cs.listSupplements(false);
         for (const vs of ts) {
-          this.addParamUri(expansion, 'used-supplement', vs);
+          this.reportedSupplements.add(vs);
         }
       }
     }
 
-    this.excluded.add(system + '|' + version + '#' + code);
+    let key = (this.doingVersion && !this.params.versionsMatch ? system + '|' + version : system) + '#' + code
+    this.excluded.add(key);
   }
 
-  async checkCanExpandValueset(uri, version) {
-    const vs = await this.worker.findValueSet(uri, version);
+  async checkCanExpandValueSet(uri, version, source) {
+    const vs = await this.worker.findValueSet(uri, version, source);
     if (vs == null) {
       if (!version && uri.includes('|')) {
         version = uri.substring(uri.indexOf('|') + 1);
         uri = uri.substring(0, uri.indexOf('|'));
       }
       if (!version) {
-        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK', this.worker.i18n.translate('VS_EXP_IMPORT_UNK', this.params.httpLanguages, [uri]), 'unknown', 400);
+        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK', this.worker.i18n.translate('VS_EXP_IMPORT_UNK', this.params.httpLanguages, [uri]), 'unknown', 422);
       } else {
-        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK_PINNED', this.worker.i18n.translate('VS_EXP_IMPORT_UNK_PINNED', this.params.httpLanguages, [uri, version]), 'not-found', 400);
+        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK_PINNED', this.worker.i18n.translate('VS_EXP_IMPORT_UNK_PINNED', this.params.httpLanguages, [uri, version]), 'not-found', 422);
       }
     } else {
       this.worker.seeSourceVS(vs, uri);
     }
   }
 
-  async expandValueSet(uri, version, filter, notClosed) {
+  async expandValueSet(uri, version, vs, filter, notClosed) {
 
-    let vs = await this.worker.findValueSet(uri, version);
     if (!vs) {
       if (version) {
-        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK_PINNED', this.worker.i18n.translate('VS_EXP_IMPORT_UNK_PINNED', this.params.httpLanguages, [uri, version]), "not-found", 400);
+        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK_PINNED', this.worker.i18n.translate('VS_EXP_IMPORT_UNK_PINNED', this.params.httpLanguages, [uri, version]), "not-found", 422);
       } else if (uri.includes('|')) {
-        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK_PINNED', this.worker.i18n.translate('VS_EXP_IMPORT_UNK_PINNED', this.params.httpLanguages, [uri.substring(0, uri.indexOf("|")), uri.substring(uri.indexOf("|")+1)]), "not-found", 400);
+        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK_PINNED', this.worker.i18n.translate('VS_EXP_IMPORT_UNK_PINNED', this.params.httpLanguages, [uri.substring(0, uri.indexOf("|")), uri.substring(uri.indexOf("|")+1)]), "not-found", 422);
       } else {
-        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK', this.worker.i18n.translate('VS_EXP_IMPORT_UNK', this.params.httpLanguages, [uri]), "not-found", 400);
+        throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK', this.worker.i18n.translate('VS_EXP_IMPORT_UNK', this.params.httpLanguages, [uri]), "not-found", 422);
       }
     }
     let worker = new ExpandWorker(this.worker.opContext, this.worker.log, this.worker.provider, this.worker.languages, this.worker.i18n);
     worker.additionalResources = this.worker.additionalResources;
-    let expander = new ValueSetExpander(worker, this.params);
+    // we're going to let this one do more expansion for technical reasons
+    let paramsInner = this.params.clone();
+    paramsInner.limit = this.internalLimit;
+    let expander = new ValueSetExpander(worker, paramsInner);
+    expander.internalLimit = this.internalLimit;
+    expander.externalLimit = this.internalLimit; // it's deliberate that this is the internal limit
     let result = await expander.expand(vs, filter, false);
     if (result == null) {
       throw new Issue('error', 'not-found', null, 'VS_EXP_IMPORT_UNK', this.worker.i18n.translate('VS_EXP_IMPORT_UNK', this.params.httpLanguages, [uri]), 'unknown');
@@ -547,8 +556,9 @@ class ValueSetExpander {
   }
 
   async importValueSet(vs, expansion, imports, offset) {
+    let count = 0;
     this.canBeHierarchy = false;
-    for (let p of vs.expansion.parameter) {
+    for (let p of vs.expansion.parameter || []) {
       let vn = getValueName(p);
       let v = getValuePrimitive(p);
       this.addParam(expansion, p.name, vn, v);
@@ -557,14 +567,17 @@ class ValueSetExpander {
 
     for (const c of vs.expansion.contains || []) {
       this.worker.deadCheck('importValueSet');
-      await this.importValueSetItem(null, c, imports, offset);
+      count += await this.importValueSetItem(null, c, imports, offset);
     }
+    return count;
   }
 
   async importValueSetItem(p, c, imports, offset) {
+    let count = 0;
     this.worker.deadCheck('importValueSetItem');
     const s = this.keyC(c);
-    if (this.passesImports(imports, c.system, c.code, offset) && !this.map.has(s)) {
+    if (this.passesImports(imports, c.system, c.code, offset) && !this.map.has(s) && !this.isExcluded(c.system, c.version, c.code)) {
+      count++;
       this.fullList.push(c);
       if (p != null) {
         if (!p.contains) {p.contains = [] }
@@ -576,8 +589,9 @@ class ValueSetExpander {
     }
     for (const cc of c.contains || []) {
       this.worker.deadCheck('importValueSetItem');
-      await this.importValueSetItem(c, cc, imports, offset);
+      count += await this.importValueSetItem(c, cc, imports, offset);
     }
+    return count;
   }
 
   excludeValueSet(vs, expansion, imports, offset) {
@@ -590,18 +604,19 @@ class ValueSetExpander {
           this.fullList.splice(idx, 1);
         }
         this.map.delete(s);
+        this.decTotal();
       }
     }
   }
 
-  async checkSource(cset, exp, filter, srcURL, ts) {
+  async checkSource(cset, exp, filter, srcURL, ts, vsInfo , source) {
     this.worker.deadCheck('checkSource');
-    Extensions.checkNoModifiers(cset, 'ValueSetExpander.checkSource', 'set');
+    Extensions.checkNoModifiers(cset, 'ValueSetExpander.checkSource', 'set', srcURL);
     let imp = false;
     for (const u of cset.valueSet || []) {
       this.worker.deadCheck('checkSource');
       const s = this.worker.pinValueSet(u);
-      await this.checkCanExpandValueset(s, '');
+      await this.checkCanExpandValueSet(s, '', source);
       imp = true;
     }
 
@@ -615,37 +630,47 @@ class ValueSetExpander {
     }
 
     if (cset.system) {
-      const cs = await this.worker.findCodeSystem(cset.system, cset.version, this.params, ['complete', 'fragment'], false, true, true, null);
+      const cs = await this.worker.findCodeSystem(cset.system, cset.version, this.params, ['complete', 'fragment'],
+        false, true, true, null, this.requiredSupplements);
       this.worker.seeSourceProvider(cs, cset.system);
       if (cs == null) {
         // nothing
       } else {
-        if (cs.contentMode() !== 'complete') {
+        if (vsInfo && vsInfo.isSimple) {
+          vsInfo.handleByCS = cs.handlesSelecting();
+        }
+        if (!cs.contentMode()) {
+          throw new Issue('error', 'business-rule', null, null, 'The code system definition for ' + cset.system + ' has no content property, so this expansion cannot be performed', 'invalid');
+        } else if (cs.contentMode() !== 'complete') {
           if (cs.contentMode() === 'not-present') {
             throw new Issue('error', 'business-rule', null, null, 'The code system definition for ' + cset.system + ' has no content, so this expansion cannot be performed', 'invalid');
           } else if (cs.contentMode() === 'supplement') {
             throw new Issue('error', 'business-rule', null, null, 'The code system definition for ' + cset.system + ' defines a supplement, so this expansion cannot be performed', 'invalid');
-          } else if (this.params.incompleteOK) {
-            exp.addParamUri(cs.contentMode, cs.system + '|' + cs.version);
+          } else if (cs.contentMode() === 'fragment') {
+            this.addParamUri(exp, 'used-fragment', cs.system() + '|' + cs.version());
+            Extensions.addBoolean(exp, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", true);
+            Extensions.addString(exp, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed-reason","This extension is based on a fragment of the code system " + cset.system);
           } else {
-            throw new Issue('error', 'business-rule', null, null, 'The code system definition for ' + cset.system + ' is a ' + cs.contentMode + ', so this expansion is not permitted unless the expansion parameter "incomplete-ok" has a value of "true"', 'invalid');
+            this.addParamUri(exp, cs.contentMode(), cs.system() + '|' + cs.version());
+            Extensions.addBoolean(exp, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", true);
+            Extensions.addString(exp, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed-reason","This extension is based on a fragment of the code system " + cset.system);
           }
         }
 
         if (!cset.concept && !cset.filter) {
-          if (cs.specialEnumeration() && this.params.limitedExpansion) {
-            this.checkCanExpandValueSet(cs.specialEnumeration(), '');
+          if (cs.specialEnumeration()) {
+            await this.checkCanExpandValueSet(cs.specialEnumeration(), '', null);
           } else if (filter.isNull) {
             if (cs.isNotClosed()) {
               if (cs.specialEnumeration()) {
-                throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly. If an incomplete expansion is requested, a limited enumeration will be returned', null, 400).withDiagnostics(this.worker.opContext.diagnostics());
+                Extensions.addBoolean(exp, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", true);
+                Extensions.addString(exp, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed-reason", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
               } else {
-                throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly', null, 400).withDiagnostics(this.worker.opContext.diagnostics());
+                throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly', null, 422).withDiagnostics(this.worker.opContext.diagnostics());
               }
             }
-
-            if (!imp && this.limitCount > 0 && cs.totalCount > this.limitCount && !this.params.limitedExpansion) {
-              throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [srcURL, '>' + this.limitCount]), null, 400).withDiagnostics(this.worker.opContext.diagnostics());
+            if (!imp && this.limitCount > 0 && cs.totalCount > this.limitCount) {
+              throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [srcURL, '>' + this.limitCount]), null, 422).withDiagnostics(this.worker.opContext.diagnostics());
             }
           }
         }
@@ -653,11 +678,22 @@ class ValueSetExpander {
     }
   }
 
-  async includeCodes(cset, path, vsSrc, filter, expansion, excludeInactive, notClosed) {
+  async processCodes(path, vsSrc, compose, filter, expansion, excludeInactive, notClosed, vsInfo) {
+    const cs = await this.worker.findCodeSystem(vsInfo.system, vsInfo.version, this.params, ['complete', 'fragment'],
+      false, false, true, null, this.requiredSupplements);
+    if (cs != null) {
+
+      // set up the call to the provider
+      // call the provider
+      // include the codes
+    }
+  }
+
+  async includeCodes(cset, path, vsSrc, compose, filter, expansion, excludeInactive, notClosed) {
     this.worker.deadCheck('processCodes#1');
     const valueSets = [];
 
-    Extensions.checkNoModifiers(cset, 'ValueSetExpander.processCodes', 'set');
+    Extensions.checkNoModifiers(cset, 'ValueSetExpander.processCodes', 'set', vsSrc.vurl);
 
     if (cset.valueSet || cset.concept || (cset.filter || []).length > 1) {
       this.canBeHierarchy = false;
@@ -668,63 +704,66 @@ class ValueSetExpander {
         this.worker.deadCheck('processCodes#2');
         const s = this.worker.pinValueSet(u);
         this.worker.opContext.log('import value set ' + s);
-        const ivs = new ImportedValueSet(await this.expandValueSet(s, '', filter, notClosed));
-        this.checkResourceCanonicalStatus(expansion, ivs.valueSet, this.valueSet);
-        this.addParamUri(expansion, 'used-valueset', this.worker.makeVurl(ivs.valueSet));
+        let vs = await this.worker.findValueSet(s, '', vsSrc);
+        const ivs = new ImportedValueSet(await this.expandValueSet(s, '', vs, filter, notClosed));
+        this. checkResourceCanonicalStatus(expansion, ivs.valueSet, this.valueSet);
+        if (!vs.isContained) {
+          this.addParamUri(expansion, 'used-valueset', this.worker.makeVurl(ivs.valueSet));
+        }
         valueSets.push(ivs);
       }
-      await this.importValueSet(valueSets[0].valueSet, expansion, valueSets, 1);
+      this.addToTotal(await this.importValueSet(valueSets[0].valueSet, expansion, valueSets, 1));
     } else {
       const filters = [];
       const prep = null;
-      const cs = await this.worker.findCodeSystem(cset.system, cset.version, this.params, ['complete', 'fragment'], false, false, true, null);
+      const cs = await this.worker.findCodeSystem(cset.system, cset.version, this.params, ['complete', 'fragment'],
+        false, false, true, null, this.requiredSupplements);
 
       if (cs == null) {
         // nothing
       } else {
-
-        this.worker.checkSupplements(cs, cset, this.requiredSupplements);
+        this.worker.checkSupplements(cs, cset, this.requiredSupplements, this.usedSupplements);
         this.checkProviderCanonicalStatus(expansion, cs, this.valueSet);
         const sv = this.canonical(await cs.system(), await cs.version());
         this.addParamUri(expansion, 'used-codesystem', sv);
 
         for (const u of cset.valueSet || []) {
-          this.worker.deadCheck('processCodes#3');
-          const s = this.pinValueSet(u);
-          let f = null;
-          this.opContext.log('import2 value set ' + s);
-          const vs = this.onGetValueSet(this, s, '');
-          if (vs != null) {
-            f = this.makeFilterForValueSet(cs, vs);
+          this.worker.deadCheck('processCodes#2');
+          const s = this.worker.pinValueSet(u);
+          this.worker.opContext.log('import value set ' + s);
+          let vs = await this.worker.findValueSet(s, '', vsSrc);
+          const ivs = new ImportedValueSet(await this.expandValueSet(s, '', vs, filter, notClosed));
+          this.checkResourceCanonicalStatus(expansion, ivs.valueSet, this.valueSet);
+          if (!vs.isContained) {
+            this.addParamUri(expansion, 'used-valueset', this.worker.makeVurl(ivs.valueSet));
           }
-          if (f != null) {
-            filters.push(f);
-          } else {
-            valueSets.push(new ImportedValueSet(await this.expandValueSet(s, '', filter, notClosed)));
-          }
+          valueSets.push(ivs);
         }
 
         if (!cset.concept && !cset.filter) {
-          if (cs.specialEnumeration() && this.params.limitedExpansion && filters.length === 0) {
+          if (cs.specialEnumeration() && filters.length === 0) {
             this.worker.opContext.log('import special value set ' + cs.specialEnumeration());
-            const base = await this.expandValueSet(cs.specialEnumeration(), '', filter, notClosed);
-            Extensions.addBoolean(expansion, 'http://hl7.org/fhir/StructureDefinition/valueset-toocostly', true);
+            let vs = await this.worker.findValueSet(cs.specialEnumeration(), '', null);
+            const base = await this.expandValueSet(cs.specialEnumeration(), '', vs, filter, notClosed);
+            Extensions.addBoolean(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", true);
+            Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed-reason", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
             await this.importValueSet(base, expansion, valueSets, 0);
             notClosed.value = true;
           } else if (filter.isNull) {
             this.worker.opContext.log('add whole code system');
             if (cs.isNotClosed()) {
               if (cs.specialEnumeration()) {
-                throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly. If an incomplete expansion is requested, a limited enumeration will be returned', null, 400).withDiagnostics(this.worker.opContext.diagnostics());
-
+                Extensions.addBoolean(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", true);
+                Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed-reason", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
               } else {
-                throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly', null, 400).withDiagnostics(this.worker.opContext.diagnostics());
+                throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly', null, 422).withDiagnostics(this.worker.opContext.diagnostics());
               }
+              notClosed.value = true;
             }
 
             const iter = await cs.iterator(null);
-            if (valueSets.length === 0 && this.limitCount > 0 && (iter && iter.total > this.limitCount) && !this.params.limitedExpansion && this.offset < 0)  {
-              throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [vsSrc.vurl, '>' + this.limitCount]), null, 400).withDiagnostics(this.worker.opContext.diagnostics());
+            if (valueSets.length === 0 && this.limitCount > 0 && (iter && iter.total > this.limitCount) && this.offset < 0) {
+              throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [vsSrc.vurl, '>' + this.limitCount]), null, 422).withDiagnostics(this.worker.opContext.diagnostics());
 
             }
             let tcount = 0;
@@ -744,17 +783,28 @@ class ValueSetExpander {
               notClosed.value = true;
             }
             const prep = await cs.getPrepContext(true);
-            const ctxt = await cs.searchFilter(filter, prep, false);
-            await cs.prepare(prep);
+            const ctxt = await cs.searchFilter(prep, filter, false);
+            let set = await cs.executeFilters(prep);
             this.worker.opContext.log('iterate filters');
-            while (await cs.filterMore(ctxt)) {
+            while (await cs.filterMore(ctxt, set[0])) {
               this.worker.deadCheck('processCodes#4');
-              const c = await cs.filterConcept(ctxt);
-              if (await this.passesFilters(cs, c, prep, filters, 0)) {
+              const c = await cs.filterConcept(ctxt, set[0]);
+              if (await this.passesFilters(cs, c, prep, set, 1)) {
                 const cds = new Designations(this.worker.i18n.languageDefinitions);
-                await this.listDisplaysFromProvider(cds, cs, c);
-                await this.includeCode(cs, null, await cs.system(), await cs.version(), await cs.code(c), await cs.isAbstract(c), await cs.isInactive(c), await cs.deprecated(c), await cs.getCodeStatus(c),
-                  cds, await cs.definition(c), await cs.itemWeight(c), expansion, valueSets, await cs.getExtensions(c), null, await cs.getProperties(c), null, excludeInactive, vsSrc.url);
+                let added;
+                if (this.noDetails) {
+                  await this.listDisplaysFromProvider(cds, cs, c);
+                  added = await this.includeCode(cs, null, await cs.system(), await cs.version(), await cs.code(c), await cs.isAbstract(c), await cs.isInactive(c), false, null,
+                      cds, null, null, expansion, valueSets, null, null, null, null, excludeInactive, vsSrc.url);
+
+                } else {
+                  await this.listDisplaysFromProvider(cds, cs, c);
+                  added = await this.includeCode(cs, null, await cs.system(), await cs.version(), await cs.code(c), await cs.isAbstract(c), await cs.isInactive(c), await cs.isDeprecated(c), await cs.getStatus(c),
+                      cds, await cs.definition(c), await cs.itemWeight(c), expansion, valueSets, await cs.extensions(c), null, await cs.properties(c), null, excludeInactive, vsSrc.url);
+                }
+                if (added) {
+                  this.addToTotal();
+                }
               }
             }
             this.worker.opContext.log('iterate filters done');
@@ -764,41 +814,49 @@ class ValueSetExpander {
         if (cset.concept) {
           this.worker.opContext.log('iterate concepts');
           const cds = new Designations(this.worker.i18n.languageDefinitions);
-          let tcount = 0;
+
           for (const cc of cset.concept) {
             this.worker.deadCheck('processCodes#3');
             cds.clear();
-            Extensions.checkNoModifiers(cc, 'ValueSetExpander.processCodes', 'set concept reference');
+            Extensions.checkNoModifiers(cc, 'ValueSetExpander.processCodes', 'set concept reference', vsSrc.vurl);
             const cctxt = await cs.locate(cc.code, this.allAltCodes);
             if (cctxt && cctxt.context && (!this.params.activeOnly || !await cs.isInactive(cctxt.context)) && await this.passesFilters(cs, cctxt.context, prep, filters, 0)) {
-              await this.listDisplaysFromProvider(cds, cs, cctxt.context);
-              this.listDisplaysFromIncludeConcept(cds, cc, vsSrc);
-              if (filter.passesDesignations(cds) || filter.passes(cc.code)) {
-                tcount++;
-                let ov = Extensions.readString(cc, 'http://hl7.org/fhir/StructureDefinition/itemWeight');
-                if (!ov) {
-                  ov = await cs.itemWeight(cctxt.context);
+              let added;
+              if (this.noDetails) {
+                added = await this.includeCode(cs, null, cs.system(), cs.version(), cc.code, await cs.isAbstract(cctxt.context), await cs.isInactive(cctxt.context), null, null, cds,
+                    null, null, expansion, valueSets, null, null, null, null, excludeInactive, vsSrc.url);
+              } else {
+                await this.listDisplaysFromProvider(cds, cs, cctxt.context);
+                this.listDisplaysFromIncludeConcept(cds, cc, vsSrc);
+                if (filter.passesDesignations(cds) || filter.passes(cc.code)) {
+                  let ov = Extensions.readString(cc, 'http://hl7.org/fhir/StructureDefinition/itemWeight');
+                  if (!ov) {
+                    ov = await cs.itemWeight(cctxt.context);
+                  }
+                  added = await this.includeCode(cs, null, cs.system(), cs.version(), cc.code, await cs.isAbstract(cctxt.context), await cs.isInactive(cctxt.context), await cs.isDeprecated(cctxt.context), await cs.getStatus(cctxt.context), cds,
+                      await cs.definition(cctxt.context), ov, expansion, valueSets, await cs.extensions(cctxt.context), cc.extension, await cs.properties(cctxt.context), null, excludeInactive, vsSrc.url);
                 }
-                await this.includeCode(cs, null, cs.system(), cs.version(), cc.code, await cs.isAbstract(cctxt.context), await cs.isInactive(cctxt.context), await cs.isDeprecated(cctxt.context), await cs.getStatus(cctxt.context), cds,
-                  await cs.definition(cctxt.context), ov, expansion, valueSets, await cs.extensions(cctxt.context), cc.extension, await cs.properties(cctxt.context), null, excludeInactive, vsSrc.url);
+                if (added) {
+                  this.addToTotal();
+                }
               }
             }
           }
-          this.addToTotal(tcount);
           this.worker.opContext.log('iterate concepts done');
         }
 
-        if (cset.filter) {
+        if (cset.filter && cset.filter.length > 0) {
           this.worker.opContext.log('prepare filters');
           const fcl = cset.filter;
           const prep = await cs.getPrepContext(true);
+
           if (!filter.isNull) {
-            await cs.searchFilter(filter, prep, true);
+            await cs.searchFilter(prep, filter, true);
           }
 
           if (cs.specialEnumeration()) {
-            await cs.specialFilter(prep, true);
-            Extensions.addBoolean(expansion, 'http://hl7.org/fhir/StructureDefinition/valueset-toocostly', true);
+            Extensions.addBoolean(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", true);
+            Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed-reason", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
             notClosed.value = true;
           }
 
@@ -806,47 +864,56 @@ class ValueSetExpander {
             this.worker.deadCheck('processCodes#4a');
             const fc = fcl[i];
             if (!fc.value) {
-              throw new Issue('error', 'invalid', path+".filter["+i+"]", 'UNABLE_TO_HANDLE_SYSTEM_FILTER_WITH_NO_VALUE', this.worker.i18n.translate('UNABLE_TO_HANDLE_SYSTEM_FILTER_WITH_NO_VALUE', this.params.httpLanguages, [cs.system(), fc.property, fc.op]), 'vs-invalid', 400);
+              throw new Issue('error', 'invalid', path + ".filter[" + i + "]", 'UNABLE_TO_HANDLE_SYSTEM_FILTER_WITH_NO_VALUE', this.worker.i18n.translate('UNABLE_TO_HANDLE_SYSTEM_FILTER_WITH_NO_VALUE', this.params.httpLanguages, [cs.system(), fc.property, fc.op]), 'vs-invalid', 400);
             }
-            Extensions.checkNoModifiers(fc, 'ValueSetExpander.processCodes', 'filter');
-            await cs.filter(prep, fc.property, fc.op, fc.value);
+            Extensions.checkNoModifiers(fc, 'ValueSetExpander.processCodes', 'filter', vsSrc.vurl);
+            await cs.filter(prep, i == 0, fc.property, fc.op, fc.value);
           }
 
           const fset = await cs.executeFilters(prep);
           if (await cs.filtersNotClosed(prep)) {
             notClosed.value = true;
-          }
-          if (fset.length === 1 && !excludeInactive && !this.params.activeOnly) {
-            this.addToTotal(await cs.filterSize(prep, fset[0]));
+          } else if (fset.length === 1 && !excludeInactive && !this.params.activeOnly) {
+            // this.addToTotal(await cs.filterSize(prep, fset[0]));
           }
 
-          // let count = 0;
           this.worker.opContext.log('iterate filters');
+          this.addToTotal(0);
+          const cds = new Designations(this.worker.i18n.languageDefinitions);
           while (await cs.filterMore(prep, fset[0])) {
             this.worker.deadCheck('processCodes#5');
             const c = await cs.filterConcept(prep, fset[0]);
             const ok = (!this.params.activeOnly || !await cs.isInactive(c)) && (await this.passesFilters(cs, c, prep, fset, 1));
             if (ok) {
+              cds.clear();
               // count++;
-              const cds = new Designations(this.worker.i18n.languageDefinitions);
               if (this.passesImports(valueSets, cs.system(), await cs.code(c), 0)) {
-                await this.listDisplaysFromProvider(cds, cs, c);
-                let parent = null;
-                if (cs.hasParents()) {
-                  parent = this.map.get(this.keyS(cs.system(), cs.version(), await cs.parent(c)));
-                } else {
-                  this.canBeHierarchy = false;
-                }
-                await this.includeCode(cs, parent, await cs.system(), await cs.version(), await cs.code(c), await cs.isAbstract(c), await cs.isInactive(c),
-                  await cs.isDeprecated(c), await cs.getStatus(c), cds, await cs.definition(c), await cs.itemWeight(c),
-                  expansion, null, await cs.extensions(c), null, await cs.properties(c), null, excludeInactive, vsSrc.url);
+                let added;
+                if (this.noDetails) {
+                  added = await this.includeCode(cs, null, await cs.system(), await cs.version(), await cs.code(c), await cs.isAbstract(c), await cs.isInactive(c),
+                      null,  null, cds, null, null,
+                      expansion, null, null, null, null, null, excludeInactive, vsSrc.url);
 
+                } else {
+                  await this.listDisplaysFromProvider(cds, cs, c);
+                  let parent = null;
+                  if (cs.hasParents()) {
+                    parent = this.map.get(this.keyS(cs.system(), cs.version(), await cs.parent(c)));
+                  } else {
+                    this.canBeHierarchy = false;
+                  }
+                  added = await this.includeCode(cs, parent, await cs.system(), await cs.version(), await cs.code(c), await cs.isAbstract(c), await cs.isInactive(c),
+                      await cs.isDeprecated(c), await cs.getStatus(c), cds, await cs.definition(c), await cs.itemWeight(c),
+                      expansion, null, await cs.extensions(c), null, await cs.properties(c), null, excludeInactive, vsSrc.url);
+                }
+                if (added) {
+                  this.addToTotal();
+                }
               }
             }
           }
           this.worker.opContext.log('iterate filters done');
         }
-
       }
     }
   }
@@ -854,22 +921,10 @@ class ValueSetExpander {
   async passesFilters(cs, c, prep, filters, offset) {
     for (let j = offset; j < filters.length; j++) {
       const f = filters[j];
-      // if (f instanceof SpecialProviderFilterContextNothing) {
-      //   return false;
-      // } else if (f instanceof SpecialProviderFilterContextConcepts) {
-      //   let ok = false;
-      //   for (const t of f.list) {
-      //     if (cs.sameContext(t, c)) {
-      //       ok = true;
-      //     }
-      //   }
-      //   if (!ok) return false;
-      // } else {
-        let ok = await cs.filterCheck(prep, f, c);
-        if (ok != true) {
-          return false;
-        }
-      // }
+      let ok = await cs.filterCheck(prep, f, c);
+      if (ok != true) {
+        return false;
+      }
     }
     return true;
   }
@@ -878,7 +933,7 @@ class ValueSetExpander {
     this.worker.deadCheck('processCodes#1');
     const valueSets = [];
 
-    Extensions.checkNoModifiers(cset, 'ValueSetExpander.processCodes', 'set');
+    Extensions.checkNoModifiers(cset, 'ValueSetExpander.processCodes', 'set', vsSrc.vurl);
 
     if (cset.valueSet || cset.concept || (cset.filter || []).length > 1) {
       this.canBeHierarchy = false;
@@ -890,9 +945,12 @@ class ValueSetExpander {
         for (const u of cset.valueSet) {
           const s = this.worker.pinValueSet(u);
           this.worker.deadCheck('processCodes#2');
-          const ivs = new ImportedValueSet(await this.expandValueSet(s, '', filter, notClosed));
+          let vs = await this.worker.findValueSet(s, '', vsSrc);
+          const ivs = new ImportedValueSet(await this.expandValueSet(s, '',  vs, filter, notClosed));
           this.checkResourceCanonicalStatus(expansion, ivs.valueSet, this.valueSet);
-          this.addParamUri(expansion, 'used-valueset', ivs.valueSet.vurl);
+          if (!vs.isContained) {
+            this.addParamUri(expansion, 'used-valueset', ivs.valueSet.vurl);
+          }
           valueSets.push(ivs);
         }
         this.excludeValueSet(valueSets[0].valueSet, expansion, valueSets, 1);
@@ -900,68 +958,63 @@ class ValueSetExpander {
     } else {
       const filters = [];
       const prep = null;
-      const cs = await this.worker.findCodeSystem(cset.system, cset.version, this.params, ['complete', 'fragment'], false, true, true, null);
+      const cs = await this.worker.findCodeSystem(cset.system, cset.version, this.params, ['complete', 'fragment'], false,
+        true, true, null, this.requiredSupplements);
 
-      this.worker.checkSupplements(cs, cset, this.requiredSupplements);
+      this.worker.checkSupplements(cs, cset, this.requiredSupplements, this.usedSupplements);
       this.checkResourceCanonicalStatus(expansion, cs, this.valueSet);
       const sv = this.canonical(await cs.system(), await cs.version());
       this.addParamUri(expansion, 'used-codesystem', sv);
 
       for (const u of cset.valueSet || []) {
-        const s = this.pinValueSet(u);
         this.worker.deadCheck('processCodes#3');
-        let f = null;
-        const vs = this.onGetValueSet(this, s, '');
-        if (vs != null) {
-          f = this.makeFilterForValueSet(cs, vs);
+        const s = this.worker.pinValueSet(u);
+        this.worker.opContext.log('import value set ' + s);
+        let vs = await this.worker.findValueSet(s, '', vsSrc);
+        const ivs = new ImportedValueSet(await this.expandValueSet(s, '', vs, filter, notClosed));
+        this.checkResourceCanonicalStatus(expansion, ivs.valueSet, this.valueSet);
+        if (!vs.isContained) {
+          this.addParamUri(expansion, 'used-valueset', this.worker.makeVurl(ivs.valueSet));
         }
-        if (f != null) {
-          filters.push(f);
-        } else {
-          valueSets.push(new ImportedValueSet(await this.expandValueSet(s, '', filter, notClosed)));
-        }
+        valueSets.push(ivs);
       }
 
       if (!cset.concept && !cset.filter) {
-        this.opContext.log('handle system');
-        if (cs.specialEnumeration() && this.params.limitedExpansion && filters.length === 0) {
-          const base = await this.expandValueSet(cs.specialEnumeration(), '', filter, notClosed);
-          Extensions.addBoolean(expansion, 'http://hl7.org/fhir/StructureDefinition/valueset-toocostly', true);
-          this.excludeValueSet(base, expansion, valueSets, 0);
-          notClosed.value = true;
-        } else if (filter.isNull) {
-          if (cs.isNotClosed(filter)) {
-            if (cs.specialEnumeration()) {
-              throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly. If an incomplete expansion is requested, a limited enumeration will be returned', null, 400).withDiagnostics(this.worker.opContext.diagnostics());
-            } else {
-              throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system + '" has a grammar, and cannot be enumerated directly', null, 400).withDiagnostics(this.worker.opContext.diagnostics());
-            }
-          }
-
-          const iter = await cs.getIterator(null);
-          if (valueSets.length === 0 && this.limitCount > 0 && iter.count > this.limitCount && !this.params.limitedExpansion) {
-            throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [vsSrc.url, '>' + this.limitCount]), null, 400).withDiagnostics(this.worker.opContext.diagnostics());
-          }
-          while (iter.more()) {
-            this.worker.deadCheck('processCodes#3a');
-            const c = await cs.getNextContext(iter);
-            if (await this.passesFilters(cs, c, prep, filters, 0)) {
-              await this.excludeCodeAndDescendants(cs, c, expansion, valueSets, excludeInactive, vsSrc.url);
+        this.worker.opContext.log('handle system');
+        if (!cset.valueSet) {
+          if (!this.excludeSpecialCase) {
+            // excluding a whole system - we don't list the codes in this case
+            this.excludedSystems.add(cset.system + (this.doingVersion && cset.version ? '|' + cset.version : ''));
+          } else {
+            const iter = await cs.iteratorAll();
+            if (iter) {
+              let c = await cs.nextContext(iter);
+              while (c) {
+                this.worker.deadCheck('processCodes#3aa');
+                this.excludeCode(cs, cs.system(), cs.version(), await cs.code(c), expansion, valueSets, vsSrc.url);
+                c = await cs.nextContext(iter);
+              }
             }
           }
         } else {
-          this.noTotal();
           if (cs.isNotClosed(filter)) {
-            notClosed.value = true;
+            if (cs.specialEnumeration()) {
+              Extensions.addBoolean(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", true);
+              Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed-reason", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
+            } else {
+              throw new Issue("error", "too-costly", null, null, 'The code System "' + cs.system() + '" has a grammar, and cannot be enumerated directly', null, 422).withDiagnostics(this.worker.opContext.diagnostics());
+            }
           }
-          const prep = await cs.getPrepContext(true);
-          const ctxt = await cs.searchFilter(filter, prep, false);
-          await cs.prepare(prep);
-          while (await cs.filterMore(ctxt)) {
-            this.worker.deadCheck('processCodes#4');
-            const c = await cs.filterConcept(ctxt);
-            if (await this.passesFilters(cs, c, prep, filters, 0)) {
-              this.excludeCode(cs, await cs.system(), await cs.version(), await cs.code(c), expansion, valueSets, vsSrc.url);
+
+          const iter = await cs.iteratorAll();
+          if (iter) {
+            let c = await cs.nextContext(iter);
+            while (c) {
+              this.worker.deadCheck('processCodes#3a');
+              if (await this.passesFilters(cs, c, prep, filters, 0)) {
+                this.excludeCode(cs, cs.system(), cs.version(), await cs.code(c), expansion, valueSets, vsSrc.url);
+              }
+              c = await cs.nextContext(iter);
             }
           }
         }
@@ -973,9 +1026,9 @@ class ValueSetExpander {
         for (const cc of cset.concept) {
           this.worker.deadCheck('processCodes#3');
           cds.clear();
-          Extensions.checkNoModifiers(cc, 'ValueSetExpander.processCodes', 'set concept reference');
+          Extensions.checkNoModifiers(cc, 'ValueSetExpander.processCodes', 'set concept reference', vsSrc.vurl);
           const cctxt = await cs.locate(cc.code, this.allAltCodes);
-          if (cctxt && cctxt.context && (!this.params.activeOnly || !await cs.isInactive(cctxt)) && await this.passesFilters(cs, cctxt, prep, filters, 0)) {
+          if (cctxt && cctxt.context && (!this.params.activeOnly || !await cs.isInactive(cctxt.context)) && await this.passesFilters(cs, cctxt.context, prep, filters, 0)) {
             if (filter.passesDesignations(cds) || filter.passes(cc.code)) {
               let ov = Extensions.readString(cc, 'http://hl7.org/fhir/StructureDefinition/itemWeight');
               if (!ov) {
@@ -996,14 +1049,16 @@ class ValueSetExpander {
 
         if (cs.specialEnumeration()) {
           await cs.specialFilter(prep, true);
-          Extensions.addBoolean(expansion, 'http://hl7.org/fhir/StructureDefinition/valueset-toocostly', true);
-          notClosed.value = true;
+          Extensions.addBoolean(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed", true);
+          Extensions.addString(expansion, "http://hl7.org/fhir/StructureDefinition/valueset-unclosed-reason", 'The code System "' + cs.system() + " has a grammar and so has infinite members. This extension is based on " + cs.specialEnumeration());
         }
 
+        let first = true;
         for (let fc of cset.filter) {
           this.worker.deadCheck('processCodes#4a');
-          Extensions.checkNoModifiers(fc, 'ValueSetExpander.processCodes', 'filter');
-          await cs.filter(prep, fc.property, fc.op, fc.value);
+          Extensions.checkNoModifiers(fc, 'ValueSetExpander.processCodes', 'filter', vsSrc.vurl);
+          await cs.filter(prep, first, fc.property, fc.op, fc.value);
+          first = false;
         }
 
         this.worker.opContext.log('iterate filters');
@@ -1035,19 +1090,25 @@ class ValueSetExpander {
     if (expansion) {
       const vs = this.canonical(await cs.system(), await cs.version());
       this.addParamUri(expansion, 'used-codesystem', vs);
-      const ts = cs.listSupplements();
+      const ts = cs.listSupplements(false);
       for (const v of ts) {
-        this.worker.deadCheck('processCodeAndDescendants');
-        this.addParamUri(expansion, 'used-supplement', v);
+        this.reportedSupplements.add(v);
       }
     }
 
     let n = null;
     if ((!this.params.excludeNotForUI || !await cs.isAbstract(context)) && (!this.params.activeOnly || !await cs.isInactive(context))) {
       const cds = new Designations(this.worker.i18n.languageDefinitions);
-      await this.listDisplaysFromProvider(cds, cs, context);
-      const t = await this.includeCode(cs, parent, await cs.system(), await cs.version(), context.code, await cs.isAbstract(context), await cs.isInactive(context), await cs.isDeprecated(context), await cs.getStatus(context), cds, await cs.definition(context),
-        await cs.itemWeight(context), expansion, imports, await cs.extensions(context), null, await cs.properties(context), null, excludeInactive, srcUrl);
+      let t;
+      if (this.noDetails) {
+        t = await this.includeCode(cs, null, await cs.system(), await cs.version(), context.code, await cs.isAbstract(context), await cs.isInactive(context), null, null, null,
+            null, expansion, imports, null, null, null, null, excludeInactive, srcUrl);
+
+      } else {
+        await this.listDisplaysFromProvider(cds, cs, context);
+        t = await this.includeCode(cs, parent, await cs.system(), await cs.version(), context.code, await cs.isAbstract(context), await cs.isInactive(context), await cs.isDeprecated(context), await cs.getStatus(context), cds, await cs.definition(context),
+            await cs.itemWeight(context), expansion, imports, await cs.extensions(context), null, await cs.properties(context), null, excludeInactive, srcUrl);
+      }
       if (t != null) {
         result++;
       }
@@ -1076,57 +1137,69 @@ class ValueSetExpander {
     if (expansion) {
       const vs = this.canonical(await cs.system(), await cs.version());
       this.addParamUri(expansion, 'used-codesystem', vs);
-      const ts= cs.listSupplements();
+      const ts= cs.listSupplements(false);
       for (const v of ts) {
-        this.worker.deadCheck('processCodeAndDescendants');
-        this.addParamUri(expansion, 'used-supplement', v);
+        this.reportedSupplements.add(v);
       }
     }
 
     if ((!this.params.excludeNotForUI || !await cs.isAbstract(context)) && (!this.params.activeOnly || !await cs.isInactive(context))) {
       const cds = new Designations(this.worker.i18n.languageDefinitions);
       await this.listDisplaysFromProvider(cds, cs, context);
-      for (const code of await cs.listCodes(context, this.params.altCodeRules)) {
-        this.worker.deadCheck('processCodeAndDescendants#2');
-        this.excludeCode(cs, await cs.system(), await cs.version(), code, expansion, imports, srcUrl);
-      }
+      this.worker.deadCheck('processCodeAndDescendants#2');
+      this.excludeCode(cs, await cs.system(), await cs.version(), context, expansion, imports, srcUrl);
     }
 
-    const iter = await cs.getIterator(context);
-    while (iter.more()) {
+    const iter = await cs.iterator(context);
+    let c = await cs.nextContext(iter);
+    while (c) {
       this.worker.deadCheck('processCodeAndDescendants#3');
-      const c = await cs.getNextContext(iter);
       await this.excludeCodeAndDescendants(cs, c, expansion, imports, excludeInactive, srcUrl);
+      c = await cs.nextContext(iter);
     }
   }
 
-  async handleCompose(source, filter, expansion, notClosed) {
+  async handleCompose(source, filter, expansion, notClosed, vsInfo) {
     this.worker.opContext.log('compose #1');
 
+    this.doingVersion = false;
     const ts = new Map();
     for (const c of source.jsonObj.compose.include || []) {
       this.worker.deadCheck('handleCompose#2');
-      await this.checkSource(c, expansion, filter, source.url, ts);
+      await this.checkSource(c, expansion, filter, source.url, ts, vsInfo, source);
     }
     for (const c of source.jsonObj.compose.exclude || []) {
       this.worker.deadCheck('handleCompose#3');
       this.hasExclusions = true;
-      await this.checkSource(c, expansion, filter, source.url, ts);
+      await this.checkSource(c, expansion, filter, source.url, ts, null, source);
     }
 
     this.worker.opContext.log('compose #2');
 
-    let i = 0;
-    for (const c of source.jsonObj.compose.exclude || []) {
-      this.worker.deadCheck('handleCompose#4');
-      await this.excludeCodes(c, "ValueSet.compose.exclude["+i+"]", source, filter, expansion, this.excludeInactives(source), notClosed);
-    }
+    if (vsInfo.handleByCS) {
+      await this.processCodes("ValueSet.compose", source, source.jsonObj.compose, filter, expansion, this.excludeInactives(source), notClosed, vsInfo);
+    } else {
+      this.checkForExclusionVersionSpecialCase(source, expansion);
 
-    i = 0;
-    for (const c of source.jsonObj.compose.include || []) {
-      this.worker.deadCheck('handleCompose#5');
-      await this.includeCodes(c, "ValueSet.compose.include["+i+"]", source, filter, expansion, this.excludeInactives(source), notClosed);
-      i++;
+      let i = 0;
+      for (const c of source.jsonObj.compose.exclude || []) {
+        this.worker.deadCheck('handleCompose#4');
+        await this.excludeCodes(c, "ValueSet.compose.exclude[" + i + "]", source, filter, expansion, this.excludeInactives(source), notClosed);
+      }
+
+      i = 0;
+      const includes = [...(source.jsonObj.compose.include || [])];
+      includes.sort((a, b) => {
+        if (a.system === b.system && a.version && b.version) {
+          return -VersionUtilities.compareVersionsGeneral(a.version, b.version);
+        }
+        return 0;
+      });
+      for (const c of includes) {
+        this.worker.deadCheck('handleCompose#5');
+        await this.includeCodes(c, "ValueSet.compose.include[" + i + "]", source, source.jsonObj.compose, filter, expansion, this.excludeInactives(source), notClosed);
+        i++;
+      }
     }
   }
 
@@ -1139,13 +1212,13 @@ class ValueSetExpander {
     this.totalStatus = 'uninitialised';
     this.total = 0;
 
-    Extensions.checkNoImplicitRules(source,'ValueSetExpander.Expand', 'ValueSet');
-    Extensions.checkNoModifiers(source,'ValueSetExpander.Expand', 'ValueSet');
+    Extensions.checkNoImplicitRules(source,'ValueSetExpander.Expand', 'ValueSet', source.vurl);
+    Extensions.checkNoModifiers(source,'ValueSetExpander.Expand', 'ValueSet', source.vurl);
     this.worker.seeValueSet(source, this.params);
     this.valueSet = source;
 
     const result = structuredClone(source.jsonObj);
-    result.id = '';
+    result.id = undefined;
     let table = null;
     let div_ = null;
 
@@ -1158,18 +1231,19 @@ class ValueSetExpander {
       result.publisher = undefined;
       result.extension = undefined;
       result.text = undefined;
+      result.contained = undefined;
     }
 
-    this.requiredSupplements = [];
+    for (let s of this.params.supplements) this.requiredSupplements.add(s);
     for (const ext of Extensions.list(source.jsonObj, 'http://hl7.org/fhir/StructureDefinition/valueset-supplement')) {
-      this.requiredSupplements.push(getValuePrimitive(ext));
+      this.requiredSupplements.add(getValuePrimitive(ext));
     }
 
     if (result.expansion) {
       return result; // just return the expansion
     }
 
-    if (this.params.generateNarrative) {
+    if (this.params.generateNarrative && !this.noDetails) {
       div_ = div();
       table = div_.table("grid");
     } else {
@@ -1181,13 +1255,12 @@ class ValueSetExpander {
     this.fullList = [];
     this.canBeHierarchy = !this.params.excludeNested;
 
-    this.limitCount = INTERNAL_LIMIT;
     if (this.params.limit <= 0) {
-      if (!filter.isNull) {
-        this.limitCount = UPPER_LIMIT_TEXT;
-      } else {
-        this.limitCount = UPPER_LIMIT_NO_TEXT;
-      }
+      this.limitCount = this.externalLimit;
+    } else if (this.externalLimit) {
+      this.limitCount = Math.min(this.params.limit, this.externalLimit);
+    } else {
+      this.limitCount = this.params.limit;
     }
     this.offset = this.params.offset;
     this.count = this.params.count;
@@ -1205,9 +1278,6 @@ class ValueSetExpander {
       this.addParamStr(exp, 'filter', filter.filter);
     }
 
-    if (this.params.hasLimitedExpansion) {
-      this.addParamBool(exp, 'limitedExpansion', this.params.limitedExpansion);
-    }
     if (this.params.DisplayLanguages) {
       this.addParamCode(exp, 'displayLanguage', this.params.DisplayLanguages.asString(true));
     } else if (this.params.HTTPLanguages) {
@@ -1220,6 +1290,9 @@ class ValueSetExpander {
     }
     if (this.params.hasExcludeNested) {
       this.addParamBool(exp, 'excludeNested', this.params.excludeNested);
+    }
+    if (this.params.versionsMatch) {
+      this.addParamBool(exp, 'versionsMatch', this.params.versionsMatch);
     }
     if (this.params.hasActiveOnly) {
       this.addParamBool(exp, 'activeOnly', this.params.activeOnly);
@@ -1255,13 +1328,16 @@ class ValueSetExpander {
 
     let notClosed = { value :  false};
 
+    let vsInfo = this.scanValueSet(source.jsonObj.compose);
     try {
-      if (source.jsonObj.compose && Extensions.checkNoModifiers(source.jsonObj.compose, 'ValueSetExpander.Expand', 'compose')) {
-        await this.handleCompose(source, filter, exp, notClosed);
+      if (source.jsonObj.compose && Extensions.checkNoModifiers(source.jsonObj.compose, 'ValueSetExpander.Expand', 'compose', source.vurl)
+          && this.worker.checkNoLockedDate(source.url, source.jsonObj.compose)) {
+        await this.handleCompose(source, filter, exp, notClosed, vsInfo);
       }
 
-      if (this.requiredSupplements.length > 0) {
-        throw new Issue('error', 'not-found', null, 'VALUESET_SUPPLEMENT_MISSING',  this.worker.opContext.i18n.translatePlural(this.requiredSupplements.length, 'VALUESET_SUPPLEMENT_MISSING', this.params.httpLanguages, [this.requiredSupplements.join(', ')]), 'not-found', 400);
+      const unused = new Set([...this.requiredSupplements].filter(s => !this.usedSupplements.has(s)));
+      if (unused.size > 0) {
+        throw new Issue('error', 'not-found', null, 'VALUESET_SUPPLEMENT_MISSING', this.worker.i18n.translatePlural(unused.size, 'VALUESET_SUPPLEMENT_MISSING', this.params.HTTPLanguages, [[...unused].join(',')]), 'not-found').handleAsOO(422);
       }
     } catch (e) {
       if (e instanceof Issue) {
@@ -1270,13 +1346,9 @@ class ValueSetExpander {
           if (this.totalStatus === 'uninitialised') {
             this.totalStatus = 'off';
           } else if (e.toocostly) {
-            if (this.params.limitedExpansion) {
-              Extensions.addBoolean(exp, 'http://hl7.org/fhir/StructureDefinition/valueset-toocostly', 'value', true);
-              if (table != null) {
-                div_.p().style('color: Maroon').tx(e.message);
-              }
-            } else {
-              throw e;
+            Extensions.addBoolean(exp, 'http://hl7.org/fhir/StructureDefinition/valueset-toocostly', 'value', true);
+            if (table != null) {
+              div_.p().style('color: Maroon').tx(e.message);
             }
           } else {
             // nothing- swallow it
@@ -1289,14 +1361,26 @@ class ValueSetExpander {
       }
     }
 
+    const ts = this.reportedSupplements;
+    for (const v of ts) {
+      this.addParamUri(exp, 'used-supplement', v);
+    }
+
     this.worker.opContext.log('finish up');
 
     let list;
     if (notClosed.value) {
-      Extensions.addBoolean(exp, 'http://hl7.org/fhir/StructureDefinition/valueset-unclosed', true);
+      if (!Extensions.has(exp, 'http://hl7.org/fhir/StructureDefinition/valueset-unclosed')) {
+        Extensions.addBoolean(exp, 'http://hl7.org/fhir/StructureDefinition/valueset-unclosed', true);
+      }
+      if (this.totalStatus === 'set' && this.total > -1) {
+        exp.total = this.total;
+      }
       list = this.fullList;
-      for (const c of this.fullList) {
-        c.contains = undefined;
+      if (!this.noDetails) {
+        for (const c of this.fullList) {
+          c.contains = undefined;
+        }
       }
       if (table != null) {
         div_.addTag('p').setAttribute('style', 'color: Navy').tx('Because of the way that this value set is defined, not all the possible codes can be listed in advance');
@@ -1310,7 +1394,7 @@ class ValueSetExpander {
         exp.total = this.fullList.length;
       }
 
-      if (this.canBeHierarchy && (this.count <= 0 || this.count > this.fullList.length)) {
+      if (this.canBeHierarchy && (this.count < 0 || this.count > this.fullList.length)) {
         list = this.rootList;
       } else {
         list = this.fullList;
@@ -1322,7 +1406,7 @@ class ValueSetExpander {
 
     if (this.offset + this.count < 0 && this.fullList.length > this.limit) {
       this.log.log('Operation took too long @ expand (' + this.constructor.name + ')');
-      throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [source.vurl, '>' + this.limit]), null, 400).withDiagnostics(this.worker.opContext.diagnostics());
+      throw new Issue("error", "too-costly", null, 'VALUESET_TOO_COSTLY', this.worker.i18n.translate('VALUESET_TOO_COSTLY', this.params.httpLanguages, [source.vurl, '>' + this.limit]), null, 422).withDiagnostics(this.worker.opContext.diagnostics());
     } else {
       let t = 0;
       let o = 0;
@@ -1331,7 +1415,7 @@ class ValueSetExpander {
         const c = list[i];
         if (this.map.has(this.keyC(c))) {
           o++;
-          if (o > this.offset && (this.count <= 0 || t < this.count)) {
+          if ((vsInfo.csDoOffset) || (o > this.offset && (this.count < 0 || t < this.count))) {
             t++;
             if (!exp.contains) {
               exp.contains = [];
@@ -1355,6 +1439,43 @@ class ValueSetExpander {
       }
     }
 
+    if (result.expansion.contains && result.expansion.contains.length > 0) {
+      let hasChildren = false;
+      for (let c of result.expansion.contains) {
+        if (c.contains) {
+          hasChildren = true;
+          break;
+        }
+      }
+
+      if (!hasChildren) {
+        let sort = this.params.sort;
+        let order = 1;
+        if (sort.startsWith('-')) {
+          order = -1;
+          sort = sort.substring(1);
+        }
+        switch (sort) {
+          case "design":
+            break; // do nothing - that's the natural order of this class
+          case "code" :
+            result.expansion.contains.sort((a, b) => order * (a.code ?? 'zzz').localeCompare(b.code ?? 'zzz'));
+            break;
+          case "display" :
+            result.expansion.contains.sort((a, b) => order * (a.display ?? 'zzz').localeCompare(b.display ?? 'zzz'));
+            break;
+          case "codesystem" :
+            // do nothing about that here
+            break;
+          default:
+            if (sort.startsWith("prop:")) {
+              result.expansion.contains.sort((a, b) => order * this.sortByProp(a, b, sort.substring(5)));
+            } else {
+              // do nothing?
+            }
+        }
+      }
+    }
     return result;
   }
 
@@ -1371,17 +1492,28 @@ class ValueSetExpander {
   }
 
   checkCanonicalStatus(exp, vurl, status, standardsStatus, experimental, source) {
+    let sourceStatus = source ? source.status : undefined;
+    let sourceStandardsStatus= source ? Extensions.readString(source, 'http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status') : undefined;
     if (standardsStatus == 'deprecated') {
-      this.addParamUri(exp, 'warning-deprecated', vurl);
+      if (sourceStandardsStatus != 'deprecated') {
+        this.addParamUri(exp, 'warning-deprecated', vurl);
+      }
     } else if (standardsStatus == 'withdrawn') {
-      this.addParamUri(exp, 'warning-withdrawn', vurl);
+      if (sourceStandardsStatus != 'withdrawn') {
+        this.addParamUri(exp, 'warning-withdrawn', vurl);
+      }
     } else if (status == 'retired') {
-      this.addParamUri(exp, 'warning-retired', vurl);
-    } else if (experimental && !source.experimental) {
-      this.addParamUri(exp, 'warning-experimental', vurl)
-    } else if (((status == 'draft') || (standardsStatus == 'draft')) &&
-      !((source.status == 'draft') || (Extensions.readString(source, 'http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status') == 'draft'))) {
-      this.addParamUri(exp, 'warning-draft', vurl)
+      if (sourceStatus != 'retired') {
+        this.addParamUri(exp, 'warning-retired', vurl);
+      }
+    } else if (experimental) {
+      if (!source.experimental) {
+        this.addParamUri(exp, 'warning-experimental', vurl);
+      }
+    } else if (((status == 'draft') || (standardsStatus == 'draft'))) {
+      if (!((source.status == 'draft') || (Extensions.readString(source, 'http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status') == 'draft'))) {
+        this.addParamUri(exp, 'warning-draft', vurl)
+      }
     }
   }
 
@@ -1422,6 +1554,9 @@ class ValueSetExpander {
   }
 
   addParamUri(exp, name, value) {
+    validateParameter(name, 'name', String);
+    validateParameter(value, 'value', String);
+
     if (!this.hasParam(exp, name, value)) {
       if (!exp.parameter) {
         exp.parameter = [];
@@ -1447,11 +1582,19 @@ class ValueSetExpander {
   }
 
   isExcluded(system, version, code) {
-    return this.excluded.has(system+'|'+version+'#'+code);
+    if (this.excludedSystems.has(system)) {
+      return true;
+    }
+    let key = this.doingVersion && !this.params.versionsMatch? system+'|'+version : system;
+    if (this.excludedSystems.has(key)) {
+      return true;
+    }
+    key = (this.doingVersion && !this.params.versionsMatch ? system+'|'+version : system)+'#'+code;
+    return this.excluded.has(key);
   }
 
   keyS(system, version, code) {
-    return system+"~"+(this.doingVersion ? version+"~" : "")+code;
+    return system+"~"+(this.doingVersion && !this.params.versionsMatch ? version+"~" : "")+code;
   }
 
   keyC(contains) {
@@ -1462,22 +1605,25 @@ class ValueSetExpander {
     if (value === undefined || value == null) {
       return;
     }
-    if (!expansion.property) {
-      expansion.property = [];
-    }
-    let pd = expansion.property.find(t1 => t1.uri == url || t1.code == code);
-    if (!pd) {
-      pd = {};
-      expansion.property.push(pd);
-      pd.uri = url;
-      pd.code = code;
-    } else if (!pd.uri) {
-      pd.uri = url
-    }
-    if (pd.uri != url) {
-      throw new Error('URL mismatch on expansion: ' + pd.uri + ' vs ' + url + ' for code ' + code);
-    } else {
-      code = pd.code;
+    // we only define it if the code system has a definition
+    if (url) {
+      if (!expansion.property) {
+        expansion.property = [];
+      }
+      let pd = expansion.property.find(t1 => t1.uri == url || t1.code == code);
+      if (!pd) {
+        pd = {};
+        expansion.property.push(pd);
+        pd.uri = url;
+        pd.code = code;
+      } else if (!pd.uri) {
+        pd.uri = url
+      }
+      if (pd.uri != url) {
+        throw new Error('URL mismatch on expansion: ' + pd.uri + ' vs ' + url + ' for code ' + code);
+      } else {
+        code = pd.code;
+      }
     }
 
     if (!contains.property) {
@@ -1492,9 +1638,16 @@ class ValueSetExpander {
     pdv[valueName] = value;
   }
 
-  addToTotal(t) {
+  addToTotal(t = 1) {
     if (this.total > -1 && this.totalStatus != "off") {
       this.total = this.total + t;
+      this.totalStatus = 'set';
+    }
+  }
+
+  decTotal(t= 1) {
+    if (this.total > -1 && this.totalStatus != "off") {
+      this.total = this.total - t;
       this.totalStatus = 'set';
     }
   }
@@ -1504,7 +1657,10 @@ class ValueSetExpander {
     this.totalStatus = 'off';
   }
 
-  getPropUrl(cs, pn) {
+  getPropUrl(cs, pn, cp) {
+    if (cp.definition?.uri) {
+      return cp.definition.uri;
+    }
     for (let p of cs.propertyDefinitions()) {
       if (pn == p.code) {
         return p.uri;
@@ -1513,10 +1669,111 @@ class ValueSetExpander {
     return undefined;
   }
 
+  /**
+   * we have a look at the value set compose to see what we have.
+   * If it's all one code system(|version), and has no value set dependencies,
+   * then we call it simple - this will affect how it can be handled later
+   *
+   * @param compose
+   * @returns {undefined}
+   */
+  scanValueSet(compose) {
+    let result = { isSimple : false, hasExcludes : true, csset : new Set(), csDoExcludes : false, csDoOffset : false};
+    let simple = true;
+    for (let inc of compose.include || {}) {
+      if (!this.isSimpleSelect(inc, result.csset)) {
+        simple = false;
+      }
+    }
+    for (let exc of compose.exclude || []) {
+      if (!this.isSimpleSelect(exc, result.csset)) {
+        simple = false;
+      }
+      result.hasExcludes = true;
+    }
+    if (simple && result.csset.size == 1) {
+      result.isSimple = true;
+    }
+    return result;
+  }
 
+  isSimpleSelect(inc, set) {
+    set.add(inc.system+"|"+inc.version);
+    return !inc.valueset || inc.valueset.length == 0;
+  }
+
+  excludeFilterList(exc) {
+    const results = [];
+
+    for (const f of exc.filter || []) {
+      results.push({ prop: f.property, op: f.op, value: f.value });
+    }
+
+    return results;
+  }
+
+  sortByProp(a, b, name) {
+    let pA = this.getPropValue(a, name);
+    let pB = this.getPropValue(b, name);
+
+    // nulls sort last
+    if (pA == null && pB == null) return 0;
+    if (pA == null) return 1;
+    if (pB == null) return -1;
+
+    // unwrap objects with a code property
+    if (typeof pA === 'object') pA = pA.code ?? '';
+    if (typeof pB === 'object') pB = pB.code ?? '';
+
+    // numbers and booleans: subtract
+    if (typeof pA === 'number' || typeof pA === 'boolean') {
+      return pA - pB;
+    } else {
+      // strings
+      return pA.localeCompare(pB);
+    }
+  }
+
+  getPropValue(cc, name) {
+    for (let p of cc.property) {
+      if (p.code == name) {
+        return getValuePrimitive(p);
+      }
+    }
+    return null;
+  }
+
+
+  // special case: excluding a different version from the include
+  checkForExclusionVersionSpecialCase(source, exp) {
+    if (!this.params.hasVersionsMatch) {
+
+
+      const includes = source.jsonObj.compose.include || [];
+      const excludes = source.jsonObj.compose.exclude || [];
+
+      if (includes.length > 0 && excludes.length > 0) {
+        const system = includes[0].system;
+        const allSameSystem = includes.every(i => i.system === system && i.version)
+          && excludes.every(e => e.system === system && e.version);
+        const noOverlap = !includes.some(i => excludes.some(e => e.version === i.version));
+
+        if (allSameSystem && noOverlap) {
+          this.params.versionsMatch = true;
+          this.excludeSpecialCase = true;
+          this.addParamBool(exp, 'versionsMatch', this.params.versionsMatch);
+
+        }
+      }
+    }
+  }
 }
 
 class ExpandWorker extends TerminologyWorker {
+  internalLimit = INTERNAL_DEFAULT_LIMIT;
+  externalLimit = EXTERNAL_DEFAULT_LIMIT;
+
+
   /**
    * @param {OperationContext} opContext - Operation context
    * @param {Logger} log - Logger instance
@@ -1524,8 +1781,11 @@ class ExpandWorker extends TerminologyWorker {
    * @param {LanguageDefinitions} languages - Language definitions
    * @param {I18nSupport} i18n - Internationalization support
    */
-  constructor(opContext, log, provider, languages, i18n) {
+  constructor(opContext, log, provider, languages,
+              i18n, internalLimit = INTERNAL_DEFAULT_LIMIT, externalLimit = EXTERNAL_DEFAULT_LIMIT) {
     super(opContext, log, provider, languages, i18n);
+    this.externalLimit = externalLimit;
+    this.internalLimit = internalLimit;
   }
 
   /**
@@ -1546,16 +1806,17 @@ class ExpandWorker extends TerminologyWorker {
     try {
       await this.handleTypeLevelExpand(req, res);
     } catch (error) {
-      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       this.log.error(error);
+      debugLog(error);
+      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       const statusCode = error.statusCode || 500;
       if (error instanceof Issue) {
         let oo = new OperationOutcome();
         oo.addIssue(error);
-        return res.status(error.statusCode || 500).json(this.fixForVersion(oo.jsonObj));
+        return res.status(error.statusCode || 500).json(oo.jsonObj);
       } else {
         const issueCode = error.issueCode || 'exception';
-        return res.status(statusCode).json(this.fixForVersion({
+        return res.status(statusCode).json({
           resourceType: 'OperationOutcome',
           issue: [{
             severity: 'error',
@@ -1565,7 +1826,7 @@ class ExpandWorker extends TerminologyWorker {
             },
             diagnostics: error.message
           }]
-        }));
+        });
       }
     }
   }
@@ -1580,11 +1841,12 @@ class ExpandWorker extends TerminologyWorker {
     try {
       await this.handleInstanceLevelExpand(req, res);
     } catch (error) {
-      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       this.log.error(error);
+      debugLog(error);
+      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       const statusCode = error.statusCode || 500;
       const issueCode = error.issueCode || 'exception';
-      return res.status(statusCode).json(this.fixForVersion({
+      return res.status(statusCode).json({
         resourceType: 'OperationOutcome',
         issue: [{
           severity: 'error',
@@ -1594,7 +1856,7 @@ class ExpandWorker extends TerminologyWorker {
           },
           diagnostics: error.message
         }]
-      }));
+      });
     }
   }
 
@@ -1664,10 +1926,10 @@ class ExpandWorker extends TerminologyWorker {
       const url = this.getParameterValue(urlParam);
       const version = versionParam ? this.getParameterValue(versionParam) : null;
 
-      valueSet = await this.findValueSet(url, version);
+      valueSet = await this.findValueSet(url, version, null);
       this.seeSourceVS(valueSet, url);
       if (!valueSet) {
-        return res.status(404).json(this.operationOutcome('error', 'not-found',
+        return res.status(422).json(this.operationOutcome('error', 'not-found',
           version ? `ValueSet not found: ${url} version ${version}` : `ValueSet not found: ${url}`));
       }
     }
@@ -1675,9 +1937,50 @@ class ExpandWorker extends TerminologyWorker {
     // Perform the expansion
     const result = await this.doExpand(valueSet, txp, logExtraOutput);
     req.logInfo = this.usedSources.join("|")+txp.logInfo();
-    return res.json(this.fixForVersion(result));
+    return res.json(result);
   }
-  
+
+  /**
+   * Handle type-level expand: /ValueSet/$expand
+   * ValueSet identified by url, or provided directly in body
+   */
+  async handleInternalExpand(valueSet, req) {
+    this.deadCheck('expand-internal');
+
+    if (!valueSet.jsonObj) {
+      valueSet = new ValueSet(valueSet);
+    }
+    // Determine how the request is structured
+    let params = null;
+    this.seeSourceVS(valueSet);
+
+    if (req.method === 'POST' && req.body) {
+      if (req.body.resourceType === 'ValueSet') {
+        params = this.queryToParameters(req.query);
+      } else if (req.body.resourceType === 'Parameters') {
+        // Body is a Parameters resource
+        params = req.body;
+      } else {
+        // Assume form body - convert to Parameters
+        params = this.formToParameters(req.body, req.query);
+      }
+    } else {
+      // GET request - convert query to Parameters
+      params = this.queryToParameters(req.query);
+    }
+    this.addHttpParams(req, params);
+
+    // Handle tx-resource and cache-id parameters
+    this.setupAdditionalResources(params);
+    const logExtraOutput = this.findParameter(params, 'logExtraOutput');
+
+    let txp = new TxParameters(this.opContext.i18n.languageDefinitions, this.opContext.i18n, false);
+    txp.readParams(params);
+
+    // Perform the expansion
+    return await this.doExpand(valueSet, txp, logExtraOutput);
+  }
+
   /**
    * Handle instance-level expand: /ValueSet/{id}/$expand
    * ValueSet identified by resource ID
@@ -1691,7 +1994,7 @@ class ExpandWorker extends TerminologyWorker {
     const valueSet = await this.provider.getValueSetById(this.opContext, id);
 
     if (!valueSet) {
-      return res.status(404).json(this.operationOutcome('error', 'not-found',
+      return res.status(422).json(this.operationOutcome('error', 'not-found',
         `ValueSet/${id} not found`));
     }
 
@@ -1725,7 +2028,7 @@ class ExpandWorker extends TerminologyWorker {
     // Perform the expansion
     const result = await this.doExpand(valueSet, txp, logExtraOutput);
     req.logInfo = this.usedSources.join("|")+txp.logInfo();
-    return res.json(this.fixForVersion(result));
+    return res.json(result);
   }
 
   // Note: setupAdditionalResources, queryToParameters, formToParameters,
@@ -1786,13 +2089,11 @@ class ExpandWorker extends TerminologyWorker {
 
     if (params.limit < -1) {
       params.limit = -1;
-    } else if (params.limit > UPPER_LIMIT_TEXT) {
-      params.limit = UPPER_LIMIT_TEXT; // can't ask for more than this externally, though you can internally
+    } else if (params.limit > this.externalLimit) {
+      params.limit = this.externalLimit; // can't ask for more than this externally, though you can internally
     }
 
     const filter = new SearchFilterText(params.filter);
-    //txResources = processAdditionalResources(context, manager, nil, params);
-    // Create expander and run expansion
     const expander = new ValueSetExpander(this, params);
     expander.logExtraOutput = logExtraOutput;
     return await expander.expand(valueSet, filter);
@@ -1837,9 +2138,9 @@ module.exports = {
   ImportedValueSet,
   ValueSetFilterContext,
   EmptyFilterContext,
+  EXTERNAL_DEFAULT_LIMIT,
+  INTERNAL_DEFAULT_LIMIT,
+  EXTERNAL_TEST_DEFAULT_LIMIT,
   TotalStatus,
-  UPPER_LIMIT_NO_TEXT,
-  UPPER_LIMIT_TEXT,
-  INTERNAL_LIMIT,
   EXPANSION_DEAD_TIME_SECS
 };

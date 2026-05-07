@@ -15,6 +15,10 @@ class MockProvider {
   async listCodeSystemVersions(url) {
     return []; // Override in specific tests
   }
+
+  loadSupplements() {
+    return [];
+  }
 }
 
 class MockLanguageDefinitions {
@@ -242,7 +246,8 @@ describe('TerminologyWorker', () => {
         version: '1.0.0',
         name: 'SupplementCS',
         status: 'active',
-        supplements: 'http://main.com'
+        supplements: 'http://main.com',
+        extension : [{url: 'http://hl7.org/fhir/StructureDefinition/codesystem-supplement-type', valueCode: "lang-pack"}]
       });
 
       worker.additionalResources = [mainCS, supplementCS];
@@ -258,7 +263,8 @@ describe('TerminologyWorker', () => {
         version: '1.0.0',
         name: 'SupplementCS',
         status: 'active',
-        supplements: 'http://main.com|1.0.0'
+        supplements: 'http://main.com|1.0.0',
+        extension : [{url: 'http://hl7.org/fhir/StructureDefinition/codesystem-supplement-type', valueCode: "lang-pack"}]
       });
 
       worker.additionalResources = [supplementCS];

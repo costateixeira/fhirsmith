@@ -89,6 +89,7 @@
             <a href="[%endpoint-path%]/metadata" style="color: gold">Capability Statement</a>  &nbsp;|&nbsp;
             <a href="[%endpoint-path%]/metadata?mode=terminology" style="color: gold">Terminology Capabilities</a>  &nbsp;|&nbsp;
             <a href="[%endpoint-path%]/op.html" style="color: gold">Operations</a>  &nbsp;|&nbsp;
+            <a href="[%endpoint-path%]/problems.html" style="color: gold">Problems</a>  &nbsp;|&nbsp;
   &nbsp;
 		</div>
 		</div>
@@ -116,18 +117,22 @@
 		<div class="container">
 			<div class="inner-wrapper">
 				<p>
-                    <a href="http://www.hl7.org/fhir" style="color: gold" title="Fast Healthcare Interoperability Resources - Home Page"><img border="0" src="/icon-fhir-16.png" style="vertical-align: text-bottom"/> <b>FHIR</b></a> &copy; HL7.org 2011+.  &nbsp;|&nbsp;
+                    <a href="http://www.hl7.org/fhir" style="color: gold" title="Fast Healthcare Interoperability Resources - Home Page"><img border="0" src="/icon-fhir-16.png" style="vertical-align: text-bottom"/> <b>FHIR</b></a> v[%fhir-version%] &copy; HL7.org 2011+.  &nbsp;|&nbsp;
                     <a href="https://github.com/HealthIntersections/FHIRsmith/blob/main/README.md" style="color: gold"><img border="0" src="/FHIRsmith16.png" style="vertical-align: text-bottom"/> FHIRsmith</a>  [%ver%]  &copy; HealthIntersections.com.au 2023+ &nbsp;|&nbsp;
-         FHIR Version [%fhir-version%] &nbsp;|&nbsp; ([%ms%] ms)
+                    &nbsp; ([%ms%] ms)
+                    [%sponsorMessage%]
         </p>
 			</div>
 		</div>
 	</div>
 
       <!-- JS and analytics only. -->
-<script src="/assets/js/respond.min.js"/>
-<script src="/assets/js/fhir.js"/>
+<script src="/assets/js/respond.min.js"> </script>
+<script src="/assets/js/fhir.js"> </script>
+  <script src="/assets/js/clipboard.min.js"> </script>
+  <script src="/assets/js/clipboard-btn.js"> </script>
 
 </body>
 
 </html>
+

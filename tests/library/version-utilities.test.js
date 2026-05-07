@@ -702,4 +702,100 @@ describe('VersionUtilities', () => {
     function test_compareVersions(ver1, ver2, expected) {
         expect(VersionUtilities.compareVersions(ver1, ver2)).toBe(expected);
     }
+
+    describe('compareVersionsGeneral', () => {
+
+        // Basic sanity - same format comparisons
+        test('should compare semver versions correctly', () => {
+            expect(VersionUtilities.compareVersionsGeneral("1.0.0", "2.0.0")).toBe(-1);
+            expect(VersionUtilities.compareVersionsGeneral("2.0.0", "1.0.0")).toBe(1);
+            expect(VersionUtilities.compareVersionsGeneral("1.0.0", "1.0.0")).toBe(0);
+            expect(VersionUtilities.compareVersionsGeneral("1.0.0", "1.0.1")).toBe(-1);
+            expect(VersionUtilities.compareVersionsGeneral("1.1.0", "1.0.9")).toBe(1);
+        });
+
+        test('should compare integer versions correctly', () => {
+            expect(VersionUtilities.compareVersionsGeneral("1", "2")).toBe(-1);
+            expect(VersionUtilities.compareVersionsGeneral("2", "1")).toBe(1);
+            expect(VersionUtilities.compareVersionsGeneral("5", "5")).toBe(0);
+            expect(VersionUtilities.compareVersionsGeneral("9", "10")).toBeLessThan(0);
+            expect(VersionUtilities.compareVersionsGeneral("10", "9")).toBeGreaterThan(0);
+        });
+
+        test('should compare date versions correctly', () => {
+            expect(VersionUtilities.compareVersionsGeneral("2024-01-01", "2024-06-15")).toBe(-1);
+            expect(VersionUtilities.compareVersionsGeneral("2024-06-15", "2024-01-01")).toBe(1);
+            expect(VersionUtilities.compareVersionsGeneral("2024-01-01", "2024-01-01")).toBe(0);
+        });
+
+        test('should compare alpha versions correctly', () => {
+            expect(VersionUtilities.compareVersionsGeneral("abc", "def")).toBeLessThan(0);
+            expect(VersionUtilities.compareVersionsGeneral("def", "abc")).toBeGreaterThan(0);
+            expect(VersionUtilities.compareVersionsGeneral("abc", "abc")).toBe(0);
+        });
+
+        // Bug: date normalisation can make different strings equal, but code returns -1
+        test('should return 0 for equivalent date formats', () => {
+            expect(VersionUtilities.compareVersionsGeneral("2024-01", "202401")).toBe(0);
+            expect(VersionUtilities.compareVersionsGeneral("2024-01-15", "20240115")).toBe(0);
+        });
+
+        // Bug: null/undefined asymmetry — version present vs absent
+        // A real version should arguably sort AFTER null (i.e., null is "less")
+        test('should handle null/undefined versions consistently', () => {
+            const v1null = VersionUtilities.compareVersionsGeneral(null, "1.0.0");
+            const v2null = VersionUtilities.compareVersionsGeneral("1.0.0", null);
+            // At minimum these should be opposite signs
+            expect(Math.sign(v1null)).toBe(-Math.sign(v2null));
+            expect(VersionUtilities.compareVersionsGeneral(null, null)).toBe(0);
+            expect(VersionUtilities.compareVersionsGeneral(undefined, undefined)).toBe(0);
+        });
+
+        // Bug: format guessed from version1 only — mismatched formats
+        test('should handle mismatched version formats', () => {
+            // semver vs integer
+            const r1 = VersionUtilities.compareVersionsGeneral("1.0.0", "2");
+            const r2 = VersionUtilities.compareVersionsGeneral("2", "1.0.0");
+            expect(Math.sign(r1)).toBe(-Math.sign(r2));
+
+            // semver vs date
+            const r3 = VersionUtilities.compareVersionsGeneral("1.0.0", "2024-01-01");
+            const r4 = VersionUtilities.compareVersionsGeneral("2024-01-01", "1.0.0");
+            expect(Math.sign(r3)).toBe(-Math.sign(r4));
+
+            // date vs integer
+            const r5 = VersionUtilities.compareVersionsGeneral("2024-01-01", "5");
+            const r6 = VersionUtilities.compareVersionsGeneral("5", "2024-01-01");
+            expect(Math.sign(r5)).toBe(-Math.sign(r6));
+        });
+
+        // Bug: semver equal-after-normalization but not string-equal
+        test('should handle semver versions that differ only in part count', () => {
+            // "1.0" and "1.0.0" are not string-equal, so the == guard won't catch them
+            const r1 = VersionUtilities.compareVersionsGeneral("1.0", "1.0.0");
+            const r2 = VersionUtilities.compareVersionsGeneral("1.0.0", "1.0");
+            // Should be 0 or at least antisymmetric
+            expect(Math.sign(r1)).toBe(-Math.sign(r2));
+        });
+
+        // Symmetry: compare(a,b) should always be -compare(b,a)
+        test('should be antisymmetric', () => {
+            const pairs = [
+                ["1.0.0", "2.0.0"],
+                ["2024-01-01", "2025-06-15"],
+                ["3", "7"],
+                ["alpha", "beta"],
+                ["1.0.0-alpha", "1.0.0"],
+            ];
+            for (const [a, b] of pairs) {
+                const ab = VersionUtilities.compareVersionsGeneral(a, b);
+                const ba = VersionUtilities.compareVersionsGeneral(b, a);
+                if ((ab == 0)) {
+                    expect(ba).toBe(0);
+                } else {
+                    expect(Math.sign(ab)).toBe(-Math.sign(ba));
+                }
+            }
+        });
+    });
 });

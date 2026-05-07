@@ -3,7 +3,7 @@ const assert = require('assert');
 const { CodeSystem } = require('../library/codesystem');
 const { CodeSystemProvider, CodeSystemFactoryProvider } = require('./cs-api');
 const {Designations} = require("../library/designations");
-const {validateArrayParameter} = require("../../library/utilities");
+const {validateArrayParameter, formatDateMMDDYYYY} = require("../../library/utilities");
 
 // Context for RxNorm concepts
 class RxNormConcept {
@@ -138,6 +138,28 @@ class RxNormServices extends CodeSystemProvider {
     await this.#ensureContext(context);
 
     return false; // RxNorm codes are not abstract
+  }
+
+  async getStatus(context) {
+
+    const ctxt = await this.#ensureContext(context);
+
+    if (ctxt && ctxt.archived) {
+      return 'archived';
+    }
+
+    // Check suppress flag
+    return new Promise((resolve, reject) => {
+      const sql = `SELECT suppress FROM rxnconso WHERE ${this.getCodeField()} = ? AND SAB = ? AND TTY <> 'SY'`;
+
+      this.db.get(sql, [ctxt.code, this.getSAB()], (err, row) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(row ? row.suppress === '1' ? 'suppressed' : null : null);
+        }
+      });
+    });
   }
 
   async isInactive(context) {
@@ -309,20 +331,20 @@ class RxNormServices extends CodeSystemProvider {
   async doesFilter(prop, op, value) {
     
 
-    prop = prop.toUpperCase();
+    let propUC = prop.toUpperCase();
 
     // TTY filters
-    if (prop === 'TTY' && ['=', 'in'].includes(op)) {
+    if (propUC === 'TTY' && ['=', 'in'].includes(op)) {
       return true;
     }
 
     // STY filter
-    if (prop === 'STY' && op === '=') {
+    if (propUC === 'STY' && op === '=') {
       return true;
     }
 
     // SAB filter
-    if (prop === 'SAB' && op === '=') {
+    if (propUC === 'SAB' && op === '=') {
       return true;
     }
 
@@ -344,16 +366,16 @@ class RxNormServices extends CodeSystemProvider {
     return new RxNormPrep();
   }
 
-  async filter(filterContext, prop, op, value) {
+  async filter(filterContext, forIteration, prop, op, value) {
     
 
     const filter = new RxNormFilterHolder();
-    prop = prop.toUpperCase();
+    let propUC = prop.toUpperCase();
 
     let sql = '';
     let params = {};
 
-    if (op === 'in' && prop === 'TTY') {
+    if (op === 'in' && propUC === 'TTY') {
       const values = value.split(',').map(v => v.trim()).filter(v => v);
       const placeholders = values.map((_, i) => `$tty${i}`).join(',');
       sql = `AND TTY IN (${placeholders})`;
@@ -361,36 +383,36 @@ class RxNormServices extends CodeSystemProvider {
         params[`tty${i}`] = this.#sqlWrapString(val);
       });
     } else if (op === '=') {
-      if (prop === 'STY') {
+      if (propUC === 'STY') {
         sql = `AND ${this.getCodeField()} IN (SELECT RXCUI FROM rxnsty WHERE TUI = $sty)`;
         params.sty = this.#sqlWrapString(value);
-      } else if (prop === 'SAB') {
+      } else if (propUC === 'SAB') {
         sql = `AND ${this.getCodeField()} IN (SELECT ${this.getCodeField()} FROM rxnconso WHERE SAB = $sab)`;
         params.sab = this.#sqlWrapString(value);
-      } else if (prop === 'TTY') {
+      } else if (propUC === 'TTY') {
         sql = `AND TTY = $tty`;
         params.tty = this.#sqlWrapString(value);
       } else if (this.rels.includes(prop)) {
         if (value.startsWith('CUI:')) {
           const cui = value.substring(4);
-          sql = `AND (${this.getCodeField()} IN (SELECT ${this.getCodeField()} FROM rxnconso WHERE RXCUI IN (SELECT RXCUI1 FROM rxnrel WHERE REL = $rel AND RXCUI2 = $cui2)))`;
+          sql = `AND (${this.getCodeField()} IN (SELECT ${this.getCodeField()} FROM rxnconso WHERE RXCUI IN (SELECT RXCUI2 FROM rxnrel WHERE REL = $rel AND RXCUI1 = $cui2)))`;
           params.rel = this.#sqlWrapString(prop);
           params.cui2 = this.#sqlWrapString(cui);
         } else if (value.startsWith('AUI:')) {
           const aui = value.substring(4);
-          sql = `AND (${this.getCodeField()} IN (SELECT ${this.getCodeField()} FROM rxnconso WHERE RXAUI IN (SELECT RXAUI1 FROM rxnrel WHERE REL = $rel AND RXAUI2 = $aui2)))`;
+          sql = `AND (${this.getCodeField()} IN (SELECT ${this.getCodeField()} FROM rxnconso WHERE RXAUI IN (SELECT RXAUI2 FROM rxnrel WHERE REL = $rel AND RXAUI1 = $aui2)))`;
           params.rel = this.#sqlWrapString(prop);
           params.aui2 = this.#sqlWrapString(aui);
         }
       } else if (this.reltypes.includes(prop)) {
         if (value.startsWith('CUI:')) {
           const cui = value.substring(4);
-          sql = `AND (${this.getCodeField()} IN (SELECT ${this.getCodeField()} FROM rxnconso WHERE RXCUI IN (SELECT RXCUI1 FROM rxnrel WHERE RELA = $rela AND RXCUI2 = $cui2)))`;
+          sql = `AND (${this.getCodeField()} IN (SELECT ${this.getCodeField()} FROM rxnconso WHERE RXCUI IN (SELECT RXCUI2 FROM rxnrel WHERE RELA = $rela AND RXCUI1 = $cui2)))`;
           params.rela = this.#sqlWrapString(prop);
           params.cui2 = this.#sqlWrapString(cui);
         } else if (value.startsWith('AUI:')) {
           const aui = value.substring(4);
-          sql = `AND (${this.getCodeField()} IN (SELECT ${this.getCodeField()} FROM rxnconso WHERE RXAUI IN (SELECT RXAUI1 FROM rxnrel WHERE RELA = $rela AND RXAUI2 = $aui2)))`;
+          sql = `AND (${this.getCodeField()} IN (SELECT ${this.getCodeField()} FROM rxnconso WHERE RXAUI IN (SELECT RXAUI2 FROM rxnrel WHERE RELA = $rela AND RXAUI1 = $aui2)))`;
           params.rela = this.#sqlWrapString(prop);
           params.aui2 = this.#sqlWrapString(aui);
         }
@@ -407,7 +429,6 @@ class RxNormServices extends CodeSystemProvider {
   }
 
   async searchFilter(filterContext, filter, sort) {
-    
 
     if (!filter || !filter.stems || filter.stems.length === 0) {
       throw new Error('Invalid search filter');
@@ -477,8 +498,6 @@ class RxNormServices extends CodeSystemProvider {
   }
 
   async filterSize(filterContext, set) {
-    
-
     if (!set.executed) {
       await this.#executeFilter(set);
     }
@@ -527,7 +546,7 @@ class RxNormServices extends CodeSystemProvider {
         if (err) {
           reject(err);
         } else if (!row) {
-          resolve(`Code ${code} is not in the specified filter`);
+          resolve(null);
         } else {
           const concept = new RxNormConcept(row[this.getCodeField()], row.STR);
           resolve(concept);
@@ -687,6 +706,11 @@ class RxNormTypeServicesFactory extends CodeSystemFactoryProvider {
     const db = new sqlite3.Database(this.dbPath);
 
     try {
+      await new Promise((resolve, reject) => {
+        db.run(`CREATE INDEX IF NOT EXISTS idx_rxnstems_cui_stem ON RXNSTEMS(CUI, stem)`,
+          err => err ? reject(err) : resolve());
+      });
+
       this._sharedData = {
         version: '',
         rels: [],
@@ -725,6 +749,9 @@ class RxNormTypeServicesFactory extends CodeSystemFactoryProvider {
             let d = dbDetails.substring(0, dbDetails.indexOf('.db'));
             if (d.includes('_')) {
               d = d.substring(d.lastIndexOf('_') + 1);
+            }
+            if (d.includes('-')) {
+              d = d.substring(0, d.lastIndexOf('-'));
             }
             if (/^\d+$/.test(d)) {
               version = d;
@@ -781,9 +808,16 @@ class RxNormTypeServicesFactory extends CodeSystemFactoryProvider {
   }
 
   id() {
-    return this.name();
+    return this.name()+"-"+this.version();
   }
 
+  describeVersion(version) {
+    try {
+      return formatDateMMDDYYYY(version);
+    } catch (error) {
+      return "v" + version;
+    }
+  }
 }
 
 // Specific RxNorm implementation

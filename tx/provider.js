@@ -23,6 +23,7 @@ const {PackageConceptMapProvider} = require("./cm/cm-package");
 class Provider {
   i18n;
   fhirVersion;
+  context;
 
   /**
    * {Map<String, CodeSystemFactoryProvider>} A list of code system factories that contains all the preloaded native code systems
@@ -35,6 +36,11 @@ class Provider {
   codeSystems;
 
   /**
+   * {List<AbstractCodeSystemProvider>} code system providers, for maintaing the code system list
+   */
+  codeSystemProviders
+
+  /**
    * {List<AbstractValueSetProvider>} A list of value set providers that know how to provide value sets by request
    */
   valueSetProviders;
@@ -43,7 +49,8 @@ class Provider {
    */
   conceptMapProviders;
 
-  contentSources;
+  packageSources;
+  externalSources;
 
   baseUrl = null;
   path;
@@ -100,6 +107,36 @@ class Provider {
     return null;
   }
 
+  loadSupplements(url, version, statedSupplements) {
+    let supplements = new Map();
+    for (let csp of this.codeSystemFactories.values()) {
+      csp.listSupplements(supplements, url, version, statedSupplements);
+    }
+    for (let cs of this.codeSystems.values()) {
+      if (cs.isSupplementFor(url, version)) {
+        if (cs.isLangPack() || this.isStatedSupplement(cs, statedSupplements)) {
+          supplements.set(cs.vurl, cs);
+        }
+      }
+    }
+    return [...supplements.values()];
+  }
+
+  isStatedSupplement(cs, statedSupplements) {
+    if (statedSupplements == null) {
+      return false;
+    }
+    for (let suppU of statedSupplements) {
+      if (suppU === cs.url) {
+        return true;
+      }
+      if (suppU.startsWith(cs.url+"|")) {
+        let suppV = suppU.substring(suppU.indexOf('|') + 1);
+        return VersionUtilities.versionMatchesByAlgorithm(suppV, cs.version, VersionUtilities.guessVersionAlgorithmFromVersion(cs.version));
+      }
+    }
+    return false;
+  }
   /**
    * Create a code system provider from a CodeSystem resource
    * @param {OperationContext} opContext - The code system resource
@@ -135,8 +172,14 @@ class Provider {
     const resources = await contentLoader.getResourcesByType("CodeSystem");
     for (const resource of resources) {
       const cs = new CodeSystem(await contentLoader.loadFile(resource, contentLoader.fhirVersion()));
-      this.codeSystems.set(cs.url, cs);
-      this.codeSystems.set(cs.vurl, cs);
+      cs.sourcePackage = contentLoader.pid();
+      const existing = this.codeSystems.get(cs.url);
+      if (!existing || cs.isMoreRecent(existing)) {
+        this.codeSystems.set(cs.url, cs);
+      }
+      if (cs.version) {
+        this.codeSystems.set(cs.vurl, cs);
+      }
     }
     const vs = new PackageValueSetProvider(contentLoader);
     await vs.initialize();
@@ -147,6 +190,7 @@ class Provider {
   }
 
   getCodeSystemById(opContext, id) {
+
     // Search through codeSystems map for matching id
     for (const cs of this.codeSystems.values()) {
       if (opContext) opContext.deadCheck('getCodeSystemById');
@@ -214,17 +258,27 @@ class Provider {
     for (let csp of this.codeSystemFactories.values()) {
       if (!uris.has(csp.system())) {
         uris.add(csp.system());
-        await csp.findImplicitConceptMap(url, version);
+        let cm = await csp.findImplicitConceptMap(url, version);
+        if (cm) {
+          return cm;
+        }
       }
     }
-
   }
 
+  listValueSetSourceCodes() {
+    let result = [];
+    for (let vsp of this.valueSetProviders) {
+      result.push(vsp.sourcePackage());
+    }
+    result.sort((a, b) => {a.localeCompare(b)});
+    return result;
+  }
 
   async listCodeSystemVersions(url) {
     let result = new Set();
     for (let cs of this.codeSystems.values()) {
-      if (cs.url == url) {
+      if (cs.url == url && cs.version) {
         result.add(cs.version);
       }
     }
@@ -248,9 +302,9 @@ class Provider {
 
 
 
-  async findConceptMapForTranslation(opContext, conceptMaps, sourceSystem, sourceScope, targetScope, targetSystem) {
+  async findConceptMapForTranslation(opContext, conceptMaps, sourceSystem, sourceScope, targetScope, targetSystem, sourceCode = null) {
     for (let cmp of this.conceptMapProviders) {
-      await cmp.findConceptMapForTranslation(opContext, conceptMaps, sourceSystem, sourceScope, targetScope, targetSystem);
+      await cmp.findConceptMapForTranslation(opContext, conceptMaps, sourceSystem, sourceScope, targetScope, targetSystem, sourceCode);
     }
     if (sourceSystem && targetSystem) {
       let uris = new Set();
@@ -305,9 +359,10 @@ class Provider {
       factory = this.codeSystemFactories.get(vurlMM);
     }
     if (factory != null) {
+      let vdesc = version == null ? "" : factory.describeVersion(version);
       return {
-        link: this.path+"/CodeSystem/"+factory.id(),
-        description: factory.name()+(version ? " v"+version : "")
+        link: this.path+"/CodeSystem/x-"+factory.id(),
+        description: factory.nameBase()+' '+vdesc
       };
     }
     let cs = this.codeSystems.get(vurl);
@@ -363,16 +418,16 @@ class Provider {
       factory = this.codeSystemFactories.get(vurlMM);
     }
     if (factory != null) {
-      const csp = factory.build(opContext, []);
-      const c = csp.locate(code);
+      const csp = await factory.build(opContext, []);
+      const c = csp ? csp.locate(code) : null;
       if (c) {
-        if (factory.iterable()) {
+        if (factory.iteratable()) {
           return {
             link: this.path + "/CodeSystem/x-" + factory.id(),
             description: csp.display(c)
           }
         } else {
-           const link = csp.codeLink(c);
+           const link = factory.codeLink(c);
            if (link) {
              return {
                link: link,
@@ -396,6 +451,61 @@ class Provider {
       }
     }
     return null;
+  }
+
+  async hasCsVersion(system, version) {
+    for (let cs of this.codeSystems.values()) {
+      if (cs.url == system && cs.version == version) {
+        return true;
+      }
+    }
+    for (let cp of this.codeSystemFactories.values()) {
+      if (cp.system() == system && cp.version() == version) {
+        return true;
+      }
+    }
+    return false;
+  }x
+
+  async updateCodeSystemList() {
+    for (let csp of this.codeSystemProviders) {
+      let changes = await csp.getCodeSystemChanges(this.fhirVersion, this.context);
+      if (changes) {
+        for (let cs of changes.added || []) {
+          this.addCodeSystem(cs);
+        }
+        for (let cs of changes.changed || []) {
+          this.addCodeSystem(cs);
+        }
+        for (let cs of changes.deleted || []) {
+          this.deleteCodeSystem(cs);
+        }
+      }
+    }
+  }
+
+  addCodeSystem(cs) {
+    const existing = this.codeSystems.get(cs.url);
+    if (!existing || cs.isMoreRecent(existing)) {
+      this.codeSystems.set(cs.url, cs);
+    }
+    if (cs.version) {
+      this.codeSystems.set(cs.vurl, cs);
+    }
+  }
+
+  deleteCodeSystem(cs) {
+    this.codeSystems.delete(cs.vurl);
+    this.codeSystems.delete(cs.url);
+    let existing = null;
+    for (let t of this.codeSystems.values()) {
+      if (!existing || t.isMoreRecent(existing)) {
+        existing = t;
+      }
+    }
+    if (existing) {
+      this.codeSystems.set(cs.url, cs);
+    }
   }
 
 }

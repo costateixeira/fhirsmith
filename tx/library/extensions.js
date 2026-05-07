@@ -29,7 +29,7 @@ const Extensions = {
     }
   },
 
-  checkNoModifiers(element, place, name) {
+  checkNoModifiers(element, place, name, resource) {
     if (!element) {
       return;
     }
@@ -41,11 +41,12 @@ const Extensions = {
       for (const extension of element.modifierExtension) {
         urls.add(extension.url);
       }
+      const resId = resource ? resource : "";
       const urlList = [...urls].join('\', \'');
       if (urls.size > 1) {
-        throw new Issue("error", "business-rule", null, null, 'Cannot process resource at "' + name + '" due to the presence of modifier extensions '+urlList);
+        throw new Issue("error", "business-rule", null, null, 'Cannot process resource '+resId+' at "' + name + '" due to the presence of modifier extensions '+urlList);
       } else {
-        throw new Issue("error", "business-rule", null, null, 'Cannot process resource at "' + name + '" due to the presence of the modifier extension '+urlList);
+        throw new Issue("error", "business-rule", null, null, 'Cannot process resource '+resId+' at "' + name + '" due to the presence of the modifier extension '+urlList);
       }
     }
     return true;
@@ -55,7 +56,13 @@ const Extensions = {
     if (!resource) {
       return undefined;
     }
-    const extensions = Array.isArray(resource) ? resource : (resource.extension || []);
+    let extensions = Array.isArray(resource) ? resource : (resource.extension || []);
+    for (let ext of extensions || []) {
+      if (ext.url === url) {
+        return getValuePrimitive(ext);
+      }
+    }
+    extensions = Array.isArray(resource) ? resource : (resource.modifierExtension || []);
     for (let ext of extensions || []) {
       if (ext.url === url) {
         return getValuePrimitive(ext);
@@ -110,7 +117,18 @@ const Extensions = {
     if (!exp.extension) {
       exp.extension = [];
     }
-    exp.extension.push({ url : url, valueBoolean : b });
+    let ext = { url : url, valueBoolean : b };
+    exp.extension.push(ext);
+    return ext;
+  },
+
+  addString(exp, url, s) {
+    if (!exp.extension) {
+      exp.extension = [];
+    }
+    let ext = { url : url, valueString : s };
+    exp.extension.push(ext);
+    return ext;
   }
 }
 

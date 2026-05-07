@@ -1,0 +1,328 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Bundle xmlns="http://hl7.org/fhir">
+  <id value="bundle-example"/>
+  <!--   this example bundle is a search set   -->
+  <meta>
+    <lastUpdated value="2014-08-18T01:43:30Z"/>
+    <!--   when the search was executed   -->
+
+    <security>
+      <system value="http://terminology.hl7.org/CodeSystem/v3-ActReason"/>
+      <code value="HTEST"/>
+      <display value="test health data"/>
+    </security>
+  </meta>
+  <type value="searchset"/>
+
+  <!--   the total number of matches. This is a stupid example - there's a grand total of 3 matches, and 
+    we're only going to return the first 1, with a next link, in order to demonstrate what a page link
+    looks like   -->
+  <total value="3"/>
+  <!--   all search sets include the self link - the server's statement of what it thought it was 
+    searching on. The client can use this to cross-check whether the server executed what it 
+    asked the server to, if it cares   -->
+  <link>
+    <relation value="self"/>
+    <url value="https://example.com/base/MedicationRequest?patient=347&amp;_include=MedicationRequest.medication&amp;_count=2"/>
+  </link>
+  <!--   now, the link to the next set of results. The actual URL is entirely at the 
+  discretion of the server, and is opaque to the client. Many servers will insert 
+  some kind of search instance identifier 
+  
+  Note that a big set of results will include prev, first, last links as well as next   -->
+  <link>
+    <relation value="next"/>
+    <url value="https://example.com/base/MedicationRequest?patient=347&amp;searchId=ff15fd40-ff71-4b48-b366-09c706bed9d0&amp;page=2"/>
+  </link>
+
+  <!--   now, the actual entries   -->
+  <entry>
+    <fullUrl value="https://example.com/base/MedicationRequest/3123"/>
+    <!--   the matching resource   -->
+    <resource>
+      <CodeSystem xmlns="http://hl7.org/fhir">
+        <id value="example"/>
+        <meta>
+          <profile value="http://hl7.org/fhir/StructureDefinition/shareablecodesystem"/>
+
+          <security>
+            <system value="http://terminology.hl7.org/CodeSystem/v3-ActReason"/>
+            <code value="HTEST"/>
+            <display value="test health data"/>
+          </security>
+        </meta>
+        <text>
+          <status value="additional"/>
+          <div xmlns="http://www.w3.org/1999/xhtml">
+
+            <p>CodeSystem "ACME Codes for Cholesterol": This is an example code system that includes 
+        all the codes for serum cholesterol defined by ACME inc.</p>
+
+            <p>Developed by: FHIR project team (example)</p>
+
+            <p>Published for testing on 28-Jan 2016</p>
+
+            <p>This code system defines all the ACME codes for serum cholesterol:</p>
+
+            <table class="grid">
+
+              <tr>
+
+                <td>
+
+                  <b>Code</b>
+
+                </td>
+
+                <td>
+
+                  <b>Display</b>
+
+                </td>
+
+                <td>
+
+                  <b>Definition</b>
+
+                </td>
+
+              </tr>
+
+              <tr>
+
+                <td>chol-mmol</td>
+
+                <td>SChol (mmol/L)</td>
+
+                <td>Serum Cholesterol, in mmol/L</td>
+
+              </tr>
+
+              <tr>
+
+                <td>chol-mass</td>
+
+                <td>SChol (mg/L)</td>
+
+                <td>Serum Cholesterol, in mg/L</td>
+
+              </tr>
+
+              <tr>
+
+                <td>chol</td>
+
+                <td>SChol</td>
+
+                <td>Serum Cholesterol</td>
+
+              </tr>
+
+            </table>
+
+          </div>
+        </text>
+        <url value="http://hl7.org/fhir/CodeSystem/example"/>
+        <identifier>
+          <system value="urn:ietf:rfc:3986"/>
+          <value value="urn:oid:2.16.840.1.113883.4.642.4.1827"/>
+        </identifier>
+        <identifier>
+          <system value="http://acme.com/identifiers/codesystems"/>
+          <value value="internal-cholesterol-inl"/>
+        </identifier>
+        <version value="5.0.0"/>
+        <name value="ACMECholCodesBlood"/>
+        <title value="ACME Codes for Cholesterol in Serum/Plasma"/>
+        <status value="draft"/>
+        <experimental value="true"/>
+        <date value="2016-01-28"/>
+        <publisher value="Acme Co"/>
+        <contact>
+          <name value="FHIR project team"/>
+          <telecom>
+            <system value="url"/>
+            <value value="http://hl7.org/fhir"/>
+          </telecom>
+        </contact>
+        <description value="This is an example code system that includes all the ACME codes for serum/plasma cholesterol from v2.36."/>
+        <caseSensitive value="true"/>
+        <content value="complete"/>
+        <filter>
+          <code value="acme-plasma"/>
+          <description value="An internal filter used to select codes that are only used with plasma"/>
+          <operator value="="/>
+          <value value="the value of this filter is either 'true' or 'false'"/>
+        </filter>
+        <concept>
+          <code value="chol-mmol"/>
+          <display value="SChol (mmol/L)"/>
+          <definition value="Serum Cholesterol, in mmol/L"/>
+          <designation>
+            <use>
+              <system value="http://acme.com/config/fhir/codesystems/internal"/>
+              <code value="internal-label"/>
+            </use>
+            <value value="From ACME POC Testing"/>
+          </designation>
+        </concept>
+        <concept>
+          <code value="chol-mass"/>
+          <display value="SChol (mg/L)"/>
+          <definition value="Serum Cholesterol, in mg/L"/>
+          <designation>
+            <use>
+              <system value="http://acme.com/config/fhir/codesystems/internal"/>
+              <code value="internal-label"/>
+            </use>
+            <value value="From Paragon Labs"/>
+          </designation>
+        </concept>
+        <concept>
+          <code value="chol"/>
+          <display value="SChol"/>
+          <definition value="Serum Cholesterol"/>
+          <designation>
+            <use>
+              <system value="http://acme.com/config/fhir/codesystems/internal"/>
+              <code value="internal-label"/>
+            </use>
+            <value value="Obdurate Labs uses this with both kinds of units..."/>
+          </designation>
+        </concept>
+      </CodeSystem>
+    </resource>
+    <!--   and now optional search information   -->
+    <search>
+      <!--   this resource included as a match to the search criteria.
+         Servers are not required to populate this, but should, because
+         there are a few cases where it might be ambiguous whether a 
+         resource is added because it's a match or an include           -->
+      <mode value="match"/>
+      <!--   score. For matches where the criteria are not determinate,
+        e.g. text search on narrative, the server can include a score to indicate
+        how well the resource matches the conditions. Since this search is by patient
+        identifier, there's nothing fuzzy about it, but for example purposes:   -->
+      <score value="1"/>
+    </search>
+  </entry>
+  <entry>
+    <fullUrl value="https://example.com/base/Medication/example"/>
+    <resource>
+      <ValueSet xmlns="http://hl7.org/fhir">
+        <id value="example"/>
+        <meta>
+          <profile value="http://hl7.org/fhir/StructureDefinition/shareablevalueset"/>
+
+          <security>
+            <system value="http://terminology.hl7.org/CodeSystem/v3-ActReason"/>
+            <code value="HTEST"/>
+            <display value="test health data"/>
+          </security>
+        </meta>
+        <text>
+          <status value="additional"/>
+          <div xmlns="http://www.w3.org/1999/xhtml">
+
+            <p>Value set "LOINC Codes for Cholesterol": This is an example value set that includes 
+        all the  codes for serum cholesterol from LOINC v2.36.</p>
+
+            <p>Developed by: FHIR project team (example)</p>
+
+            <p>Published for testing on 13-June 2012</p>
+
+            <p>This value set includes the following LOINC codes:</p>
+
+            <ul>
+
+              <li>14647-2: Cholesterol [Moles/Volume]</li>
+
+              <li>2093-3: Cholesterol [Mass/Volume]</li>
+
+              <li>35200-5: Cholesterol [Mass Or Moles/Volume] </li>
+
+              <li>9342-7: Cholesterol [Percentile]</li>
+
+            </ul>
+
+            <p>This content from LOINC® is copyright © 1995 Regenstrief Institute, Inc. and the LOINC Committee, and available at no cost under the license at http://loinc.org/terms-of-use.</p>
+
+          </div>
+        </text>
+        <url value="http://hl7.org/fhir/ValueSet/example"/>
+        <identifier>
+          <system value="urn:ietf:rfc:3986"/>
+          <value value="urn:oid:2.16.840.1.113883.4.642.3.3292"/>
+        </identifier>
+        <identifier>
+          <system value="http://acme.com/identifiers/valuesets"/>
+          <value value="loinc-cholesterol-int"/>
+        </identifier>
+        <version value="5.0.0"/>
+        <name value="LOINCCodesForCholesterolInSerumPlasma"/>
+        <title value="LOINC Codes for Cholesterol in Serum/Plasma"/>
+        <status value="draft"/>
+        <experimental value="true"/>
+        <date value="2015-06-22"/>
+        <publisher value="HL7 International"/>
+        <contact>
+          <name value="FHIR project team"/>
+          <telecom>
+            <system value="url"/>
+            <value value="http://hl7.org/fhir"/>
+          </telecom>
+        </contact>
+        <description value="This is an example value set that includes all the LOINC codes for serum/plasma cholesterol from v2.36."/>
+        <useContext>
+          <code>
+            <system value="http://terminology.hl7.org/CodeSystem/usage-context-type"/>
+            <code value="age"/>
+          </code>
+          <valueQuantity>
+            <value value="18"/>
+            <comparator value="&gt;"/>
+            <unit value="yrs"/>
+            <system value="http://unitsofmeasure.org"/>
+            <code value="a"/>
+          </valueQuantity>
+        </useContext>
+        <jurisdiction>
+          <coding>
+            <system value="urn:iso:std:iso:3166"/>
+            <code value="US"/>
+          </coding>
+        </jurisdiction>
+        <purpose value="This value set was published by ACME Inc in order to make clear which codes are used for Cholesterol by AcmeClinicals (Adult Ambulatory care support in USA)"/>
+        <copyright value="This content from LOINC ® is copyright © 1995 Regenstrief Institute, Inc. and the LOINC Committee, and available at no cost under the license at http://loinc.org/terms-of-use."/>
+        <compose>
+          <lockedDate value="2012-06-13"/>
+          <inactive value="true"/>
+          <include>
+            <system value="http://loinc.org"/>
+            <version value="2.36"/>
+            <concept>
+              <code value="14647-2"/>
+              <display value="Cholesterol [Moles/Volume]"/>
+            </concept>
+            <concept>
+              <code value="2093-3"/>
+              <display value="Cholesterol [Mass/Volume]"/>
+            </concept>
+            <concept>
+              <code value="35200-5"/>
+              <display value="Cholesterol [Mass Or Moles/Volume]"/>
+            </concept>
+            <concept>
+              <code value="9342-7"/>
+              <display value="Cholesterol [Percentile]"/>
+            </concept>
+          </include>
+        </compose>
+      </ValueSet>
+    </resource>
+    <search>
+      <!--   added because the client asked to include the medications   -->
+      <mode value="include"/>
+    </search>
+  </entry>
+</Bundle>

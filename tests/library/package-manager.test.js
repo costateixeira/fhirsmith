@@ -305,6 +305,37 @@ const runTests = shouldRunSlowTests();
                   .toThrow('At least one package server must be provided');
             });
         });
+
+        describe('fetchUrl', () => {
+            test('should fetch a package from a direct URL and use name#version cache key', async () => {
+                const packageManager = new PackageManager(SERVERS, CACHE_FOLDER);
+                const url = 'https://packages2.fhir.org/packages/hl7.fhir.uv.tools/0.2.0';
+                const result = await packageManager.fetchUrl(url);
+                expect(result).toBe('hl7.fhir.uv.tools#0.2.0');
+
+                // Verify the extracted package has content
+                const packageDir = path.join(CACHE_FOLDER, result);
+                const files = await fs.readdir(path.join(packageDir, 'package'));
+                expect(files).toContain('package.json');
+            }, 30000);
+
+            test('should throw on duplicate fetch of same package', async () => {
+                const packageManager = new PackageManager(SERVERS, CACHE_FOLDER);
+                const url = 'https://packages2.fhir.org/packages/hl7.fhir.uv.tools/0.2.0';
+                await packageManager.fetchUrl(url);
+                await expect(
+                    packageManager.fetchUrl(url)
+                ).rejects.toThrow(/already exists in cache/);
+            }, 30000);
+
+            test('should throw on invalid URL', async () => {
+                const packageManager = new PackageManager(SERVERS, CACHE_FOLDER);
+                await expect(
+                    packageManager.fetchUrl('https://invalid.example.com/nonexistent/package.tgz')
+                ).rejects.toThrow();
+            }, 30000);
+        });
+
     });
 
     describe('PackageContentLoader', () => {

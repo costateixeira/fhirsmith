@@ -13,6 +13,7 @@ const { Designations} = require("../library/designations");
 const {TxParameters} = require("../params");
 const {Parameters} = require("../library/parameters");
 const {Issue, OperationOutcome} = require("../library/operation-outcome");
+const {debugLog} = require("../operation-context");
 
 class LookupWorker extends TerminologyWorker {
   /**
@@ -44,9 +45,9 @@ class LookupWorker extends TerminologyWorker {
     try {
       await this.handleTypeLevelLookup(req, res);
     } catch (error) {
-      console.log(error);
-      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       this.log.error(error);
+      debugLog(error);
+      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       const statusCode = error.statusCode || 500;
       const issueCode = error.issueCode || 'exception';
       return res.status(statusCode).json({
@@ -71,8 +72,9 @@ class LookupWorker extends TerminologyWorker {
     try {
       await this.handleInstanceLevelLookup(req, res);
     } catch (error) {
-      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       this.log.error(error);
+      debugLog(error);
+      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       const issueCode = error.issueCode || 'exception';
       return res.status(400).json({
         resourceType: 'OperationOutcome',
@@ -126,7 +128,8 @@ class LookupWorker extends TerminologyWorker {
 
       } else if (params.has('system') && params.has('code')) {
         // system + code parameters
-        csProvider = await this.findCodeSystem(params.get('system'), params.get('version') || '', txp, ['complete', 'fragment'], true);
+        csProvider = await this.findCodeSystem(params.get('system'), params.get('version') || '', txp, ['complete', 'fragment'],
+          null, true, false, false, txp.supplements);
         this.seeSourceProvider(csProvider, params.get('system'));
         code = params.get('code');
 
@@ -141,15 +144,25 @@ class LookupWorker extends TerminologyWorker {
         const msg = versionStr
           ? `CodeSystem not found: ${systemUrl} version ${versionStr}`
           : `CodeSystem not found: ${systemUrl}`;
-        return res.status(404).json(this.operationOutcome('error', 'not-found', msg));
+        return res.status(422).json(this.operationOutcome('error', 'not-found', msg));
+      }
+
+      // check supplements
+      const used = new Set();
+      const reported = new Set();
+      this.checkSupplements(csProvider, null, txp.supplements, used, reported);
+      const unused = new Set([...txp.supplements].filter(s => !used.has(s)));
+      if (unused.size > 0) {
+        throw new Issue('error', 'not-found', null, 'VALUESET_SUPPLEMENT_MISSING', this.i18n.translatePlural(unused.size, 'VALUESET_SUPPLEMENT_MISSING', txp.HTTPLanguages, [[...unused].join(',')]), 'not-found').handleAsOO(400);
       }
 
       // Perform the lookup
-      const result = await this.doLookup(csProvider, code, txp);
+      const result = await this.doLookup(csProvider, code, txp, reported);
       return res.status(200).json(result);
     } catch (error) {
-      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       this.log.error(error);
+      debugLog(error);
+      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       if (error instanceof Issue) {
         let oo = new OperationOutcome();
         oo.addIssue(error);
@@ -202,7 +215,7 @@ class LookupWorker extends TerminologyWorker {
       }
 
       // Load any supplements
-      const supplements = this.loadSupplements(codeSystem.url, codeSystem.version);
+      const supplements = this.loadSupplements(codeSystem.url, codeSystem.version, txp.supplements);
 
       // Create a FhirCodeSystemProvider for this CodeSystem
       const csProvider = new FhirCodeSystemProvider(this.opContext, codeSystem, supplements);
@@ -211,8 +224,9 @@ class LookupWorker extends TerminologyWorker {
       const result = await this.doLookup(csProvider, code, txp);
       return res.status(200).json(result);
     } catch (error) {
-      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       this.log.error(error);
+      debugLog(error);
+      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       if (error instanceof Issue) {
         let oo = new OperationOutcome();
         oo.addIssue(error);
@@ -229,10 +243,13 @@ class LookupWorker extends TerminologyWorker {
    * @param {CodeSystemProvider} csProvider - CodeSystem provider
    * @param {string} code - Code to look up
    * @param {Object} params - Parsed parameters
+   * @param {Set} reportedSupplements - Set of supplements that are to be reported
    * @returns {Object} Parameters resource with lookup result
    */
-  async doLookup(csProvider, code, params) {
+  async doLookup(csProvider, code, params, reportedSupplements) {
     this.deadCheck('doLookup');
+
+    await this.checkSupplements(csProvider, null, params.supplements);
 
     // Helper to check if a property should be included
     const hasProp = (name, defaultValue = true) => {
@@ -249,8 +266,10 @@ class LookupWorker extends TerminologyWorker {
     const locateResult = await csProvider.locate(code);
 
     if (!locateResult || !locateResult.context) {
-      const message = locateResult?.message ||
-        `Unable to find code '${code}' in ${csProvider.system()} version ${csProvider.version() || 'unknown'}`;
+      let message = `Unable to find code '${code}' in ${csProvider.system()} version ${csProvider.version() || 'unknown'}`
+      if (locateResult?.message) {
+        message += ' ('+locateResult.message+')';
+      }
       throw new Issue('error', 'not-found', null, null, message, null, 404);
     }
 
@@ -285,9 +304,13 @@ class LookupWorker extends TerminologyWorker {
 
     // display (required)
     const display = await csProvider.display(ctxt);
+    const designations = new Designations(this.languages);
+    await csProvider.designations(ctxt, designations);
+    const pd = designations.preferredDesignation(params.workingLanguages());
+    const disp = pd ? pd.value : undefined;
     responseParams.push({
       name: 'display',
-      valueString: display || code
+      valueString: disp || display || code
     });
 
     // definition (optional) - top-level parameter
@@ -331,6 +354,12 @@ class LookupWorker extends TerminologyWorker {
           this.deadCheck('doLookup-designations');
           const designationParts = [];
 
+          if (designation.supplement) {
+            designationParts.push({
+              name: 'source',
+              valueCanonical: designation.supplement.vurl
+            });
+          }
           if (designation.language) {
             designationParts.push({
               name: 'language',
@@ -359,8 +388,16 @@ class LookupWorker extends TerminologyWorker {
     }
 
     // Let the provider add additional properties
-    await csProvider.extendLookup(ctxt, params.property || [], responseParams);
+    await csProvider.extendLookup(ctxt, params.properties || [], responseParams);
 
+    if (reportedSupplements) {
+      for (const supplement of reportedSupplements) {
+        responseParams.push({
+          name: 'used-supplement',
+          valueCanonical: supplement
+        });
+      }
+    }
     return {
       resourceType: 'Parameters',
       parameter: responseParams
@@ -384,7 +421,6 @@ class LookupWorker extends TerminologyWorker {
     });
   }
 
-
   /**
    * Build an OperationOutcome
    * @param {string} severity - error, warning, information
@@ -398,7 +434,7 @@ class LookupWorker extends TerminologyWorker {
       issue: [{
         severity,
         code,
-        diagnostics: message
+        details: {text : message}
       }]
     };
   }

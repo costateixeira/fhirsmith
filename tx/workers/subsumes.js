@@ -12,6 +12,7 @@ const { FhirCodeSystemProvider } = require('../cs/cs-cs');
 const {TxParameters} = require("../params");
 const {Parameters} = require("../library/parameters");
 const {Issue, OperationOutcome} = require("../library/operation-outcome");
+const {debugLog} = require("../operation-context");
 class SubsumesWorker extends TerminologyWorker {
   /**
    * @param {OperationContext} opContext - Operation context
@@ -42,8 +43,9 @@ class SubsumesWorker extends TerminologyWorker {
     try {
       await this.handleTypeLevelSubsumes(req, res);
     } catch (error) {
-      req.logInfo = "error "+(error.msgId || error.className);
       this.log.error(error);
+      debugLog(error);
+      req.logInfo = "error "+(error.msgId || error.className);
       if (error instanceof Issue) {
         let oo = new OperationOutcome();
         oo.addIssue(error);
@@ -66,6 +68,7 @@ class SubsumesWorker extends TerminologyWorker {
       await this.handleInstanceLevelSubsumes(req, res);
     } catch (error) {
       this.log.error(error);
+      debugLog(error);
       if (error instanceof Issue) {
         let oo = new OperationOutcome();
         oo.addIssue(error);
@@ -167,7 +170,7 @@ class SubsumesWorker extends TerminologyWorker {
     txp.readParams(params.jsonObj);
 
     // Load any supplements
-    const supplements = this.loadSupplements(codeSystem.url, codeSystem.version);
+    const supplements = this.loadSupplements(codeSystem.url, codeSystem.version, txp.supplements);
 
     // Create a FhirCodeSystemProvider for this CodeSystem
     const csProvider = new FhirCodeSystemProvider(this.opContext, codeSystem, supplements);
@@ -298,8 +301,16 @@ class SubsumesWorker extends TerminologyWorker {
       throw error;
     }
 
+    let equal = false;
+    if (csProvider.isCaseSensitive()) {
+      equal = codingA.code == codingB.code;
+    } else {
+      equal = codingA.code === codingB.code;
+    }
+    equal = equal || locateA == locateB;
+
     // Determine the subsumption relationship
-    let outcome = await csProvider.subsumesTest(codingA.code, codingB.code);
+    let outcome = equal ? 'equivalent' : await csProvider.subsumesTest(codingA.code, codingB.code);
 
     return {
       resourceType: 'Parameters',

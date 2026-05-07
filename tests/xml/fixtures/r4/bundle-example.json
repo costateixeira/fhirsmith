@@ -1,0 +1,229 @@
+{
+  "resourceType": "Bundle",
+  "id": "bundle-example",
+  "meta": {
+    "lastUpdated": "2014-08-18T01:43:30Z",
+    "tag": [
+      {
+        "system": "http://terminology.hl7.org/CodeSystem/v3-ActReason",
+        "code": "HTEST",
+        "display": "test health data"
+      }
+    ]
+  },
+  "type": "searchset",
+  "total": 3,
+  "link": [
+    {
+      "relation": "self",
+      "url": "https://example.com/base/MedicationRequest?patient\u003d347\u0026_include\u003dMedicationRequest.medication\u0026_count\u003d2"
+    },
+    {
+      "relation": "next",
+      "url": "https://example.com/base/MedicationRequest?patient\u003d347\u0026searchId\u003dff15fd40-ff71-4b48-b366-09c706bed9d0\u0026page\u003d2"
+    }
+  ],
+  "entry": [
+    {
+      "fullUrl": "https://example.com/base/MedicationRequest/3123",
+      "resource": {
+        "resourceType": "CodeSystem",
+        "id": "example",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/StructureDefinition/shareablecodesystem"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "\u003cdiv xmlns\u003d\"http://www.w3.org/1999/xhtml\"\u003e\n      \u003cp\u003eCodeSystem \u0026quot;ACME Codes for Cholesterol\u0026quot;: This is an example code system that includes \n        all the codes for serum cholesterol defined by ACME inc.\u003c/p\u003e\n      \u003cp\u003eDeveloped by: FHIR project team (example)\u003c/p\u003e\n      \u003cp\u003ePublished for testing on 28-Jan 2016\u003c/p\u003e\n      \u003cp\u003eThis code system defines all the ACME codes for serum cholesterol:\u003c/p\u003e\n      \u003ctable class\u003d\"grid\"\u003e\n        \u003ctr\u003e\n          \u003ctd\u003e\n            \u003cb\u003eCode\u003c/b\u003e\n          \u003c/td\u003e\n          \u003ctd\u003e\n            \u003cb\u003eDisplay\u003c/b\u003e\n          \u003c/td\u003e\n          \u003ctd\u003e\n            \u003cb\u003eDefinition\u003c/b\u003e\n          \u003c/td\u003e\n        \u003c/tr\u003e\n        \u003ctr\u003e\n          \u003ctd\u003echol-mmol\u003c/td\u003e\n          \u003ctd\u003eSChol (mmol/L)\u003c/td\u003e\n          \u003ctd\u003eSerum Cholesterol, in mmol/L\u003c/td\u003e\n        \u003c/tr\u003e\n        \u003ctr\u003e\n          \u003ctd\u003echol-mass\u003c/td\u003e\n          \u003ctd\u003eSChol (mg/L)\u003c/td\u003e\n          \u003ctd\u003eSerum Cholesterol, in mg/L\u003c/td\u003e\n        \u003c/tr\u003e\n        \u003ctr\u003e\n          \u003ctd\u003echol\u003c/td\u003e\n          \u003ctd\u003eSChol\u003c/td\u003e\n          \u003ctd\u003eSerum Cholesterol\u003c/td\u003e\n        \u003c/tr\u003e\n      \u003c/table\u003e\n    \u003c/div\u003e"
+        },
+        "url": "http://hl7.org/fhir/CodeSystem/example",
+        "identifier": [
+          {
+            "system": "http://acme.com/identifiers/codesystems",
+            "value": "internal-cholesterol-inl"
+          }
+        ],
+        "version": "20160128",
+        "name": "ACMECholCodesBlood",
+        "title": "ACME Codes for Cholesterol in Serum/Plasma",
+        "status": "draft",
+        "experimental": true,
+        "date": "2016-01-28",
+        "publisher": "Acme Co",
+        "contact": [
+          {
+            "name": "FHIR project team",
+            "telecom": [
+              {
+                "system": "url",
+                "value": "http://hl7.org/fhir"
+              }
+            ]
+          }
+        ],
+        "description": "This is an example code system that includes all the ACME codes for serum/plasma cholesterol from v2.36.",
+        "caseSensitive": true,
+        "content": "complete",
+        "filter": [
+          {
+            "code": "acme-plasma",
+            "description": "An internal filter used to select codes that are only used with plasma",
+            "operator": [
+              "\u003d"
+            ],
+            "value": "the value of this filter is either \u0027true\u0027 or \u0027false\u0027"
+          }
+        ],
+        "concept": [
+          {
+            "code": "chol-mmol",
+            "display": "SChol (mmol/L)",
+            "definition": "Serum Cholesterol, in mmol/L",
+            "designation": [
+              {
+                "use": {
+                  "system": "http://acme.com/config/fhir/codesystems/internal",
+                  "code": "internal-label"
+                },
+                "value": "From ACME POC Testing"
+              }
+            ]
+          },
+          {
+            "code": "chol-mass",
+            "display": "SChol (mg/L)",
+            "definition": "Serum Cholesterol, in mg/L",
+            "designation": [
+              {
+                "use": {
+                  "system": "http://acme.com/config/fhir/codesystems/internal",
+                  "code": "internal-label"
+                },
+                "value": "From Paragon Labs"
+              }
+            ]
+          },
+          {
+            "code": "chol",
+            "display": "SChol",
+            "definition": "Serum Cholesterol",
+            "designation": [
+              {
+                "use": {
+                  "system": "http://acme.com/config/fhir/codesystems/internal",
+                  "code": "internal-label"
+                },
+                "value": "Obdurate Labs uses this with both kinds of units..."
+              }
+            ]
+          }
+        ]
+      },
+      "search": {
+        "mode": "match",
+        "score": 1
+      }
+    },
+    {
+      "fullUrl": "https://example.com/base/Medication/example",
+      "resource": {
+        "resourceType": "ValueSet",
+        "id": "example-extensional",
+        "meta": {
+          "profile": [
+            "http://hl7.org/fhir/StructureDefinition/shareablevalueset"
+          ]
+        },
+        "text": {
+          "status": "generated",
+          "div": "\u003cdiv xmlns\u003d\"http://www.w3.org/1999/xhtml\"\u003e\n\t\t\t\u003cp\u003eValue set \u0026quot;LOINC Codes for Cholesterol\u0026quot;: This is an example value set that includes \n        all the  codes for serum cholesterol from LOINC v2.36.\u003c/p\u003e\n\t\t\t\u003cp\u003eDeveloped by: FHIR project team (example)\u003c/p\u003e\n\t\t\t\u003cp\u003ePublished for testing on 13-June 2012\u003c/p\u003e\n\t\t\t\u003cp\u003eThis value set includes the following LOINC codes:\u003c/p\u003e\n\t\t\t\u003cul\u003e\n\t\t\t\t\u003cli\u003e14647-2: Cholesterol [Moles/Volume]\u003c/li\u003e\n\t\t\t\t\u003cli\u003e2093-3: Cholesterol [Mass/Volume]\u003c/li\u003e\n\t\t\t\t\u003cli\u003e35200-5: Cholesterol [Mass Or Moles/Volume] \u003c/li\u003e\n\t\t\t\t\u003cli\u003e9342-7: Cholesterol [Percentile]\u003c/li\u003e\n\t\t\t\u003c/ul\u003e\n\t\t\t\u003cp\u003eThis content from LOINC® is copyright © 1995 Regenstrief Institute, Inc. and the LOINC Committee, and available at no cost under the license at http://loinc.org/terms-of-use.\u003c/p\u003e\n\t\t\u003c/div\u003e"
+        },
+        "url": "http://hl7.org/fhir/ValueSet/example-extensional",
+        "identifier": [
+          {
+            "system": "http://acme.com/identifiers/valuesets",
+            "value": "loinc-cholesterol-int"
+          }
+        ],
+        "version": "20150622",
+        "name": "LOINC Codes for Cholesterol in Serum/Plasma",
+        "status": "draft",
+        "experimental": true,
+        "date": "2015-06-22",
+        "publisher": "HL7 International",
+        "contact": [
+          {
+            "name": "FHIR project team",
+            "telecom": [
+              {
+                "system": "url",
+                "value": "http://hl7.org/fhir"
+              }
+            ]
+          }
+        ],
+        "description": "This is an example value set that includes all the LOINC codes for serum/plasma cholesterol from v2.36.",
+        "useContext": [
+          {
+            "code": {
+              "system": "http://terminology.hl7.org/CodeSystem/usage-context-type",
+              "code": "age"
+            },
+            "valueQuantity": {
+              "value": 18,
+              "comparator": "\u003e",
+              "unit": "yrs",
+              "system": "http://unitsofmeasure.org",
+              "code": "a"
+            }
+          }
+        ],
+        "jurisdiction": [
+          {
+            "coding": [
+              {
+                "system": "urn:iso:std:iso:3166",
+                "code": "US"
+              }
+            ]
+          }
+        ],
+        "purpose": "This value set was published by ACME Inc in order to make clear which codes are used for Cholesterol by AcmeClinicals (Adult Ambulatory care support in USA)",
+        "copyright": "This content from LOINC ® is copyright © 1995 Regenstrief Institute, Inc. and the LOINC Committee, and available at no cost under the license at http://loinc.org/terms-of-use.",
+        "compose": {
+          "lockedDate": "2012-06-13",
+          "inactive": true,
+          "include": [
+            {
+              "system": "http://loinc.org",
+              "version": "2.36",
+              "concept": [
+                {
+                  "code": "14647-2",
+                  "display": "Cholesterol [Moles/Volume]"
+                },
+                {
+                  "code": "2093-3",
+                  "display": "Cholesterol [Mass/Volume]"
+                },
+                {
+                  "code": "35200-5",
+                  "display": "Cholesterol [Mass Or Moles/Volume]"
+                },
+                {
+                  "code": "9342-7",
+                  "display": "Cholesterol [Percentile]"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "search": {
+        "mode": "include"
+      }
+    }
+  ]
+}

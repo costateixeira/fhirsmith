@@ -1,13 +1,5 @@
 <!--- admin -->
-
-String.prototype.escapeHTML = function () {                                       
-        return(                                                                 
-            this.replace(/&/g,'&amp;').                                         
-                replace(/>/g,'&gt;').                                           
-                replace(/</g,'&lt;').                                           
-                replace(/"/g,'&quot;')                                         
-        );                                                                     
-    };
+const escape = require('escape-html');
 
 function setCookie(c_name,value,exdays)
 {

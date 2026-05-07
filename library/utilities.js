@@ -25,11 +25,42 @@ const Utilities = {
     return isNaN(num) ? defaultValue : num;
   },
   parseFloatOrDefault(value, defaultValue) {
-  const num = parseFloat(value);
-  return isNaN(num) ? defaultValue : num;
+    const num = parseFloat(value);
+    return isNaN(num) ? defaultValue : num;
 
 
-}
+  },
+
+  /**
+   * Format the difference between two Date.now() timestamps for human reading
+   * @param {number} start - earlier timestamp (from Date.now())
+   * @param {number} end - later timestamp (from Date.now())
+   * @returns {string} formatted duration
+   */
+  formatDuration(start, end) {
+    let ms = Math.abs(end - start);
+
+    if (ms < 1000) return `${ms}ms`;
+
+    const days = Math.floor(ms / 86400000);
+    ms %= 86400000;
+    const hours = Math.floor(ms / 3600000);
+    ms %= 3600000;
+    const minutes = Math.floor(ms / 60000);
+    ms %= 60000;
+    const seconds = Math.floor(ms / 1000);
+    ms %= 1000;
+
+    const parts = [];
+    if (days) parts.push(`${days}d`);
+    if (hours) parts.push(`${hours}h`);
+    if (minutes) parts.push(`${minutes}m`);
+    if (seconds || ms) {
+      parts.push(ms ? `${seconds}.${String(ms).padStart(3, '0')}s` : `${seconds}s`);
+    }
+
+    return parts.join(' ');
+  }
 
 };
 
@@ -172,25 +203,84 @@ function isAbsoluteUrl(s) {
 }
 
 /**
- * Escape HTML special characters
+ * This class takes two lists, and matches between the lists, producing three new lists:
+ *   * items that are in both
+ *   * items that only in left
+ *   * items that are only in right
+ *
+ * You have to give it a match function that is called asynchronously
+ *
+ * examples of use:
+ *
+ * const matcher = new ArrayMatcher((l, r) =>
+ *   this.filtersMatch(localstatus, cs, l, r)
+ * );
+ * await matcher.match(leftArray, rightArray);
+ *
+ * // Use the results
+ * for (const { left, right } of matcher.matched) { ... }
+ * for (const item of matcher.unmatchedLeft) { ... }
+ * for (const item of matcher.unmatchedRight) { ... }
+ *
+ * // or
+ * const matcher2 = new ArrayMatcher((l, r) =>
+ *   this.compareProperties(system, version, l, r)
+ * );
+ * await matcher2.match(propsA, propsB);
+ *
  */
-function escapeHtml(text) {
-  if (text === null || text === undefined) {
-    return '';
-  }
-  if (typeof text !== 'string') {
-    return String(text);
+class ArrayMatcher {
+  constructor(matchFn) {
+    this.matchFn = matchFn;
+    this.matched = [];
+    this.unmatchedLeft = [];
+    this.unmatchedRight = [];
   }
 
-  const map = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#x27;'
-  };
+  /**
+   *
+   * @param left an array of items (or null/undefined)
+   * @param right an array of items (or null/undefined)
+   * @returns {Promise<ArrayMatcher>}
+   */
+  async match(left, right) {
+    if (!left) {
+      left = [];
+    }
+    if (!right) {
+      right = [];
+    }
 
-  return text.replace(/[&<>"']/g, m => map[m]);
+    this.matched = [];
+    this.unmatchedRight = [...right];
+
+    for (const l of left) {
+      let idx = -1;
+      for (let i = 0; i < this.unmatchedRight.length; i++) {
+        if (await this.matchFn(l, this.unmatchedRight[i])) {
+          idx = i;
+          break;
+        }
+      }
+      if (idx !== -1) {
+        this.matched.push({ left: l, right: this.unmatchedRight[idx] });
+        this.unmatchedRight.splice(idx, 1);
+      } else {
+        this.unmatchedLeft.push(l);
+      }
+    }
+
+    return this;
+  }
 }
 
-module.exports = { Utilities, validateParameter, validateOptionalParameter, validateArrayParameter, validateResource, strToBool, getValuePrimitive, getValueDT, getValueName, isAbsoluteUrl, escapeHtml };
+const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function formatDateMMDDYYYY(s) {
+  const mm = parseInt(s.substring(0, 2), 10);
+  const dd = s.substring(2, 4);
+  const yyyy = s.substring(4, 8);
+  return dd + '-' + months[mm - 1] + ' ' + yyyy;
+}
+
+module.exports = { Utilities, ArrayMatcher, validateParameter, validateOptionalParameter, validateArrayParameter, validateResource, strToBool, getValuePrimitive, getValueDT, getValueName, isAbsoluteUrl, formatDateMMDDYYYY };

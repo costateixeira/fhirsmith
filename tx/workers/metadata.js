@@ -37,13 +37,13 @@ class MetadataHandler {
     if (mode === 'terminology') {
       this.logInfo = 'termcaps';
       const tc = new TerminologyCapabilities(await this.buildTerminologyCapabilities(endpoint, provider));
-      return res.json(tc.toJSON(endpoint.fhirVersion));
+      return res.json(tc.jsonObj);
     }
     this.logInfo = 'metadata';
 
     // Default: return CapabilityStatement
     const cs = new CapabilityStatement(this.buildCapabilityStatement(endpoint, provider));
-    return res.json(cs.toJSON(endpoint.fhirVersion));
+    return res.json(cs.jsonObj);
   }
 
   /**
@@ -107,10 +107,11 @@ class MetadataHandler {
    * @returns {Object} CapabilityStatement resource
    */
   buildCapabilityStatement(endpoint) {
+
     const now = new Date().toISOString();
     const fhirVersion = this.mapFhirVersion(endpoint.fhirVersion);
     const baseUrl = this.config.baseUrl || `https://${this.host}${endpoint.path}`;
-    const serverVersion = this.config.serverVersion || '1.0.0';
+    const serverVersion = this.config.serverVersion;
 
     return {
       resourceType: 'CapabilityStatement',
@@ -124,7 +125,7 @@ class MetadataHandler {
             },
             {
               'url' : 'value',
-              'valueCode' : '1.8.0'
+              'valueCode' : this.config.txVersion
             },
             {
               'extension' : [
@@ -231,7 +232,8 @@ class MetadataHandler {
               ],
               operation: [
                 { name: 'expand', definition: 'http://hl7.org/fhir/OperationDefinition/ValueSet-expand' },
-                { name: 'validate-code', definition: 'http://hl7.org/fhir/OperationDefinition/ValueSet-validate-code' }
+                { name: 'validate-code', definition: 'http://hl7.org/fhir/OperationDefinition/ValueSet-validate-code' },
+                { name: 'related', definition: 'https://raw.githubusercontent.com/HealthIntersections/FHIRsmith/refs/heads/main/tx/data/OperationDefinition-ValueSet-related.json' }
               ]
             },
             {
@@ -264,6 +266,7 @@ class MetadataHandler {
             { name: 'validate-code', definition: 'http://hl7.org/fhir/OperationDefinition/Resource-validate-code' },
             { name: 'translate', definition: 'http://hl7.org/fhir/OperationDefinition/ConceptMap-translate' },
             { name: 'closure', definition: 'http://hl7.org/fhir/OperationDefinition/ConceptMap-closure' },
+            { name: 'related', definition: 'https://raw.githubusercontent.com/HealthIntersections/FHIRsmith/refs/heads/main/tx/data/OperationDefinition-ValueSet-related.json' },
             { name: 'versions', definition: 'http://hl7.org/fhir/OperationDefinition/fhir-versions' }
           ]
         }
@@ -325,9 +328,10 @@ class MetadataHandler {
       for (const cs of provider.codeSystems.values()) {
         const url = cs.url || (cs.jsonObj && cs.jsonObj.url);
         const version = cs.version || (cs.jsonObj && cs.jsonObj.version);
+        const content = cs.content || cs.jsonObj.content;
 
         if (url) {
-          this.addCodeSystemEntry(seenSystems, url, version);
+          this.addCodeSystemEntry(seenSystems, url, version, content);
         }
       }
     }
@@ -339,7 +343,7 @@ class MetadataHandler {
         const version = factory.version();
 
         if (url) {
-          this.addCodeSystemEntry(seenSystems, url, version);
+          this.addCodeSystemEntry(seenSystems, url, version, factory.content());
         }
       }
     }
@@ -357,12 +361,15 @@ class MetadataHandler {
    * @param {string} url - Code system URL
    * @param {string} version - Code system version (may be null)
    */
-  addCodeSystemEntry(seenSystems, url, version) {
+  addCodeSystemEntry(seenSystems, url, version, content) {
     if (!seenSystems.has(url)) {
       // Create new entry
       const entry = { uri: url };
       if (version) {
         entry.version = [{ code: version }];
+      }
+      if (content) {
+        entry.content = content;
       }
       seenSystems.set(url, entry);
     } else if (version) {
@@ -370,6 +377,9 @@ class MetadataHandler {
       const entry = seenSystems.get(url);
       if (!entry.version) {
         entry.version = [];
+      }
+      if (content) {
+        entry.content = content;
       }
       // Check if version already exists
       if (!entry.version.some(v => v.code === version)) {

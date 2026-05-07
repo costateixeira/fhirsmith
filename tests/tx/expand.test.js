@@ -31,12 +31,12 @@ describe('Expand Worker', () => {
       expect(response.body.expansion.contains).toBeDefined();
     });
 
-    test('should return 404 for non-existent ValueSet id', async () => {
+    test('should return 422 for non-existent ValueSet id', async () => {
       const response = await request(app)
         .get('/tx/r5/ValueSet/nonexistent-id/$expand')
         .set('Accept', 'application/json');
 
-      expect(response.status).toBe(404);
+      expect(response.status).toBe(422);
       expect(response.body.resourceType).toBe('OperationOutcome');
       expect(response.body.issue[0].code).toBe('not-found');
     });
@@ -65,13 +65,13 @@ describe('Expand Worker', () => {
       expect(response.body.issue[0].diagnostics).toContain('url');
     });
 
-    test('should return 404 when ValueSet not found', async () => {
+    test('should return 422 when ValueSet not found', async () => {
       const response = await request(app)
         .get('/tx/r5/ValueSet/$expand')
         .query({ url: 'http://nonexistent.org/valueset' })
         .set('Accept', 'application/json');
 
-      expect(response.status).toBe(404);
+      expect(response.status).toBe(422);
       expect(response.body.resourceType).toBe('OperationOutcome');
     });
 
@@ -373,7 +373,7 @@ describe('Expand Worker', () => {
       // Currently returns 200 with empty expansion (stub behavior)
       // When doExpand is implemented, this should return an error
       // because the CodeSystem can't be found
-      expect(response.status).toBe(404);
+      expect(response.status).toBe(422);
       // expect(response.status).toBe(404); // or 400 when fully implemented
     });
   });

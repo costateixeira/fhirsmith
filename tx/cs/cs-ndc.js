@@ -109,6 +109,12 @@ class NdcServices extends CodeSystemProvider {
     return ctxt ? !ctxt.active : false;
   }
 
+  async getStatus(code) {
+
+    const ctxt = await this.#ensureContext(code);
+    return ctxt.active ? "active" : "inactive";
+  }
+
   async isDeprecated(code) {
     await this.#ensureContext(code);
     return false; // NDC doesn't track deprecated status separately
@@ -399,7 +405,7 @@ class NdcServices extends CodeSystemProvider {
       ['10-digit', '11-digit', 'product'].includes(value);
   }
 
-  async filter(filterContext, prop, op, value) {
+  async filter(filterContext, forIteration, prop, op, value) {
     
 
     if (prop === 'code-type' && op === '=') {

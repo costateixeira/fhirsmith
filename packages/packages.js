@@ -12,9 +12,10 @@ const fs = require('fs');
 const PackageCrawler = require('./package-crawler.js');
 const htmlServer = require('../library/html-server');
 const folders = require('../library/folder-setup');
-
+const escape = require('escape-html');
 const Logger = require('../library/logger');
 const {validateParameter} = require("../library/utilities");
+const {describeCron} = require("../library/cron-utilities");
 const pckLog = Logger.getInstance().child({ module: 'packages' });
 
 class PackagesModule {
@@ -123,24 +124,6 @@ class PackagesModule {
         res.status(500).json({ error: 'Parameter validation failed' });
       }
     };
-  }
-
-  // Enhanced HTML escaping
-  escapeHtml(str) {
-    if (!str || typeof str !== 'string') return '';
-
-    const escapeMap = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#x27;',
-      '/': '&#x2F;',
-      '`': '&#x60;',
-      '=': '&#x3D;'
-    };
-
-    return str.replace(/[&<>"'`=/]/g, (match) => escapeMap[match]);
   }
 
   buildSecureQuery(baseQuery, conditions = []) {
@@ -572,7 +555,7 @@ class PackagesModule {
     await this.ensureMirrorDirectory();
 
     // Initialize the crawler
-    this.crawler = new PackageCrawler(this.config, this.db);
+    this.crawler = new PackageCrawler(this.config, this.db, this.stats);
 
     // Start the hourly web crawler if enabled
     if (config.crawler.enabled) {
@@ -634,6 +617,13 @@ class PackagesModule {
             this.createTables().then(resolve).catch(reject);
           } else {
             pckLog.info('Packages database already exists');
+            // Run migrations for tables added after initial schema
+            this.db.run(`CREATE TABLE IF NOT EXISTS FeedPages (
+              Url TEXT PRIMARY KEY,
+              VisitedAt TEXT NOT NULL
+            )`, (err) => {
+              if (err) pckLog.error('Failed to create FeedPages table:', err.message);
+            });
             resolve();
           }
         }
@@ -709,6 +699,13 @@ class PackagesModule {
              ManualToken          TEXT(64) NOT NULL,
              Email                TEXT(128) NOT NULL,
              Mask                 TEXT(64)
+         )`,
+
+        // FeedPages table - tracks which paginated feed archive pages have been visited
+        `CREATE TABLE FeedPages
+         (
+             Url       TEXT PRIMARY KEY,
+             VisitedAt TEXT NOT NULL
          )`
       ];
 
@@ -804,6 +801,7 @@ class PackagesModule {
 
   startCrawlerJob() {
     if (this.config.crawler && this.config.crawler.schedule) {
+      this.stats.addTask("Package Crawler", describeCron(this.config.crawler.schedule));
       this.crawlerJob = cron.schedule(this.config.crawler.schedule, async () => {
         pckLog.info('Starting scheduled package crawler...');
         try {
@@ -819,6 +817,7 @@ class PackagesModule {
 
   stopCrawlerJob() {
     if (this.crawlerJob) {
+      this.crawler.shutdown();
       this.crawlerJob.stop();
       this.crawlerJob = null;
       pckLog.info('Package crawler job stopped');
@@ -1083,13 +1082,13 @@ class PackagesModule {
         const {id, version} = req.params;
 
         if (!id || !version ||
-          !/^[a-zA-Z0-9._-]+$/.test(id) ||
+          !/^(@[a-z0-9._-]+\/)?[a-zA-Z0-9._-]+$/.test(id) ||
           !/^[a-zA-Z0-9._-]+$/.test(version)) {
-          return res.status(400).json({error: 'Invalid package id or version format'});
+          return res.status(400).json({error: `Invalid package id or version format: ${id}`});
         }
 
         if (id.length > 100 || version.length > 50) {
-          return res.status(400).json({error: 'Package id or version too long'});
+          return res.status(400).json({error: `Package id or version too long: ${id}`});
         }
 
         next();
@@ -1445,12 +1444,12 @@ class PackagesModule {
 
     for (const pkg of updates) {
       table += '<tr>';
-      table += `<td><a href="${this.escapeHtml(pkg.url)}">${this.escapeHtml(pkg.name)}</a></td>`;
-      table += `<td>${this.escapeHtml(pkg.version)}</td>`;
-      table += `<td>${this.escapeHtml(pkg.fhirVersion)}</td>`;
-      table += `<td>${this.escapeHtml(pkg.kind)}</td>`;
+      table += `<td><a href="${escape(pkg.url)}">${escape(pkg.name)}</a></td>`;
+      table += `<td>${escape(pkg.version)}</td>`;
+      table += `<td>${escape(pkg.fhirVersion)}</td>`;
+      table += `<td>${escape(pkg.kind)}</td>`;
       table += `<td>${new Date(pkg.date).toLocaleDateString()} ${new Date(pkg.date).toLocaleTimeString()}</td>`;
-      table += `<td>${this.escapeHtml(pkg.canonical || '')}</td>`;
+      table += `<td>${escape(pkg.canonical || '')}</td>`;
       table += '</tr>';
     }
 
@@ -1533,7 +1532,7 @@ class PackagesModule {
       // Check if we should redirect to bucket storage
       if (this.config.bucketPath) {
         let bucketUrl = this.getBucketUrl(secure);
-        const redirectUrl = `${bucketUrl}${id}-${version}.tgz`;
+        const redirectUrl = `${bucketUrl}${this.fixPrefix(id)}-${version}.tgz`;
         res.redirect(redirectUrl);
         return;
       }
@@ -1699,6 +1698,7 @@ class PackagesModule {
                           Author,
                           License,
                           Hash,
+                          GUID,
                           Description
                    FROM PackageVersions
                    WHERE Id = ?
@@ -1735,10 +1735,10 @@ class PackagesModule {
             }
 
             const dependency = row.Dependency;
-            const hashIndex = dependency.indexOf('#');
-            if (hashIndex > 0) {
-              const depName = dependency.substring(0, hashIndex);
-              const depVersion = dependency.substring(hashIndex + 1);
+            const atIndex = dependency.indexOf('@');
+            if (atIndex > 0) {
+              const depName = dependency.substring(0, atIndex);
+              const depVersion = dependency.substring(atIndex + 1);
               deps[row.PackageVersionKey][depName] = depVersion;
             }
           }
@@ -1898,12 +1898,12 @@ class PackagesModule {
 
     for (const pv of sortedVersions) {
       table += '<tr>';
-      table += `<td><strong>${this.escapeHtml(pv.Version)}</strong></td>`;
-      table += `<td>${this.escapeHtml(this.interpretVersion(pv.FhirVersions))}</td>`;
-      table += `<td>${this.escapeHtml(this.codeForKind(pv.Kind))}</td>`;
+      table += `<td title="${escape(pv.GUID)}"><strong>${escape(pv.Version)}</strong></td>`;
+      table += `<td>${escape(this.interpretVersion(pv.FhirVersions))}</td>`;
+      table += `<td>${escape(this.codeForKind(pv.Kind))}</td>`;
       table += `<td>${new Date(pv.PubDate).toLocaleDateString()}</td>`;
       table += `<td>${(pv.DownloadCount || 0).toLocaleString()}</td>`;
-      table += `<td><a href="/packages/${this.escapeHtml(id)}/${this.escapeHtml(pv.Version)}" class="btn btn-sm btn-primary">Download</a></td>`;
+      table += `<td><a href="/packages/${encodeURIComponent(id)}/${escape(pv.Version)}" class="btn btn-sm btn-primary">Download</a></td>`;
       table += '</tr>';
     }
 
@@ -1948,7 +1948,7 @@ class PackagesModule {
     let content = '<div class="row mb-4">';
     content += '<div class="col-12">';
     content += '<table class="grid">';
-    content += `<tr><td>Package ID:</td><td>${this.escapeHtml(id)}</td></tr>`;
+    content += `<tr><td>Package ID:</td><td>${escape(id)}</td></tr>`;
     content += `<tr><td>Description</td><td>${vars.desc}</td></tr>`;
     content += `<tr><td>Total Versions:</td><td>${vars.count}</td></tr>`;
     content += `<tr><td>Total Downloads:</td><td>${vars.downloads}</td></tr>`;
@@ -1968,7 +1968,7 @@ class PackagesModule {
   formatTextToHTML(text) {
     if (!text) return '';
     // Basic text to HTML formatting - convert newlines to <br>
-    return this.escapeHtml(text).replace(/\n/g, '<br>');
+    return escape(text).replace(/\n/g, '<br>');
   }
 
   async serveSearch(req, res) {
@@ -2141,13 +2141,13 @@ class PackagesModule {
 
     for (const pkg of results) {
       table += '<tr>';
-      table += `<td><a href="${this.escapeHtml(pkg.url)}">${this.escapeHtml(pkg.name)}</a></td>`;
-      table += `<td>${this.escapeHtml(pkg.version)} (<a href="/packages/${this.escapeHtml(pkg.name)}">all</a>)</td>`;
-      table += `<td>${this.escapeHtml(pkg.fhirVersion)}</td>`;
-      table += `<td>${this.escapeHtml(pkg.kind)}</td>`;
+      table += `<td><a href="${escape(this.fixPrefix(pkg.url))}">${escape(pkg.name)}</a></td>`;
+      table += `<td>${escape(pkg.version)} (<a href="/packages/${encodeURIComponent(pkg.name)}">all</a>)</td>`;
+      table += `<td>${escape(pkg.fhirVersion)}</td>`;
+      table += `<td>${escape(pkg.kind)}</td>`;
       table += `<td>${pkg.date ? new Date(pkg.date).toLocaleDateString() : 'N/A'}</td>`;
       table += `<td>${pkg.count ? pkg.count.toLocaleString() : 'N/A'}</td>`;
-      table += `<td>${this.escapeHtml(pkg.canonical || '')}</td>`;
+      table += `<td>${escape(pkg.canonical || '')}</td>`;
       table += '</tr>';
     }
 
@@ -2201,22 +2201,22 @@ class PackagesModule {
 
     content += '<tr>';
     content += '<td>Id</td>';
-    content += `<td><input type="text" name="name" value="${this.escapeHtml(vars.name)}"></td>`;
+    content += `<td><input type="text" name="name" value="${escape(vars.name)}"></td>`;
     content += '</tr>';
 
     content += '<tr>';
     content += '<td>Depends On</td>';
-    content += `<td><input type="text" name="dependson" value="${this.escapeHtml(vars.dependson)}"> <i>includes both direct and indirect dependencies</i></td>`;
+    content += `<td><input type="text" name="dependson" value="${escape(vars.dependson)}"> <i>includes both direct and indirect dependencies</i></td>`;
     content += '</tr>';
 
     content += '<tr>';
     content += '<td>Canonical (Package)</td>';
-    content += `<td><input type="text" name="pkgcanonical" value="${this.escapeHtml(vars.canonicalPkg)}"></td>`;
+    content += `<td><input type="text" name="pkgcanonical" value="${escape(vars.canonicalPkg)}"></td>`;
     content += '</tr>';
 
     content += '<tr>';
     content += '<td>Canonical (Resource)</td>';
-    content += `<td><input type="text" name="canonical" value="${this.escapeHtml(vars.canonicalUrl)}"></td>`;
+    content += `<td><input type="text" name="canonical" value="${escape(vars.canonicalUrl)}"></td>`;
     content += '</tr>';
 
     content += '<tr>';
@@ -2367,10 +2367,10 @@ class PackagesModule {
       <h1>FHIR Package Search</h1>
       
       <form class="search-form" method="GET">
-        <input type="text" name="name" placeholder="Package name" value="${this.escapeHtml(name)}">
-        <input type="text" name="dependson" placeholder="Depends on" value="${this.escapeHtml(dependson)}">
-        <input type="text" name="canonicalPkg" placeholder="Canonical package" value="${this.escapeHtml(canonicalPkg)}">
-        <input type="text" name="canonicalUrl" placeholder="Canonical URL" value="${this.escapeHtml(canonicalUrl)}">
+        <input type="text" name="name" placeholder="Package name" value="${escape(name)}">
+        <input type="text" name="dependson" placeholder="Depends on" value="${escape(dependson)}">
+        <input type="text" name="canonicalPkg" placeholder="Canonical package" value="${escape(canonicalPkg)}">
+        <input type="text" name="canonicalUrl" placeholder="Canonical URL" value="${escape(canonicalUrl)}">
         <select name="fhirVersion">
           <option value="">Any FHIR version</option>
           <option value="R2" ${fhirVersion === 'R2' ? 'selected' : ''}>R2</option>
@@ -2386,13 +2386,13 @@ class PackagesModule {
         ${results.map(pkg => `
           <div class="package">
             <div class="package-name">
-              <a href="${pkg.url}">${this.escapeHtml(pkg.name)}</a> v${this.escapeHtml(pkg.version)}
+              <a href="${pkg.url}">${escape(pkg.name)}</a> v${escape(pkg.version)}
             </div>
             <div class="package-details">
-              <strong>FHIR Version:</strong> ${this.escapeHtml(pkg.fhirVersion)}<br>
-              <strong>Type:</strong> ${this.escapeHtml(pkg.kind)}<br>
-              <strong>Canonical:</strong> ${this.escapeHtml(pkg.canonical)}<br>
-              ${pkg.description ? `<strong>Description:</strong> ${this.escapeHtml(pkg.description)}<br>` : ''}
+              <strong>FHIR Version:</strong> ${escape(pkg.fhirVersion)}<br>
+              <strong>Type:</strong> ${escape(pkg.kind)}<br>
+              <strong>Canonical:</strong> ${escape(pkg.canonical)}<br>
+              ${pkg.description ? `<strong>Description:</strong> ${escape(pkg.description)}<br>` : ''}
               ${pkg.date ? `<strong>Published:</strong> ${new Date(pkg.date).toLocaleDateString()}<br>` : ''}
               ${pkg.count ? `<strong>Downloads:</strong> ${pkg.count}<br>` : ''}
             </div>
@@ -2507,10 +2507,10 @@ class PackagesModule {
             }
 
             // Extract dependency name and version
-            const hashIndex = dependency.indexOf('#');
-            if (hashIndex > 0) {
-              const depName = dependency.substring(0, hashIndex);
-              const depVersion = dependency.substring(hashIndex + 1);
+            const atIndex = dependency.indexOf('@');
+            if (atIndex > 0) {
+              const depName = dependency.substring(0, atIndex);
+              const depVersion = dependency.substring(atIndex + 1);
               const depMajorMinor = this.getMajorMinorVersion(depVersion);
               const depRef = `${depName}#${depMajorMinor}`;
 
@@ -2592,14 +2592,14 @@ class PackagesModule {
     for (const source of sourcePackages) {
       const dependencies = brokenDependencies[source];
       table += '<tr>';
-      table += `<td>${this.escapeHtml(source)}</td>`;
+      table += `<td>${escape(source)}</td>`;
       table += '<td>';
 
       for (let i = 0; i < dependencies.length; i++) {
         if (i > 0) {
           table += ', ';
         }
-        table += this.escapeHtml(dependencies[i]);
+        table += escape(dependencies[i]);
       }
 
       table += '</td>';
@@ -2655,7 +2655,7 @@ class PackagesModule {
   buildLogPageContent(status, logData, summary) {
     let content = '<div class="row mb-4">';
     content += '<div class="col-12">';
-    content += `<div class="alert ${this.crawlerRunning ? 'alert-info' : 'alert-secondary'}">${this.escapeHtml(status)}</div>`;
+    content += `<div class="alert ${this.crawlerRunning ? 'alert-info' : 'alert-secondary'}">${escape(status)}</div>`;
     content += '</div>';
     content += '</div>';
 
@@ -2751,7 +2751,7 @@ class PackagesModule {
       output += 'No feeds processed.\n';
     }
 
-    return this.escapeHtml(output);
+    return escape(output);
   }
 
   getStatus() {
@@ -2824,7 +2824,7 @@ class PackagesModule {
     if (this.lastRunTime) {
       content += `<tr><td>Last Run</td><td>${new Date(this.lastRunTime).toLocaleString()}</td></tr>`;
     }
-    content += `<tr><td>Master URL</td><td><a href="${htmlServer.escapeHtml(this.config.masterUrl)}" target="_blank">${htmlServer.escapeHtml(this.config.masterUrl)}</a></td></tr>`;
+    content += `<tr><td>Master URL</td><td><a href="${escape(this.config.masterUrl)}" target="_blank">${escape(this.config.masterUrl)}</a></td></tr>`;
     content += '</table>';
     content += '</div>';
     content += '</div>';
@@ -2832,6 +2832,13 @@ class PackagesModule {
     return content;
   }
 
+  fixPrefix(id) {
+    if (id && id.startsWith("@") && id.includes("/")) {
+      return id.replace("@", "$$").replace("/", "$");
+    } else {
+      return id;
+    }
+  }
 }
 
 module.exports = PackagesModule;

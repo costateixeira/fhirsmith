@@ -1,4 +1,4 @@
-const { TerminologyError } = require('../operation-context');
+const { TerminologyError} = require('../operation-context');
 const { CodeSystem } = require('../library/codesystem');
 const ValueSet = require('../library/valueset');
 const {VersionUtilities} = require("../../library/version-utilities");
@@ -133,9 +133,10 @@ class TerminologyWorker {
    * @param {Array<string>} kinds - Allowed content modes
    * @param {OperationOutcome} op - Op for errors
    * * @param {boolean} nullOk - Whether null result is acceptable
+   * @param {Set<string>} statedSupplements - Supplements invoked in context
    * @returns {CodeSystemProvider|null} Code system provider or null
    */
-  async findCodeSystem(url, version = '', params, kinds = ['complete'], op, nullOk = false, checkVer = false, noVParams = false) {
+  async findCodeSystem(url, version = '', params, kinds = ['complete'], op, nullOk = false, checkVer = false, noVParams = false, statedSupplements = null) {
     if (!url) {
       return null;
     }
@@ -145,7 +146,7 @@ class TerminologyWorker {
     }
     let codeSystemResource = null;
     let provider = null;
-    const supplements = this.loadSupplements(url, version);
+    const supplements = this.loadSupplements(url, version, statedSupplements);
 
     // First check additional resources
     codeSystemResource = this.findInAdditionalResources(url, version, 'CodeSystem', !nullOk);
@@ -169,13 +170,13 @@ class TerminologyWorker {
 
     if (!provider && !nullOk) {
       if (!version) {
-        throw new Issue("error", "not-found", null, "UNKNOWN_CODESYSTEM_EXP", this.i18n.translate("UNKNOWN_CODESYSTEM_EXP", params.FHTTPLanguages, [url]), "not-found", 404);
+        throw new Issue("error", "not-found", null, "UNKNOWN_CODESYSTEM_EXP", this.i18n.translate("UNKNOWN_CODESYSTEM_EXP", params.FHTTPLanguages, [url]), "not-found", 422);
       } else {
         const versions = await this.listVersions(url);
         if (versions.length === 0) {
-          throw new Issue("error", "not-found", null, "UNKNOWN_CODESYSTEM_VERSION_EXP_NONE", this.i18n.translate("UNKNOWN_CODESYSTEM_VERSION_EXP_NONE", params.FHTTPLanguages, [url, version]), "not-found", 404);
+          throw new Issue("error", "not-found", null, "UNKNOWN_CODESYSTEM_VERSION_EXP_NONE", this.i18n.translate("UNKNOWN_CODESYSTEM_VERSION_EXP_NONE", params.FHTTPLanguages, [url, version]), "not-found", 422);
         } else {
-          throw new Issue("error", "not-found", null, "UNKNOWN_CODESYSTEM_VERSION_EXP", this.i18n.translate("UNKNOWN_CODESYSTEM_VERSION_EXP", params.FHTTPLanguages, [url, version, this.presentVersionList(versions)]), "not-found", 404);
+          throw new Issue("error", "not-found", null, "UNKNOWN_CODESYSTEM_VERSION_EXP", this.i18n.translate("UNKNOWN_CODESYSTEM_VERSION_EXP", params.FHTTPLanguages, [url, version, this.presentVersionList(versions)]), "not-found", 422);
         }
       }
     }
@@ -245,10 +246,14 @@ class TerminologyWorker {
    * Load supplements for a code system
    * @param {string} url - Code system URL
    * @param {string} version - Code system version
+   * @param {Set<string>} statedSupplements - Supplements invoked in context
    * @returns {Array<CodeSystem>} Supplement code systems
    */
-  loadSupplements(url, version = '') {
+  loadSupplements(url, version = '', statedSupplements) {
     const supplements = [];
+
+    supplements.push(...this.provider.loadSupplements(url, version, statedSupplements));
+    // todo: look in provider for supplements
 
     if (!this.additionalResources) {
       return supplements;
@@ -265,12 +270,16 @@ class TerminologyWorker {
           continue;
         }
 
-        // Handle exact URL match (no version specified in supplements)
+        // we consider either language packs or specified supplements
+        if (!(cs.isLangPack() || (statedSupplements && (statedSupplements.has(cs.url) || statedSupplements.has(cs.vurl))))) {
+          continue;
+        }
+        if (this.hasSupplement(cs, supplements)) {
+          continue;
+        }
+        // Handle exact URL match (no version specified in supplements field)
         if (supplementsUrl === url) {
-          // If we're looking for a specific version, only include if no version in supplements URL
-          if (!version) {
-            supplements.push(cs);
-          }
+          supplements.push(cs);
           continue;
         }
 
@@ -298,22 +307,29 @@ class TerminologyWorker {
    * @param {CodeSystemProvider} cs - Code system provider
    * @param {Object} src - Source element (for extensions)
    */
-  checkSupplements(cs, src, requiredSupplements) {
+  checkSupplements(cs, src, requiredSupplements, usedSupplements = null, reportedSupplements = null) {
     // Check for required supplements in extensions
-    if (src && src.getExtensions) {
-      const supplementExtensions = src.getExtensions('http://hl7.org/fhir/StructureDefinition/valueset-supplement');
+    if (src && src.extension) {
+      const supplementExtensions = src.extension.filter(x => x.url == 'http://hl7.org/fhir/StructureDefinition/valueset-supplement');
       for (const ext of supplementExtensions) {
         const supplementUrl = ext.valueString || ext.valueUri;
         if (supplementUrl && !cs.hasSupplement(this.opContext, supplementUrl)) {
-          throw new TerminologyError(`ValueSet depends on supplement '${supplementUrl}' on ${cs.systemUri} that is not known`);
+          throw new TerminologyError(`ValueSet depends on supplement '${supplementUrl}' on ${cs.system} that is not known`);
         }
       }
     }
 
-    // Remove required supplements that are satisfied
-    for (let i = requiredSupplements.length - 1; i >= 0; i--) {
-      if (cs.hasSupplement(requiredSupplements[i])) {
-        requiredSupplements.splice(i, 1);
+    if (reportedSupplements) {
+      for (let s of cs.listSupplements(true)) {
+        reportedSupplements.add(s);
+      }
+    }
+    // Note required supplements that are satisfied - and might be version independent
+    if (usedSupplements) {
+      for (const s of requiredSupplements) {
+        if (cs.hasSupplement(s)) {
+          usedSupplements.add(s);
+        }
       }
     }
   }
@@ -324,8 +340,23 @@ class TerminologyWorker {
    * @param {string} version - ValueSet version (optional, overrides URL version)
    * @returns {ValueSet|null} Found ValueSet or null
    */
-  async findValueSet(url, version = '') {
+  async findValueSet(url, version, source = '') {
     if (!url) {
+      return null;
+    }
+    if (url.startsWith("#")) {
+      if (source) {
+        if (source.jsonObj) {
+          source = source.jsonObj;
+        }
+        for (const contained of source.contained || []) {
+          if (contained.id === url.substring(1)) {
+            const ret = this.wrapRawResource(contained);
+            ret.isContained = true;
+            return ret;
+          }
+        }
+      }
       return null;
     }
 
@@ -456,6 +487,10 @@ class TerminologyWorker {
     if (req.method === 'POST' && req.body && req.body.resourceType === 'Parameters') {
       return req.body;
     }
+    if (req.method === 'POST' && req.body && req.body.resourceType) {
+      let langs = this.languages.parse(req.headers['accept-language']);
+      throw new Issue('error', 'invalid', null, 'Wrong_type_for_resource_expected', this.i18n.translate('Wrong_type_for_resource_expected', langs, ["Parameters", req.body.resourceType])).handleAsOO(400);
+    }
 
     // Convert query params or form body to Parameters
     const source = req.method === 'POST' ? {...req.query, ...req.body} : req.query;
@@ -480,6 +515,10 @@ class TerminologyWorker {
           // Assume it's a complex type like Coding or CodeableConcept
           params.parameter.push(this.buildComplexParameter(name, value));
         }
+      } else if (value == 'true') {
+        params.parameter.push({name, valueBoolean: true});
+      } else if (value == 'false') {
+        params.parameter.push({name, valueBoolean: false});
       } else {
         params.parameter.push({name, valueString: String(value)});
       }
@@ -837,31 +876,6 @@ class TerminologyWorker {
     return result;
   }
 
-  // Note: findParameter, getStringParam, getResourceParam, getCodingParam,
-  // and getCodeableConceptParam are inherited from TerminologyWorker base class
-
-  fixForVersion(resource) {
-    if (this.provider.fhirVersion >= 5) {
-      return resource;
-    }
-    let rt = resource.resourceType;
-    switch (rt) {
-      case "ValueSet": {
-        let vs = new ValueSet(resource);
-        if (this.provider.fhirVersion == 4) {
-          return vs.convertFromR5(resource, "R4");
-        } else if (this.provider.fhirVersion == 3) {
-          return vs.convertFromR5(resource, "R3");
-        } else {
-          return resource;
-        }
-      }
-      default:
-        return resource;
-    }
-  }
-
-
   seeSourceVS(vs, url) {
     let s = url;
     if (vs) {
@@ -895,6 +909,22 @@ class TerminologyWorker {
 
     const lastItem = items.pop();
     return `${items.join(', ')} and ${lastItem}`;
+  }
+
+  checkNoLockedDate(url, compose) {
+    if (compose.lockedDate) {
+      throw new Issue("error", "business-rule", null, null, `Cannot process ValueSet ${url} due to the presence of a lockedDate on the compose`);
+    }
+    return true;
+  }
+
+  hasSupplement(cs, supplements) {
+    for (let t of supplements) {
+      if (t.vurl == cs.vurl) {
+        return true;
+      }
+    }
+    return false;
   }
 }
 

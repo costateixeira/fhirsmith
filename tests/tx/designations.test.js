@@ -1,5 +1,5 @@
-const fs = require('fs');
 const path = require('path');
+
 const {
   Designation,
   Designations,
@@ -16,9 +16,8 @@ describe('Designations', () => {
 
   beforeAll(async () => {
     // Load real language registry
-    const langDataPath = path.join(__dirname, '../../tx/data/lang.dat');
-    const content = fs.readFileSync(langDataPath, 'utf8');
-    languageDefinitions = LanguageDefinitions.fromContent(content);
+    const langDataPath = path.join(__dirname, '../../tx/data');
+    languageDefinitions = await LanguageDefinitions.fromFiles(langDataPath);
   });
 
   beforeEach(() => {
@@ -123,7 +122,7 @@ describe('Designations', () => {
 
     test('should find preferred designation without language list', () => {
       const preferred = designations.preferredDesignation();
-      expect(preferred.display).toBe('Base English');
+      expect(preferred.display).toBe('US English Display');
       expect(designations.isDisplay(preferred)).toBe(true);
     });
 

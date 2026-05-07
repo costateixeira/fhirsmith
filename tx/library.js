@@ -30,6 +30,12 @@ const {ListCodeSystemProvider} = require("./cs/cs-provider-list");
 const { Provider } = require("./provider");
 const {I18nSupport} = require("../library/i18nsupport");
 const folders = require('../library/folder-setup');
+const {VSACValueSetProvider} = require("./vs/vs-vsac");
+const { OCLCodeSystemProvider, OCLSourceCodeSystemFactory } = require('./ocl/cs-ocl');
+const { OCLValueSetProvider } = require('./ocl/vs-ocl');
+const { OCLConceptMapProvider } = require('./ocl/cm-ocl');
+const {UriServicesFactory} = require("./cs/cs-uri");
+const {debugLog} = require("./operation-context");
 
 /**
  * This class holds all the loaded content ready for processing
@@ -60,7 +66,8 @@ class Library {
    */
   conceptMapProviders;
 
-  contentSources = [];
+  packageSources = [];
+  externalSources = [];
 
   baseUrl = null;
   cacheFolder = null;
@@ -68,6 +75,7 @@ class Library {
   startMemory = process.memoryUsage();
   lastTime = null;
   totalDownloaded = 0;
+  vsacCfg = undefined;
 
   registerProvider(source, factory, isDefault = false) {
     this.#logSystem(factory.system(), factory.version(), source);
@@ -82,14 +90,20 @@ class Library {
     }
   }
 
-  constructor(configFile, log) {
+  constructor(configFile, vsacCfg, log, stats) {
     this.configFile = configFile;
+    this.vsacCfg = vsacCfg;
     this.log = log;
+    this.stats = stats;
+
     // Only synchronous initialization here
     this.codeSystemFactories = new Map();
     this.codeSystemProviders = [];
     this.valueSetProviders = [];
     this.conceptMapProviders = [];
+    this.oclProviderSets = new Map();
+    this.oclConfig = {};
+    this.ignored = new Set();
 
     // Create package manager for FHIR packages
     // packages2.fhir.org/packages is the primary, packages.fhir.org is fallback
@@ -142,7 +156,7 @@ class Library {
 
   async load() {
     this.startTime = Date.now();
-    this.languageDefinitions = await LanguageDefinitions.fromFile(path.join(__dirname, '../tx/data/lang.dat'));
+    this.languageDefinitions = await LanguageDefinitions.fromFiles(path.join(__dirname, '../tx/data'));
     this.i18n = new I18nSupport(path.join(__dirname, '../translations'), this.languageDefinitions);
     await this.i18n.load();
 
@@ -151,11 +165,18 @@ class Library {
     const yamlContent = await fs.readFile(yamlPath, 'utf8');
     const config = yaml.parse(yamlContent);
     this.baseUrl = config.base.url;
+    this.oclConfig = config.ocl && typeof config.ocl === 'object' ? config.ocl : {};
+    this.ignored = new Set(Array.isArray(config.ignored) ? config.ignored : []);
 
     this.log.info('Fetching Data from '+this.baseUrl);
 
     for (const source of config.sources) {
-      await this.processSource(source, this.packageManager, "fetch");
+      try {
+        await this.processSource(source, this.packageManager, "fetch");
+      } catch (error) {
+        console.error(`Failed to fetch source '${source}': ${error.message}`);
+        throw error;
+      }
     }
 
     this.log.info("Downloaded "+((this.totalDownloaded + this.packageManager.totalDownloaded)/ 1024)+" kB");
@@ -164,13 +185,25 @@ class Library {
     this.#logSystemHeader();
 
     for (const source of config.sources) {
-      await this.processSource(source, this.packageManager, "cs");
+      try {
+        await this.processSource(source, this.packageManager, "cs");
+      } catch (error) {
+        debugLog(error);
+        console.error(`Failed to load code systems from '${source}': ${error.message}`);
+        throw error;
+      }
     }
     this.log.info('Loading Packages');
     this.#logPackagesHeader();
 
     for (const source of config.sources) {
-      await this.processSource(source, this.packageManager, "npm");
+      try {
+        await this.processSource(source, this.packageManager, "npm");
+      } catch (error) {
+        debugLog(error);
+        console.error(`Failed to load package '${source}': ${error.message}`);
+        throw error;
+      }
     }
 
     const endMemory = process.memoryUsage();
@@ -245,11 +278,141 @@ class Library {
         break;
 
       case 'npm':
-        await this.loadNpm(packageManager, details, isDefault, mode);
+        await this.loadNpm(packageManager, details, isDefault, mode, false);
+        break;
+
+      case 'npm/cs':
+        await this.loadNpm(packageManager, details, isDefault, mode, true);
+        break;
+
+      case 'url':
+        await this.loadUrl(packageManager, details, isDefault, mode, false);
+        break;
+
+      case 'url/cs':
+        await this.loadUrl(packageManager, details, isDefault, mode, true);
+        break;
+
+      case 'ocl':
+        await this.loadOcl(details, isDefault, mode);
         break;
 
       default:
         throw new Error(`Unknown source type: ${type}`);
+    }
+  }
+
+  parseOclConfig(details) {
+    const text = String(details || '').trim();
+    if (!text) {
+      throw new Error('OCL source requires details, e.g. ocl:https://ocl.example.org');
+    }
+
+    const parts = text.split('|').map(p => p.trim()).filter(Boolean);
+    const baseUrl = this.resolveOclConfigValue(parts[0]);
+    if (!baseUrl) {
+      throw new Error('OCL source requires a base URL');
+    }
+
+    const config = { baseUrl };
+    for (let i = 1; i < parts.length; i++) {
+      const part = parts[i];
+      const eq = part.indexOf('=');
+      if (eq === -1) {
+        continue;
+      }
+      const key = part.substring(0, eq).trim().toLowerCase();
+      const value = this.resolveOclConfigValue(part.substring(eq + 1).trim());
+      if (!value) {
+        continue;
+      }
+      if (key === 'org') {
+        config.org = value;
+      } else if (key === 'token') {
+        config.token = value;
+      } else if (key === 'timeout') {
+        const timeout = Number(value);
+        if (Number.isFinite(timeout) && timeout > 0) {
+          config.timeout = timeout;
+        }
+      }
+    }
+
+    return config;
+  }
+
+  resolveOclConfigValue(value) {
+    const text = String(value || '').trim();
+    if (!text) {
+      return text;
+    }
+
+    if (this.oclConfig && Object.hasOwn(this.oclConfig, text)) {
+      const resolved = this.oclConfig[text];
+      if (typeof resolved === 'string') {
+        return resolved.trim();
+      }
+    }
+
+    return text;
+  }
+
+  async loadOcl(details, isDefault, mode) {
+    const config = this.parseOclConfig(details);
+    const cacheKey = `${config.baseUrl}|${config.org || ''}`;
+
+    let providerSet = this.oclProviderSets.get(cacheKey);
+    if (!providerSet) {
+      const codeSystemProvider = new OCLCodeSystemProvider(config);
+      const valueSetProvider = new OCLValueSetProvider(config);
+      const conceptMapProvider = new OCLConceptMapProvider(config);
+      this.externalSources.push(codeSystemProvider);
+      this.externalSources.push(valueSetProvider);
+      this.externalSources.push(conceptMapProvider);
+      providerSet = {
+        config,
+        codeSystemProvider,
+        valueSetProvider,
+        conceptMapProvider,
+        csRegistered: false,
+        factoriesRegistered: false,
+        vsRegistered: false,
+        cmRegistered: false
+      };
+      this.oclProviderSets.set(cacheKey, providerSet);
+    }
+
+    if (mode === 'fetch') {
+      return;
+    }
+
+    if (mode === 'cs') {
+      if (!providerSet.csRegistered) {
+        this.codeSystemProviders.push(providerSet.codeSystemProvider);
+        providerSet.csRegistered = true;
+      }
+
+      if (!providerSet.factoriesRegistered) {
+        await providerSet.codeSystemProvider.listCodeSystems('5.0', null);
+        const metas = providerSet.codeSystemProvider.getSourceMetas();
+        for (const meta of metas) {
+          const factory = new OCLSourceCodeSystemFactory(this.i18n, providerSet.codeSystemProvider.httpClient, meta);
+          this.registerProvider(`ocl:${config.baseUrl}`, factory, isDefault);
+        }
+        providerSet.factoriesRegistered = true;
+      }
+      return;
+    }
+
+    if (mode === 'npm') {
+      if (!providerSet.vsRegistered) {
+        this.valueSetProviders.push(providerSet.valueSetProvider);
+        providerSet.vsRegistered = true;
+      }
+      if (!providerSet.cmRegistered) {
+        this.conceptMapProviders.push(providerSet.conceptMapProvider);
+        providerSet.cmRegistered = true;
+      }
     }
   }
 
@@ -301,6 +464,28 @@ class Library {
         const hgvs = new HGVSServicesFactory(this.i18n);
         await hgvs.load();
         this.registerProvider('internal', hgvs);
+        break;
+      }
+      case "urls" : {
+        const urls = new UriServicesFactory(this.i18n);
+        await urls.load();
+        this.registerProvider('internal', urls);
+        break;
+      }
+      case "vsac" : {
+        if (!this.vsacCfg || !this.vsacCfg.apiKey) {
+          throw new Error("Unable to load VSAC provider unless vsacCfg is provided in the configuration");
+        }
+        let vsac = new VSACValueSetProvider(this.vsacCfg, this.stats);
+        vsac.initialize();
+        this.valueSetProviders.push(vsac);
+        this.externalSources.push(vsac);
+        //const mem = process.memoryUsage();
+        let time = Math.floor(Date.now() - this.lastTime).toString().padStart(5)+" ";
+        let system = "vsac".padEnd(50);
+        let version = "n/a".padEnd(62);
+        this.log.info(`${time}${system}${version}${vsac.baseUrl}`);
+        this.lastTime = Date.now();
         break;
       }
       default:
@@ -394,7 +579,18 @@ class Library {
     this.registerProvider(omopFN, omop, isDefault);
   }
 
-  async loadNpm(packageManager, details, isDefault, mode) {
+  /**
+   * Returns true if the given url/version should be excluded from npm/url package loading.
+   * Matches against the ignored list using either plain url or url#version.
+   */
+  #isIgnored(url, version) {
+    if (this.ignored.size === 0) return false;
+    if (this.ignored.has(url)) return true;
+    if (version && this.ignored.has(`${url}#${version}`)) return true;
+    return false;
+  }
+
+  async loadNpm(packageManager, details, isDefault, mode, csOnly) {
     // Parse packageId and version from details (e.g., "hl7.terminology.r4#6.0.2")
     let packageId = details;
     let version = null;
@@ -411,27 +607,72 @@ class Library {
     const contentLoader = new PackageContentLoader(fullPackagePath);
     await contentLoader.initialize();
 
-    this.contentSources.push(contentLoader.id()+"#"+contentLoader.version());
+    this.packageSources.push(contentLoader.id()+"#"+contentLoader.version());
 
     let cp = new ListCodeSystemProvider();
     const resources = await contentLoader.getResourcesByType("CodeSystem");
     let csc = 0;
     for (const resource of resources) {
       const cs = new CodeSystem(await contentLoader.loadFile(resource, contentLoader.fhirVersion()));
+      if (this.#isIgnored(cs.url, cs.version)) {
+        this.log.info(`Ignoring CodeSystem ${cs.url}${cs.version ? '#' + cs.version : ''} (excluded by config)`);
+        continue;
+      }
+      cs.sourcePackage = contentLoader.pid();
+      cp.codeSystems.push(cs);
+      csc++;
+    }
+    this.codeSystemProviders.push(cp);
+    let vs = null;
+    if (!csOnly) {
+      vs = new PackageValueSetProvider(contentLoader);
+      await vs.initialize();
+      this.valueSetProviders.push(vs);
+      const cm = new PackageConceptMapProvider(contentLoader);
+      await cm.initialize();
+      this.conceptMapProviders.push(cm);
+    }
+
+    this.#logPackage(contentLoader.id(), contentLoader.version(), csc, vs ? vs.valueSetMap.size : 0);
+  }
+
+  async loadUrl(packageManager, url, isDefault, mode, csOnly) {
+    const packagePath = await packageManager.fetchUrl(url);
+    if (mode === "fetch" || mode === "cs") {
+      return;
+    }
+    const fullPackagePath = path.join(this.cacheFolder, packagePath);
+    const contentLoader = new PackageContentLoader(fullPackagePath);
+    await contentLoader.initialize();
+
+    this.packageSources.push(contentLoader.id()+"#"+contentLoader.version());
+
+    let cp = new ListCodeSystemProvider();
+    const resources = await contentLoader.getResourcesByType("CodeSystem");
+    let csc = 0;
+    for (const resource of resources) {
+      const cs = new CodeSystem(await contentLoader.loadFile(resource, contentLoader.fhirVersion()));
+      if (this.#isIgnored(cs.url, cs.version)) {
+        this.log.info(`Ignoring CodeSystem ${cs.url}${cs.version ? '#' + cs.version : ''} (excluded by config)`);
+        continue;
+      }
       cs.sourcePackage = contentLoader.pid();
       cp.codeSystems.set(cs.url, cs);
       cp.codeSystems.set(cs.vurl, cs);
       csc++;
     }
     this.codeSystemProviders.push(cp);
-    const vs = new PackageValueSetProvider(contentLoader);
-    await vs.initialize();
-    this.valueSetProviders.push(vs);
-    const cm = new PackageConceptMapProvider(contentLoader);
-    await cm.initialize();
-    this.conceptMapProviders.push(cm);
+    let vs = null;
+    if (!csOnly) {
+      vs = new PackageValueSetProvider(contentLoader);
+      await vs.initialize();
+      this.valueSetProviders.push(vs);
+      const cm = new PackageConceptMapProvider(contentLoader);
+      await cm.initialize();
+      this.conceptMapProviders.push(cm);
+    }
 
-    this.#logPackage(contentLoader.id(), contentLoader.version(), csc, vs.valueSetMap.size);
+    this.#logPackage(contentLoader.id(), contentLoader.version(), csc, vs ? vs.valueSetMap.size : 0);
   }
 
   /**
@@ -444,6 +685,17 @@ class Library {
     // Ensure folder exists
     await this.ensureFolderExists(this.cacheFolder);
 
+    if (fileName.includes("|")) {
+      // in this case, we split it into two. if the first file exists, we go with that. Otherwise
+      // fallback to the second.
+      let firstName = fileName.substring(0, fileName.indexOf("|"));
+      fileName = fileName.substring(fileName.indexOf("|")+1);
+
+      const firstPath = path.join(this.cacheFolder, firstName);
+      if (await this.fileExists(firstPath)) {
+        return firstPath;
+      }
+    }
     const filePath = path.join(this.cacheFolder, fileName);
 
     // Check if file already exists
@@ -583,14 +835,16 @@ class Library {
 
     // Load FHIR packages - these will be added to valueSetProviders first
     for (const packageId of fhirPackages) {
-      await provider.loadNpm(this.packageManager, this.cacheFolder, packageId, false, "npm");
+      await provider.loadNpm(this.packageManager, this.cacheFolder, packageId, false, "npm", false);
     }
 
 
+    provider.codeSystemProviders = this.codeSystemProviders;
+    provider.context = context;
     for (const cp of this.codeSystemProviders) {
-      const csMap = await cp.listCodeSystems(fhirVersion, context);
-      for (const [key, value] of csMap) {
-        provider.codeSystems.set(key, value);
+      const csList = await cp.listCodeSystems(fhirVersion, context);
+      for (const cs of csList) {
+        provider.addCodeSystem(cs);
       }
     }
     // Don't clone valueSetProviders yet - we'll build it with correct order
@@ -603,13 +857,20 @@ class Library {
     provider.lastTime = this.lastTime;
     provider.lastMemory = this.lastMemory;
     provider.totalDownloaded = this.totalDownloaded;
-    provider.contentSources = this.contentSources;
+    provider.packageSources = this.packageSources;
+    provider.externalSources = this.externalSources;
 
 
     // Now add the existing value set providers after the FHIR core packages
     provider.valueSetProviders.push(...this.valueSetProviders);
     provider.conceptMapProviders.push(...this.conceptMapProviders);
 
+    // bind UCUM common value set
+    let ucum = provider.codeSystemFactories.get("http://unitsofmeasure.org");
+    let vs = await provider.findValueSet(null, "http://hl7.org/fhir/ValueSet/ucum-common", null);
+    if (ucum && vs) {
+      ucum.processCommonUnits(vs);
+    }
     return provider;
   }
 
@@ -673,6 +934,7 @@ class Library {
       cmp.close();
     }
   }
+
 }
 
 module.exports = { Library };

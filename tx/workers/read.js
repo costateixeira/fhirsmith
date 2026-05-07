@@ -5,6 +5,7 @@
 //
 
 const { TerminologyWorker } = require('./worker');
+const {debugLog} = require("../operation-context");
 
 class ReadWorker extends TerminologyWorker {
   /**
@@ -46,14 +47,7 @@ class ReadWorker extends TerminologyWorker {
           return await this.handleValueSet(req, res, id);
 
         case 'ConceptMap':
-          return res.status(501).json({
-            resourceType: 'OperationOutcome',
-            issue: [{
-              severity: 'error',
-              code: 'not-supported',
-              diagnostics: 'ConceptMap read not yet implemented'
-            }]
-          });
+          return await this.handleConceptMap(req, res, id);
 
         default:
           return res.status(404).json({
@@ -66,8 +60,9 @@ class ReadWorker extends TerminologyWorker {
           });
       }
     } catch (error) {
-      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       this.log.error(error);
+      debugLog(error);
+      req.logInfo = this.usedSources.join("|")+" - error"+(error.msgId  ? " "+error.msgId : "");
       return res.status(500).json({
         resourceType: 'OperationOutcome',
         issue: [{
@@ -85,6 +80,7 @@ class ReadWorker extends TerminologyWorker {
   async handleCodeSystem(req, res, id) {
     let cs = this.provider.getCodeSystemById(this.opContext, id);
     if (cs != null) {
+      req.sourcePackage = cs.sourcePackage;
       return res.json(cs.jsonObj);
     }
 
@@ -95,16 +91,20 @@ class ReadWorker extends TerminologyWorker {
           resourceType: "CodeSystem",
           id: "x-" + cs.id(),
           url: cs.system(),
+          version: cs.version(),
           name: cs.name(),
           status: "active",
           description: "This is a place holder for the code system which is fully supported through internal means (not by this code system)",
           content: "not-present"
         }
+        if (cs.webSource()) {
+          json.extension = [{ url: "http://hl7.org/fhir/StructureDefinition/web-source", valueUrl : cs.webSource()}];
+        }
         if (cs.version()) {
           json.version = cs.version();
         }
         if (cs.iteratable()) {
-          json.content =  "conplete",
+          json.content =  "complete",
           json.concept = [];
           let csp = cs.build(this.opContext, []);
           let iter = await csp.iteratorAll();
@@ -146,7 +146,31 @@ class ReadWorker extends TerminologyWorker {
       this.deadCheck('handleValueSet-loop');
       const vs = await vsp.fetchValueSetById(id);
       if (vs) {
+        req.sourcePackage = vs.sourcePackage;
         return res.json(vs.jsonObj);
+      }
+    }
+
+    return res.status(404).json({
+      resourceType: 'OperationOutcome',
+      issue: [{
+        severity: 'error',
+        code: 'not-found',
+        diagnostics: `ValueSet/${id} not found`
+      }]
+    });
+  }
+  /**
+   * Handle ConceptMap read
+   */
+  async handleConceptMap(req, res, id) {
+    // Iterate through valueSetProviders in order
+    for (const cmsp of this.provider.conceptMapProviders) {
+      this.deadCheck('handleConceptMap-loop');
+      const cm = await cmsp.fetchConceptMapById(id);
+      if (cm) {
+        req.sourcePackage = cm.sourcePackage;
+        return res.json(cm.jsonObj);
       }
     }
 

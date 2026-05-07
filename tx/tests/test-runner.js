@@ -7,6 +7,8 @@ const TXModule = require('../tx.js');
 const ServerStats = require("../../stats");
 const Logger = require("../../library/logger");
 const {txTestVersion} = require("./test-cases-version");
+const folders = require('../../library/folder-setup');
+const {VersionUtilities} = require("../../library/version-utilities");
 
 let count = 0;
 let error = 0;
@@ -22,7 +24,7 @@ async function startTxTests() {
 
 async function  finishTxTests() {
     console.log(txTestSummary());
-    let textfilename = path.join(__dirname, 'test-cases-summary.txt');
+    let textfilename = path.join(__dirname, '../../test-cases-summary.txt');
     fs.writeFileSync(textfilename, txTestSummary());
 
     await unloadValidator();
@@ -30,22 +32,21 @@ async function  finishTxTests() {
 }
 
 function txTestSummary() {
-    let set = Array.from(txTestModeSet()).join(',');
+    let set = Array.from(txTestModeSet()).join('+');
     if (error == 0) {
       return `FHIRsmith passed all ${count} HL7 terminology service tests (modes ${set}, tests v${txTestVersion()})`;
     } else {
-      return `FHIRsmith failed ${error} of ${count} HL7 terminology service tests (modes ${set}, tests v${txTestVersion()})`;
+      return `FHIRsmith failed ${error} of ${count} HL7 terminology service tests (modes ${set}, tests v${txTestVersion()}, runner v${validator.jarVersion()})`;
     }
 }
 
-async function runTest(test, version, useJson) {
+async function runTest(test, version = true) {
     version = version || "5.0";
     const params = {
-        server: 'http://localhost:'+TEST_PORT+"/r5",
+        server: 'http://localhost:'+TEST_PORT+(VersionUtilities.isR5Plus(version) ? "/r5" : "/r4"),
         suiteName: test.suite,
         testName: test.test,
-        version: version,
-        json : useJson
+        version: version
     };
     count++;
     const result = await validator.runTxTest(params);
@@ -122,17 +123,18 @@ async function stopServer() {
 }
 
 async function loadValidator() {
-    const validatorJarPath = path.join(__dirname, '../../bin/validator_cli.jar');
+    const validatorJarPath = folders.ensureFilePath('bin/validator_cli.jar');
     log =  Logger.getInstance().child({ module: 'test-runner' });
     validator = new FhirValidator(validatorJarPath, log);
     const validatorConfig = {
         version : '4.0',
         txServer : 'http://localhost:'+TEST_PORT+'/r5',
-        txLog : path.join(__dirname, '../logs/text-cases.log'),
+        txLog : path.join(folders.logsDir(), 'tx-test-cases.log'),
         port: VALIDATOR_PORT,
         timeout: 60000
     }
     await validator.start(validatorConfig);
+    await validator.loadIG("hl7.fhir.uv.tx-ecosystem", "current");
 }
 
 

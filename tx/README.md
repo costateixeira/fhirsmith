@@ -4,12 +4,7 @@ The TX module provides FHIR terminology services for CodeSystem, ValueSet, and C
 
 ## Todo
 
-* More work on the HTML interface (external code systems, global functions, render capability statements) 
-* add more tests for the code system providers - filters, extended lookup, designations and languages 
-* more refactoring in validate.js and expand.js 
-* full batch support 
-* check vsac support 
-* get tx tests running in pipelines 
+* Improve batch support 
 
 ## Overview
 
@@ -31,27 +26,29 @@ Add the `tx` section to your `config.json`:
       "enabled": true,
       "librarySource": "/path/to/library.yml",
       "cacheTimeout": 30,
+      "internalLimit" : 10000,
+      "externalLimit" : 1000,
       "expansionCacheSize": 1000,
       "expansionCacheMemoryThreshold": 0,
       "endpoints": [
         {
           "path": "/tx/r5",
-          "fhirVersion": 5,
+          "fhirVersion": "5.0",
           "context": null
         },
         {
           "path": "/tx/r4",
-          "fhirVersion": 4,
+          "fhirVersion": "4.0",
           "context": null
         },
         {
           "path": "/tx/r3",
-          "fhirVersion": 3,
+          "fhirVersion": "3.0",
           "context": null
         },
         {
           "path": "/tx/r4/demo",
-          "fhirVersion": 4,
+          "fhirVersion": "4.0",
           "context": "demo"
         }
       ]
@@ -62,14 +59,16 @@ Add the `tx` section to your `config.json`:
 
 ### Configuration Options
 
-| Option | Type | Required | Description |
-|--------|------|----------|-------------|
-| `enabled` | boolean | Yes | Whether the module is enabled |
-| `cacheTimeout` | integer | No | How many minutes to keep client side caches (for cache-id parameter). Default: 30 |
-| `expansionCacheSize` | integer | No | Maximum number of expanded ValueSets to cache. Default: 1000 |
-| `expansionCacheMemoryThreshold` | integer | No | Heap memory usage in MB that triggers evicting oldest half of expansion cache. 0 = disabled. Default: 0 |
-| `librarySource` | string | Yes | Path to the YAML file that defines the terminology sources to load |
-| `endpoints` | array | Yes | List of endpoint configurations (at least one required) |
+| Option                          | Type    | Required | Description                                                                                             |
+|---------------------------------|---------|----------|---------------------------------------------------------------------------------------------------------|
+| `enabled`                       | boolean | Yes      | Whether the module is enabled                                                                           |
+| `cacheTimeout`                  | integer | No       | How many minutes to keep client side caches (for cache-id parameter). Default: 30                       |
+| `expansionCacheSize`            | integer | No       | Maximum number of expanded ValueSets to cache. Default: 1000                                            |
+| `expansionCacheMemoryThreshold` | integer | No       | Heap memory usage in MB that triggers evicting oldest half of expansion cache. 0 = disabled. Default: 0 |
+| `librarySource`                 | string  | Yes      | Path to the YAML file that defines the terminology sources to load                                      |
+| `internalLimit`                 | integer | No       | Largest number of codes in internal expansions                                                          |
+| `externalLimit`                 | integer | No       | Largest number of codes the server will return in an expansion                                          |
+| `endpoints`                     | array   | Yes      | List of endpoint configurations (at least one required)                                                 |
 
 ### Endpoint Configuration
 
@@ -202,7 +201,7 @@ Loads LOINC from a SQLite database file.
 ```
 
 The filename is downloaded from the base URL if not cached. Database files must be in the server's proprietary format.
-The file is built by importing LOINC (to be documented)
+The file is built by importing LOINC (see [documentation](importers/readme.md))
 
 #### `rxnorm` - RxNorm
 
@@ -212,7 +211,7 @@ Loads RxNorm drug terminology from a SQLite database file.
 - rxnorm:rxnorm_02032025-a.db
 ```
 
-The file is built by importing RxNorm (to be documented)
+The file is built by importing RxNorm (see [documentation](importers/readme.md))
 
 #### `ndc` - NDC (National Drug Code)
 
@@ -229,7 +228,7 @@ Loads FDA UNII codes from a SQLite database file.
 ```yaml
 - unii:unii_20240622.db
 ```
-The file is built by importing UNII (to be documented)
+The file is built by importing UNII (see [documentation](importers/readme.md))
 
 #### `snomed` - SNOMED CT
 
@@ -255,7 +254,7 @@ Common edition identifiers:
 - `nl` - Netherlands
 - `ips` - IPS (International Patient Summary) Free Set
 
-The file is built by importing SNOMED CT (to be documented)
+The file is built by importing SNOMED CT (see [documentation](importers/readme.md))
 
 
 #### `cpt` - CPT (Current Procedural Terminology)
@@ -268,7 +267,7 @@ Loads CPT codes from a SQLite database file.
 
 **Note:** CPT is copyrighted by the American Medical Association. Ensure you have appropriate licensing.
 
-The file is built by importing CPT (to be documented)
+The file is built by importing CPT (see [documentation](importers/readme.md))
 
 #### `omop` - OMOP Vocabularies
 
@@ -277,7 +276,7 @@ Loads OMOP (Observational Medical Outcomes Partnership) vocabulary mappings from
 ```yaml
 - omop:omop_v20250227.db
 ```
-The file is built by importing OMOP (to be documented)
+The file is built by importing OMOP (see [documentation](importers/readme.md))
 
 #### `npm` - FHIR NPM Packages
 
@@ -302,6 +301,22 @@ You can specify a version using the `#` syntax:
 ```
 
 If no version is specified, the latest released version is fetched.
+
+#### `url` - FHIR Packages from Direct URLs
+
+Loads a FHIR package directly from a tarball URL instead of the FHIR package registry. Useful for packages hosted on CI build servers, branches, or other locations.
+
+Use `url/cs` to load only CodeSystem resources from the package (same as `npm/cs`).
+
+```yaml
+# Load a package from a CI build server
+- url:https://example.com/my-package/package.tgz
+
+# Load a code-systems-only package from a URL
+- url/cs:https://example.com/my-codesystems/package.tgz
+```
+
+The URL must point to a `.tgz` file in standard FHIR NPM package format. Downloaded packages are cached locally by URL.
 
 ### Default Marker (`!`)
 

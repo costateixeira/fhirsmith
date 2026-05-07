@@ -170,7 +170,7 @@ describe('IETF Language CodeSystem Provider', () => {
 
     test('should create language component filters', async () => {
       const prep = await provider.getPrepContext(false);
-      await provider.filter(prep, 'language', 'exists', 'true');
+      await provider.filter(prep, true, 'language', 'exists', 'true');
       const filters = await provider.executeFilters(prep);
       expect(filters[0]).toBeInstanceOf(IETFLanguageCodeFilter);
       expect(filters[0].component).toBe(LanguageComponent.LANG);
@@ -181,7 +181,7 @@ describe('IETF Language CodeSystem Provider', () => {
       const prep = await provider.getPrepContext(false);
       
       await expect(
-        provider.filter(prep, 'language', 'equals', 'en')
+        provider.filter(prep, true, 'language', 'equals', 'en')
       ).rejects.toThrow('Unsupported filter operator');
     });
 
@@ -189,7 +189,7 @@ describe('IETF Language CodeSystem Provider', () => {
       const prep = await provider.getPrepContext(false);
       
       await expect(
-        provider.filter(prep, 'language', 'exists', 'maybe')
+        provider.filter(prep, true, 'language', 'exists', 'maybe')
       ).rejects.toThrow('Invalid exists value');
     });
 
@@ -197,7 +197,7 @@ describe('IETF Language CodeSystem Provider', () => {
       const prep = await provider.getPrepContext(false);
       
       await expect(
-        provider.filter(prep, 'invalid-prop', 'exists', 'true')
+        provider.filter(prep, true, 'invalid-prop', 'exists', 'true')
       ).rejects.toThrow('Unsupported filter property');
     });
   });
@@ -205,7 +205,7 @@ describe('IETF Language CodeSystem Provider', () => {
   describe('Filter location', () => {
     test('should locate code with required language component', async () => {
       const prep = await provider.getPrepContext(false);
-      await provider.filter(prep, 'language', 'exists', 'true');
+      await provider.filter(prep, true, 'language', 'exists', 'true');
       const filters = await provider.executeFilters(prep);
       const result = await provider.filterLocate(prep, filters[0], 'en-US');
       expect(result).toBeInstanceOf(Language);
@@ -214,7 +214,7 @@ describe('IETF Language CodeSystem Provider', () => {
 
     test('should locate code with required region component', async () => {
       const prep = await provider.getPrepContext(false);
-      await provider.filter(prep, 'region', 'exists', 'true');
+      await provider.filter(prep, true, 'region', 'exists', 'true');
       const filters = await provider.executeFilters(prep);
       const filter = filters[0];
       
@@ -225,7 +225,7 @@ describe('IETF Language CodeSystem Provider', () => {
 
     test('should reject code missing required component', async () => {
       const prep = await provider.getPrepContext(false);
-      await provider.filter(prep, 'region', 'exists', 'true');
+      await provider.filter(prep, true, 'region', 'exists', 'true');
       const filters = await provider.executeFilters(prep);
       const filter = filters[0];
 
@@ -236,7 +236,7 @@ describe('IETF Language CodeSystem Provider', () => {
 
     test('should reject code with forbidden component', async () => {
       const prep = await provider.getPrepContext(false);
-      await provider.filter(prep, 'region', 'exists', 'false');
+      await provider.filter(prep, true, 'region', 'exists', 'false');
       const filters = await provider.executeFilters(prep);
       const filter = filters[0];
 
@@ -248,7 +248,7 @@ describe('IETF Language CodeSystem Provider', () => {
 
     test('should reject invalid language codes in filter', async () => {
       const prep = await provider.getPrepContext(false);
-      await provider.filter(prep, 'language', 'exists', 'true');
+      await provider.filter(prep, true, 'language', 'exists', 'true');
       const filters = await provider.executeFilters(prep);
       const filter = filters[0];
 
@@ -343,7 +343,7 @@ describe('IETF Language CodeSystem Provider', () => {
     test('should not support text search', async () => {
       await expect(
         provider.searchFilter(new FilterExecutionContext(), 'english', false)
-      ).rejects.toThrow('Text search not supported');
+      ).rejects.toThrow('Text Search is not supported');
     });
 
     test('should indicate filters are not closed', async () => {

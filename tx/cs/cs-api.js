@@ -9,8 +9,16 @@ const {validateParameter, validateArrayParameter} = require("../../library/utili
 const {I18nSupport} = require("../../library/i18nsupport");
 const {VersionUtilities} = require("../../library/version-utilities");
 
+/**
+ * For documentation, see cs-api.md
+ */
 class FilterExecutionContext {
   filters = [];
+  forIterate = false;
+
+  constructor(forIterate) {
+    this.forIterate = forIterate;
+  }
 }
 
 class CodeSystemProvider {
@@ -25,7 +33,7 @@ class CodeSystemProvider {
    */
   supplements;
 
-  constructor(opContext, supplements) {
+  constructor(opContext, supplements = null) {
     this.opContext = opContext;
     this.supplements = supplements;
     this._ensureOpContext(opContext);
@@ -122,6 +130,17 @@ class CodeSystemProvider {
   isNotClosed() {
     return false;
   }
+
+  /**
+   * returns true if the code system is case sensitive when comparing codes.
+   * this is true by default
+   *
+   * @returns {boolean}
+   */
+  isCaseSensitive() {
+    return true;
+  }
+
   /**
    * @param {Languages} languages language specification
    * @returns {boolean} defined properties for the code system
@@ -202,10 +221,11 @@ class CodeSystemProvider {
   }
 
   /**
+   * @param {boolean} langPacks - whether to include language packs
    * @returns {string[]} all supplements in scope
    */
-  listSupplements() {
-    return this.supplements ? this.supplements.map(s => s.vurl) : [];
+  listSupplements(langPacks) {
+    return this.supplements ? this.supplements.filter(s => langPacks || !s.isLangPack()).map(s => s.vurl) : [];
   }
 
   /**
@@ -366,12 +386,15 @@ class CodeSystemProvider {
         const concept= supplement.getConceptByCode(code);
         if (concept) {
           if (concept.display) {
-            displays.addDesignation(true, 'active', supplement.jsonObj.language, CodeSystem.makeUseForDisplay(), concept.display);
+            // sometimes the display is just repeated from the base code system
+            if (!displays.hasAnyDisplay(concept.display)) {
+              displays.addDesignation(true, 'active', supplement.jsonObj.language, CodeSystem.makeUseForDisplay(), concept.display).supplement = supplement;
+            }
           }
           if (concept.designation) {
             for (const d of concept.designation) {
               let status = Extensions.readString(d, "http://hl7.org/fhir/StructureDefinition/structuredefinition-standards-status");
-              displays.addDesignation(false, status || 'active', d.language, d.use, d.value, d.extension?.length > 0 ? d.extension : []);
+              displays.addDesignation(false, status || 'active', d.language, d.use, d.value, d.extension?.length > 0 ? d.extension : []).supplement = supplement;
             }
           }
         }
@@ -473,6 +496,39 @@ class CodeSystemProvider {
   // procedure getCDSInfo(card : TCDSHookCard; langList : THTTPLanguageList; baseURL, code, display : String); virtual;
 
   /**
+   * There are two models for handling concepts and filters. The first is where the logic is entirely
+   * handled by worker classes; this is needed for value sets that select codes across systems, and
+   * with references to other value sets. This workflow consists of calling GetPrepContext, followed
+   * by some combination of filter+searchFilter, and then executeFilters
+   *
+   * followed by filterMore/filterConcept. All code system providers have to support this workflow
+   *
+   * But an important subset of value sets simply select codes from one codeSystem, from large
+   * code systems. Such processing can be done much more efficiently by the code system provider.
+   * providers that do this should return handlesSelecting() = true, and then for suitable valuesets,
+   * the method processSelection() will be called
+   */
+  handlesSelecting() {
+    return false;
+  }
+
+  /**
+   * Process a set of includes and excludes for the code system
+   *
+   * @param {TxParameters} params: information from the request that the user made, to help optimise loading
+   * @param {Object[]} includes - a list of includes from the code system. Each include may contain just the system(+version), concepts and/or filters (but won't contain value sets)
+   * @param {Object[]} excludes - a list of excludes from the code system. Each include may contain just the system(+version), concepts and/or filters (but won't contain value sets)
+   * @param {boolean} excludeInactive: whether the server will use inactive codes or not
+   * @param {int} offset if handlesOffset() and !iterate, and if the value set is a simple one that only uses this provider, then this is the applicable offset. -1 if not applicable
+   * @param {int} count if handlesOffset() and !iterate, and if the value set is a simple one that only uses this provider, then this is the applicable count. -1 if not applicable
+   * @returns {FilterConceptSet[]} filter sets. In general, it wouldn't make sense to return more than one, but providers can do if they want to. See futher comments on executeFilters
+   */
+  processSelection(params, includes, excludes, excludeInactive, offset, count) {
+    // well, you only need to override if handlesSelecting=true, but that's the only time this will be called
+    throw new Error("Must override");
+  }
+
+  /**
    * returns true if a filter is supported
    *
    * @param {String} prop
@@ -483,13 +539,15 @@ class CodeSystemProvider {
   async doesFilter(prop, op, value) { return false; }
 
   /**
-   * gets a single context in which filters will be evaluated. The application doesn't make use of this context;
-   * it's only use is to be passed back to the CodeSystem provider so it can make use of it - if it wants
+   * gets a single context in which filters will be evaluated. The server doesn't doesn't make use of this context;
+   * it's only use is to be passed back to the CodeSystem provider so it can make use of it to organise the filter process
    *
    * @param {boolean} iterate true if the conceptSets that result from this will be iterated, and false if they'll be used to locate a single code
-   * @returns {FilterExecutionContext} filter (or null, it no use for this)
-   * */
-  async getPrepContext(iterate) { return new FilterExecutionContext(); }
+   * @returns {FilterExecutionContext} filter
+   *
+   **/
+  async getPrepContext(iterate) { return new FilterExecutionContext(iterate); }
+
 
   /**
    * executes a text search filter (whatever that means) and returns a FilterConceptSet
@@ -500,7 +558,7 @@ class CodeSystemProvider {
    * @param {String} filter user entered text search
    * @param {boolean} sort ?
    **/
-  async searchFilter(filterContext, filter, sort) { throw new Error("Must override"); } // ? must override?
+  async searchFilter(filterContext, filter, sort) { throw new Error("Text Search is not supported"); } // ? must override?
 
   /**
    * Used for searching ucum (see specialEnumeration)
@@ -516,22 +574,26 @@ class CodeSystemProvider {
   } // ? must override?
 
   /**
-   * Get a FilterConceptSet for a value set filter
+   * inform the CS provider about a filter
    *
    * throws an exception if the search filter can't be handled
    *
    * @param {FilterExecutionContext} filterContext filtering context
+   * @param {boolean} forIteration - whether this filter is going to be iterated
    * @param {String} prop
    * @param {ValueSetFilterOperator} op
    * @param {String} prop
    **/
-  async filter(filterContext, prop, op, value) { throw new Error("Must override"); } // well, only if any filters are actually supported
+  async filter(filterContext, forIteration, prop, op, value) { throw new Error("Must override"); } // well, only if any filters are actually supported
 
   /**
    * called once all the filters have been handled, and iteration is about to happen.
    * this function returns one more filters. If there were multiple filters, but only
    * one FilterConceptSet, then the code system provider has done the join across the
    * filters, otherwise the engine will do so as required
+   *
+   * The first in the set of returned FilterConceptSet is used for iterating; other
+   * FilterConceptSets are used for filterCheck();
    *
    * @param {FilterExecutionContext} filterContext filtering context
    * @returns {FilterConceptSet[]} filter sets
@@ -616,11 +678,13 @@ class CodeSystemProvider {
   /**
    * register the concept maps that are implicitly defined as part of the code system
    *
+   * @param {ConceptMap} map the map (this will have been returned from findImplicitConceptMap)
    * @param {Coding} coding the coding to translate
-   * @param {String} target
-   * @returns {CodeTranslation[]} the list of translations
+   * @param {String} target the target code system
+   * @param {boolean} reverse - if the translation is being run backwards
+   * @returns {CodeTranslation[]} the list of translations, each CodeTranslation has map, code, system, version, display, and relationship
    */
-  async getTranslations(coding, target) { return null;}
+  async getTranslations(map, coding, target, reverse) { return null;}
 
   // ==== Parameter checking methods =========
   _ensureLanguages(param) {
@@ -656,12 +720,33 @@ class CodeSystemProvider {
     return false;
   }
 
+  hasMultiHierarchy() {
+    return false;
+  }
   /**
+   *
    * @returns {string} valueset for the code system
    */
   valueSet() {
     return null;
   }
+
+  /**
+   * a record of observed usages of codes from this code system
+   * - a map of code and object which has count, an integer count
+   * of frequency of use (this server iteration, for now)
+   *
+   * Only populated when expanding, and read-only to the CS Provider
+   *
+   * @type {Map<String, Object>}
+   */
+  usages() {
+    if (this.usagesObj == undefined) {
+      this.usagesObj = this.opContext.usageTracker ? this.opContext.usageTracker.usages(this.system()) : null;
+    }
+    return this.usagesObj;
+  }
+  usagesObj = undefined;
 }
 
 class CodeSystemFactoryProvider {
@@ -703,16 +788,27 @@ class CodeSystemFactoryProvider {
   }
 
   /**
-   * @returns {string} uri for the code system
+   * @returns {string} name for the code system
    */
   name() {
     throw new Error("Must override");
   }
 
   /**
+   * @returns {string} name for the code system, without version information
+   */
+  nameBase() {
+    return this.name();
+  }
+
+  /**
    * @returns {string} version for the code system
    */
   version() { throw new Error("Must override"); }
+
+  content() {
+    return "complete";
+  }
 
   getPartialVersion() {
     let ver = this.version();
@@ -721,6 +817,16 @@ class CodeSystemFactoryProvider {
     }
     return ver;
   }
+
+  /**
+   * the version parameter might not be the same as version() once
+   * all matching rules are done
+   * @param version
+   */
+  describeVersion(version) {
+    return "v"+version;
+  }
+
 /**
    * @returns {number} how many times the factory has been asked to construct a provider
    */
@@ -742,8 +848,47 @@ class CodeSystemFactoryProvider {
   }
 
   /**
+   * If the data available to the provider includes the definition of some supplements,
+   * then the provider has to declare them to the server by overriding this method. The
+   * method returns a list of CodeSystem resources, with jsonObj provided. The jsonObj
+   * in this case must include the correct metadata, with content = supplement, but need
+   * not include any actual content (which might be anticipated to be large). If the
+   * server sees a CodeSystem supplement with no content that comes from a provider
+   * then the server will use fillOutSupplement to ask for the details to be populated
+   * if a client has done something that means the server needs it (mostly, it doesn't)
+   *
+   * @returns {CodeSystem[]}
+   */
+  async registerSupplements() {
+    return [];
+  }
+
+  /**
+   *
+   * @param supplements - the list of supplements to populate - fill with any supplements matching url(+version)
+   * @param url - url of code system
+   * @param version - version of codesystem
+   * @param {Map} statedSupplements - return language packs and supplements that are listed in stated supplements, by versioned URL
+   * @returns {Promise<void>}
+   */
+  async listSupplements(supplements, url, version, statedSupplements) {
+    // do nothing
+  }
+  /**
+   * see comments for registerSupplements()
+   *
+   * @param {CodeSystem} supplement - the supplement to flesh out
+   * @returns void
+   */
+  async fillOutSupplement(supplement) {
+    // nothing
+  }
+
+  /**
    * build and return a known concept map from the URL, if there is one.
    *
+   * the conceptmap is never visible to a user; if it has an implicitSource, then
+   * provider.getTranslations will be called when it's actually used
    * @param url
    * @param version
    * @returns {ConceptMap}
@@ -778,6 +923,14 @@ class CodeSystemFactoryProvider {
   // nothing here - might be overriden
   async close() {
 
+  }
+
+  /**
+   * if known, the right place to point to on the web for the code system
+   * @returns {String}
+   */
+  webSource() {
+    return undefined;
   }
 }
 

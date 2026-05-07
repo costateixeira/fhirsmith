@@ -1,4 +1,6 @@
 const {validateParameter, validateOptionalParameter} = require("./utilities");
+const escape = require('escape-html');
+
 const NodeType = {
   Document: 'Document',
   Element: 'Element',
@@ -426,6 +428,10 @@ class XhtmlNode {
     return this.addTag('label').setAttribute('for', forId);
   }
 
+  colspan(width) {
+    return this.attr("colspan", String(width));
+  }
+
   // Conditional
   iff(test) {
     if (test) {
@@ -723,7 +729,7 @@ class XhtmlNode {
     const newline = effectivePretty ? '\n' : '';
 
     if (this.nodeType === NodeType.Text) {
-      return this.#escapeHtml(this.content || '');
+      return escape(this.content || '');
     }
 
     if (this.nodeType === NodeType.Comment) {
@@ -769,13 +775,6 @@ class XhtmlNode {
     }
 
     return '';
-  }
-
-  #escapeHtml(text) {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
   }
 
   #escapeAttr(text) {

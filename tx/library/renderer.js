@@ -2,6 +2,7 @@ const {CodeSystemProvider} = require("../cs/cs-api");
 const {Extensions} = require("./extensions");
 const {div} = require("../../library/html");
 const {getValuePrimitive} = require("../../library/utilities");
+const {getValueName} = require("../../library/utilities");
 
 /**
  * @typedef {Object} TerminologyLinkResolver
@@ -21,18 +22,17 @@ class Renderer {
   displayCoded(...args) {
     if (args.length === 1) {
       const arg = args[0];
-      if (arg.systemUri !== undefined && arg.version !== undefined && arg.code !== undefined && arg.display !== undefined) {
+      if (arg instanceof CodeSystemProvider) {
+        return arg.system() + "|" + arg.version();
+      } else  if (arg.system !== undefined && arg.version !== undefined && arg.code !== undefined && arg.display !== undefined) {
         // It's a Coding
         return this.displayCodedCoding(arg);
-      } else if (arg.coding !== undefined) {
+      } else if (arg.coding !== undefined || arg.text) {
         // It's a CodeableConcept
         return this.displayCodedCodeableConcept(arg);
-      } else if (arg.systemUri !== undefined && arg.version !== undefined) {
+      } else if (arg.system !== undefined && arg.version !== undefined) {
         // It's a CodeSystemProvider
         return this.displayCodedProvider(arg);
-      } else if (arg instanceof CodeSystemProvider) {
-        let cs = arg;
-        return cs.system() + "|" + cs.version();
       }
     } else if (args.length === 2) {
       return this.displayCodedSystemVersion(args[0], args[1]);
@@ -45,7 +45,7 @@ class Renderer {
   }
 
   displayCodedProvider(system) {
-    let result = system.systemUri + '|' + system.version;
+    let result = system.system + '|' + system.version;
     if (system.sourcePackage) {
       result = result + ' (from ' + system.sourcePackage + ')';
     }
@@ -69,28 +69,32 @@ class Renderer {
   }
 
   displayCodedCoding(code) {
-    return this.displayCodedSystemVersionCodeDisplay(code.systemUri, code.version, code.code, code.display);
+    return this.displayCodedSystemVersionCodeDisplay(code.system, code.version, code.code, code.display);
   }
 
   displayCodedCodeableConcept(code) {
     let result = '';
-    for (const c of code.coding) {
-      if (result) {
-        result = result + ', ';
+    if (code.text && !code.coding) {
+      result = '"'+code.text+'"';
+    } else {
+      for (const c of code.coding || []) {
+        if (result) {
+          result = result + ', ';
+        }
+        result = result + this.displayCodedCoding(c);
       }
-      result = result + this.displayCodedCoding(c);
     }
     return '[' + result + ']';
   }
 
   displayValueSetInclude(inc) {
     let result;
-    if (inc.systemUri) {
-      result = '(' + inc.systemUri + ')';
-      if (inc.hasConcepts) {
+    if (inc.system) {
+      result = '(' + inc.system + ')';
+      if (inc.concept) {
         result = result + '(';
         let first = true;
-        for (const cc of inc.concepts) {
+        for (const cc of inc.concept) {
           if (first) {
             first = false;
           } else {
@@ -100,23 +104,23 @@ class Renderer {
         }
         result = result + ')';
       }
-      if (inc.hasFilters) {
+      if (inc.filter) {
         result = result + '(';
         let first = true;
-        for (const ci of inc.filters) {
+        for (const ci of inc.filter) {
           if (first) {
             first = false;
           } else {
             result = result + ',';
           }
-          result = result + ci.prop + ci.op + ci.value;
+          result = result + ci.property + ci.op + ci.value;
         }
         result = result + ')';
       }
     } else {
       result = '(';
       let first = true;
-      for (const s of inc.valueSets || []) {
+      for (const s of inc.valueSet || []) {
         if (first) {
           first = false;
         } else {
@@ -129,7 +133,7 @@ class Renderer {
     return result;
   }
 
-  async renderMetadataTable(res, tbl) {
+  async renderMetadataTable(res, tbl, sourcePackage) {
     this.renderMetadataVersion(res, tbl);
     await this.renderMetadataProfiles(res, tbl);
     this.renderMetadataTags(res, tbl);
@@ -137,17 +141,24 @@ class Renderer {
     this.renderMetadataLastUpdated(res, tbl);
     this.renderMetadataSource(res, tbl);
     this.renderProperty(tbl, 'TEST_PLAN_LANG', res.language);
-    this.renderProperty(tbl, 'GENERAL_DEFINING_URL', res.url);
-    this.renderProperty(tbl, 'GENERAL_VER', res.version);
+    this.renderPropertyCopy(tbl, 'GENERAL_DEFINING_URL', res.url);
+    this.renderPropertyCopy(tbl, 'GENERAL_VER', res.version);
     this.renderProperty(tbl, 'GENERAL_NAME', res.name);
     this.renderProperty(tbl, 'GENERAL_TITLE', res.title);
     this.renderProperty(tbl, 'GENERAL_STATUS', res.status);
     this.renderPropertyMD(tbl, 'GENERAL_DEFINITION', res.description);
+    this.renderPropertyMD(tbl, 'GENERAL_PURPOSE', res.purpose);
     this.renderProperty(tbl, 'CANON_REND_PUBLISHER', res.publisher);
     this.renderProperty(tbl, 'CANON_REND_COMMITTEE', Extensions.readString(res, 'http://hl7.org/fhir/StructureDefinition/structuredefinition-wg'));
-    this.renderProperty(tbl, 'GENERAL_COPYRIGHT', res.copyright);
+    this.renderPropertyCopy(tbl, 'GENERAL_COPYRIGHT', res.copyright);
     this.renderProperty(tbl, 'EXT_FMM_LEVEL', Extensions.readString(res, 'http://hl7.org/fhir/StructureDefinition/structuredefinition-fmm'));
     this.renderProperty(tbl, 'PAT_PERIOD', res.effectivePeriod);
+    this.renderPropertyLink(tbl, 'WEB_SOURCE', Extensions.readString(res, 'http://hl7.org/fhir/StructureDefinition/web-source'));
+    this.renderProperty(tbl, 'GENERAL_SOURCE', sourcePackage);
+    for (let ext of Extensions.list(res, 'http://hl7.org/fhir/uv/application-feature/StructureDefinition/feature')) {
+      this.renderProperty(tbl, 'FEATURE', this.featureSummary(ext));
+    }
+
 
     // capability statement things
     this.renderProperty(tbl, 'Kind', res.kind);
@@ -159,7 +170,6 @@ class Renderer {
       }
     }
     this.renderProperty(tbl, 'GENERAL_URL', res.implementation?.url);
-    this.renderProperty(tbl, 'Kind', res.kind);
     this.renderProperty(tbl, 'EX_SCEN_FVER', res.fhirVersion);
 
     if (res.content === 'supplement' && res.supplements) {
@@ -248,15 +258,32 @@ class Renderer {
     }
   }
 
-  async renderPropertyLink(tbl, msgId, value) {
+  renderPropertyCopy(tbl, msgId, value) {
     if (value) {
       let tr = tbl.tr();
       tr.td().b().tx(this.translate(msgId));
-      const linkinfo = await this.linkResolver.resolveURL(this.opContext, value);
-      if (linkinfo) {
-        tr.td().ah(linkinfo.link).tx(linkinfo.description);
+      if (value instanceof Object) {
+        tr.td().tx("todo");
       } else {
-        tr.td().tx(value);
+        let td = tr.td();
+        let span = td.span("copy-text");
+        span.tx(value);
+        let btn = span.button();
+        btn.attr("class", "btn-copy");
+        btn.attr("data-clipboard-text", value);
+        btn.attr("data-original-title", this.translate('GENERAL_COPY'));
+      }
+    }
+  }
+
+  renderPropertyLink(tbl, msgId, value) {
+    if (value) {
+      let tr = tbl.tr();
+      tr.td().b().tx(this.translate(msgId));
+      if (value instanceof Object) {
+        tr.td().tx("todo");
+      } else {
+        tr.td().ah(value).tx(value);
       }
     }
   }
@@ -312,8 +339,8 @@ class Renderer {
     }
   }
 
-  translate(msgId) {
-    return this.opContext.i18n.formatPhrase(msgId, this.opContext.langs, []);
+  translate(msgId, params = []) {
+    return this.opContext.i18n.formatPhrase(msgId, this.opContext.langs, params);
   }
 
   translatePlural(num, msgId) {
@@ -335,13 +362,13 @@ class Renderer {
     }
     if (vs.expansion) {
       div_.h2().tx("Expansion");
-      await this.renderExpansion(div_.table("grid"), vs, tbl);
+      await this.renderExpansion(div_, vs, tbl);
     }
 
     return div_.toString();
   }
 
-  async renderCodeSystem(cs) {
+  async renderCodeSystem(cs, sourcePackage) {
     if (cs.json) {
       cs = cs.json;
     }
@@ -350,7 +377,7 @@ class Renderer {
 
     // Metadata table
     div_.h3().tx("Properties");
-    await this.renderMetadataTable(cs, div_.table("grid"));
+    await this.renderMetadataTable(cs, div_.table("grid"), sourcePackage);
 
     // Code system properties
     const hasProps = this.generateProperties(div_, cs);
@@ -415,7 +442,7 @@ class Renderer {
         li.tx(this.translate('VALUE_SET_ALL_CODES_DEF')+" ");
         await this.renderLink(li,inc.system+(inc.version ? "|"+inc.version : ""));
       } else if (inc.concept) {
-        li.tx(this.translate('VALUE_SET_THESE_CODES_DEF'));
+        li.tx(this.translate('VALUE_SET_THESE_CODES_DEF')+" ");
         await this.renderLink(li,inc.system+(inc.version ? "|"+inc.version : ""));
         li.tx(":");
         const ul = li.ul();
@@ -434,19 +461,20 @@ class Renderer {
           }
         }
       } else {
-        li.tx(this.translate('VALUE_SET_CODES_FROM'));
+        li.tx(this.translate('VALUE_SET_CODES_FROM')+" ");
         await this.renderLink(li,inc.system+(inc.version ? "|"+inc.version : ""));
         li.tx(" "+ this.translate('VALUE_SET_WHERE')+" ");
         li.startCommaList("and");
         for (let f of inc.filter) {
-          if (f.op == 'exists') {
+          let op = this.readFilterOp(f);
+          if (op == 'exists') {
             if (f.value == "true") {
               li.commaItem(f.property+" "+ this.translate('VALUE_SET_EXISTS'));
             } else {
               li.commaItem(f.property+" "+ this.translate('VALUE_SET_DOESNT_EXIST'));
             }
           } else {
-            li.commaItem(f.property + " " + f.op + " ");
+            li.commaItem(f.property + " " + op + " ");
             const loc = this.linkResolver ? await this.linkResolver.resolveCode(this.opContext, inc.system, inc.version, f.value) : null;
             if (loc) {
               li.ah(loc.link).tx(loc.description);
@@ -894,13 +922,44 @@ class Renderer {
     return count;
   }
 
+  async renderVSExpansion(vs, showProps) {
+    let div_ = div();
+    let tbl;
+    if (showProps) {
+      div_.h2().tx("Expansion Properties");
+      tbl = div_.table("grid");
+    } else {
+      tbl = div(); // dummy
+    }
+    await this.renderExpansion(div_.table("grid"), vs, tbl);
+    return div_.toString();
+  }
+
   async renderExpansion(x, vs, tbl) {
     this.renderProperty(tbl, 'Expansion Identifier', vs.expansion.identifier);
     this.renderProperty(tbl, 'Expansion Timestamp', vs.expansion.timestamp);
     this.renderProperty(tbl, 'Expansion Total', vs.expansion.total);
     this.renderProperty(tbl, 'Expansion Offset', vs.expansion.offset);
+    const warnings = [];
+    const warningNames = new Set(['deprecated', 'withdrawn', 'retired', 'experimental', 'draft']);
+    const useds = [];
+    const usedNames = new Set(['codesystem', 'valueset', 'supplement']);
     for (let p of vs.expansion.parameter || []) {
-      await this.renderPropertyLink(tbl, "Parameter: " + p.name, getValuePrimitive(p));
+      if (p.name.startsWith('warning-') && warningNames.has(p.name.substring(8))) {
+        warnings.push(p);
+      } else if (p.name.startsWith('used-') && usedNames.has(p.name.substring(5))) {
+        useds.push(p);
+      } else if( getValueName(p) === 'valueUri' || getValueName(p) === 'valueCanonical') {
+        await this.renderPropertyLink(tbl, "Parameter: " + p.name, getValuePrimitive(p));
+      } else {
+        this.renderProperty(tbl, "Parameter: " + p.name, getValuePrimitive(p));
+      }
+    }
+    if (useds.length > 0) {
+      await this.renderUsed(x, useds);
+    }
+    if (warnings.length > 0) {
+      await this.renderWarnings(x, warnings);
     }
 
     if (!vs.expansion.contains || vs.expansion.contains.length === 0) {
@@ -927,10 +986,10 @@ class Renderer {
     }
     headerRow.th().tx(this.translate('TX_DISPLAY'));
     if (columnInfo.hasAbstract) {
-      headerRow.th().tx('Abstract');
+      headerRow.th().tx(this.translate('Abstract'));
     }
     if (columnInfo.hasInactive) {
-      headerRow.th().tx('Inactive');
+      headerRow.th().tx(this.translate('VALUE_SET_INACTIVE'));
     }
 
     // Property columns (from expansion.property definitions)
@@ -1109,12 +1168,12 @@ class Renderer {
 
     // Abstract column
     if (columnInfo.hasAbstract) {
-      tr.td().tx(contains.abstract === true ? 'true' : '');
+      tr.td().tx(contains.abstract === true ? 'abstract' : '');
     }
 
     // Inactive column
     if (columnInfo.hasInactive) {
-      tr.td().tx(contains.inactive === true ? 'true' : '');
+      tr.td().tx(contains.inactive === true ? this.translate('VALUE_SET_INACT') : '');
     }
 
     // Property columns
@@ -1280,7 +1339,7 @@ class Renderer {
     return div_.toString();
   }
 
-  async renderCapabilityRest(x, rest, cs) {
+  async renderCapabilityRest(x, rest) {
     x.h3().tx(`REST ${rest.mode || 'server'} Definition`);
 
     if (rest.documentation) {
@@ -1548,11 +1607,650 @@ class Renderer {
             // No versions specified
             await this.renderLink(li, cs.uri);
           }
+          let content = cs.content || Extensions.readString(cs, "http://hl7.org/fhir/4.0/StructureDefinition/extension-TerminologyCapabilities.codeSystem.content");
+          if (content && content != "complete") {
+            li.tx(" (" + content + ")");
+          }
         }
       }
     }
 
     return div_.toString();
+  }
+
+  async renderWarnings(x, warnings) {
+    await this.renderWarningsForStatus(x, 'deprecated', warnings);
+    await this.renderWarningsForStatus(x, 'withdrawn', warnings);
+    await this.renderWarningsForStatus(x, 'retired', warnings);
+    await this.renderWarningsForStatus(x, 'experimental', warnings);
+    await this.renderWarningsForStatus(x, 'draft', warnings);
+  }
+
+  async renderWarningsForStatus(x, name, warnings) {
+    const wl = warnings.filter(item => item.name == 'warning-'+name);
+    if (wl && wl.length > 0) {
+      x.para().tx(`This ValueSet depends on the following ${name} ValueSets: `);
+      let ul = x.ul();
+      for (const w of wl) {
+        const linkinfo = await this.linkResolver.resolveURL(this.opContext, getValuePrimitive(w));
+        if (linkinfo) {
+          ul.li().ah(linkinfo.link).tx(linkinfo.description);
+        } else {
+          ul.li().code().tx(getValuePrimitive(w));
+        }
+      }
+    }
+  }
+
+  async renderUsed(x, list) {
+    x.para().tx(`This ValueSet depends on the following items:`);
+    let ul = x.ul();
+    await this.renderUsedForType(ul, 'codesystem', 'CodeSystem', list);
+    await this.renderUsedForType(ul, 'valueset', 'ValueSet', list);
+    await this.renderUsedForType(ul, 'supplement', 'Supplement', list);
+  }
+
+  async renderUsedForType(ul, name, title, list) {
+    const wl = list.filter(item => item.name == 'used-' + name);
+    for (const w of wl) {
+      const li = ul.li();
+      li.tx(title+": ");
+      const linkinfo = await this.linkResolver.resolveURL(this.opContext, getValuePrimitive(w));
+      if (linkinfo) {
+        li.ah(linkinfo.link).tx(linkinfo.description);
+      } else {
+        li.code().tx(getValuePrimitive(w));
+      }
+    }
+  }
+
+  // Methods to add to the Renderer class in renderer.js for ConceptMap rendering.
+// These follow the Java ConceptMapRenderer logic and use the same translated strings.
+
+// ---- Add these methods to the Renderer class ----
+
+  /**
+   * Render a ConceptMap resource to HTML.
+   * Follows the same pattern as renderValueSet/renderCodeSystem:
+   * metadata table (reusing renderMetadataTable), then group-by-group rendering.
+   */
+  async renderConceptMap(cm) {
+    if (cm.json) {
+      cm = cm.json;
+    }
+
+    let div_ = div();
+
+    // Metadata table
+    div_.h3().tx("Properties");
+    await this.renderMetadataTable(cm, div_.table("grid"));
+
+    div_.h3("Mapping Details");
+    // Source/Target scope line (mirrors Java: CONC_MAP_FROM / CONC_MAP_TO)
+    const p = div_.para();
+    p.tx(this.translate('CONC_MAP_FROM') + " ");
+    const sourceScope = cm.sourceScope || cm.sourceCanonical || cm.sourceUri;
+    if (sourceScope) {
+      await this.renderLink(p, sourceScope);
+    } else {
+      p.tx(this.translate('CONC_MAP_NOT_SPEC'));
+    }
+    p.tx(" " + this.translate('CONC_MAP_TO') + " ");
+    const targetScope = cm.targetScope || cm.targetCanonical || cm.targetUri;
+    if (targetScope) {
+      await this.renderLink(p, targetScope);
+    } else {
+      p.tx(this.translate('CONC_MAP_NOT_SPEC'));
+    }
+
+    div_.br();
+
+    // Render each group
+    let gc = 0;
+    for (const grp of cm.group || []) {
+      gc++;
+      if (gc > 1) {
+        div_.hr();
+      }
+      await this.renderConceptMapGroup(div_, cm, grp, gc);
+    }
+
+    return div_.toString();
+  }
+
+  /**
+   * Render a single ConceptMap group.
+   * Determines whether this is a "simple" group (1:1 mappings, no dependsOn/product)
+   * or a "complex" group, and delegates accordingly.
+   */
+  async renderConceptMapGroup(x, cm, grp, gc) {
+    // Analyze the group to determine rendering mode
+    let hasComment = false;
+    let hasProperties = false;
+    let ok = true; // true = simple rendering
+
+    const props = {};   // property code -> Set of systems
+    const sources = { code: new Set() };
+    const targets = { code: new Set() };
+
+    if (grp.source) sources.code.add(grp.source);
+    if (grp.target) targets.code.add(grp.target);
+
+    for (const elem of grp.element || []) {
+      const isSimple = elem.noMap ||
+        (elem.target && elem.target.length === 1 &&
+          (!elem.target[0].dependsOn || elem.target[0].dependsOn.length === 0) &&
+          (!elem.target[0].product || elem.target[0].product.length === 0));
+      ok = ok && isSimple;
+
+      if (Extensions.readString(elem, 'http://hl7.org/fhir/StructureDefinition/conceptmap-nomap-comment')) {
+        hasComment = true;
+      }
+
+      for (const tgt of elem.target || []) {
+        if (tgt.comment) {
+          hasComment = true;
+        }
+        for (const pp of tgt.property || []) {
+          if (!props[pp.code]) {
+            props[pp.code] = new Set();
+          }
+        }
+        for (const d of tgt.dependsOn || []) {
+          if (!sources[d.attribute]) {
+            sources[d.attribute] = new Set();
+          }
+        }
+        for (const d of tgt.product || []) {
+          if (!targets[d.attribute]) {
+            targets[d.attribute] = new Set();
+          }
+        }
+      }
+    }
+
+    if (Object.keys(props).length > 0) {
+      hasProperties = true;
+    }
+
+    // Group header
+    const pp = x.para();
+    pp.b().tx(this.translate('CONC_MAP_GRP', [gc])+ " ");
+    pp.tx(this.translate('CONC_MAP_FROM') + " ");
+    if (grp.source) {
+      await this.renderLink(pp, grp.source);
+    } else {
+      pp.code().tx(this.translate('CONC_MAP_CODE_SYS_UNSPEC'));
+    }
+    pp.tx(" to ");
+    if (grp.target) {
+      await this.renderLink(pp, grp.target);
+    } else {
+      pp.code().tx(this.translate('CONC_MAP_CODE_SYS_UNSPEC'));
+    }
+
+    if (ok) {
+      await this.renderSimpleConceptMapGroup(x, grp, hasComment);
+    } else {
+      await this.renderComplexConceptMapGroup(x, grp, hasComment, hasProperties, props, sources, targets);
+    }
+  }
+
+  /**
+   * Render a simple ConceptMap group: Source | Relationship | Target | Comment
+   * This is the "ok" path from the Java code where all elements have at most
+   * one target and no dependsOn/product.
+   */
+  async renderSimpleConceptMapGroup(x, grp, hasComment) {
+    const tbl = x.table("grid");
+    let tr = tbl.tr();
+    tr.td().b().tx(this.translate('CONC_MAP_SOURCE'));
+    tr.td().b().tx(this.translate('CONC_MAP_REL'));
+    tr.td().b().tx(this.translate('CONC_MAP_TRGT'));
+    if (hasComment) {
+      tr.td().b().tx(this.translate('GENERAL_COMMENT'));
+    }
+
+    for (const elem of grp.element || []) {
+      tr = tbl.tr();
+      const td = tr.td();
+      td.tx(elem.code);
+      const display = elem.display || await this.getDisplayForConcept(grp.source, elem.code);
+      if (display && !this.isSameCodeAndDisplay(elem.code, display)) {
+        td.tx(" (" + display + ")");
+      }
+
+      if (elem.noMap) {
+        const nomapComment = Extensions.readString(elem, 'http://hl7.org/fhir/StructureDefinition/conceptmap-nomap-comment');
+        if (!hasComment) {
+          tr.td().setAttribute('colspan',"2").style("background-color: #efefef").tx("(not mapped)");
+        } else if (nomapComment) {
+          tr.td().setAttribute('colspan',"2").style("background-color: #efefef").tx("(not mapped)");
+          tr.td().style("background-color: #efefef").tx(nomapComment);
+        } else {
+          tr.td().setAttribute('colspan',"3").style("background-color: #efefef").tx("(not mapped)");
+        }
+      } else {
+        let first = true;
+        for (const tgt of elem.target || []) {
+          if (first) {
+            first = false;
+          } else {
+            tr = tbl.tr();
+            tr.td().style("opacity: 0.5").tx('"');
+          }
+
+          // Relationship cell
+          this.renderConceptMapRelationship(tr, tgt);
+
+          // Target code cell
+          const tgtTd = tr.td();
+          tgtTd.tx(tgt.code || '');
+          const tgtDisplay = tgt.display || await this.getDisplayForConcept(grp.target, tgt.code);
+          if (tgtDisplay && !this.isSameCodeAndDisplay(tgt.code, tgtDisplay)) {
+            tgtTd.tx(" (" + tgtDisplay + ")");
+          }
+
+          if (hasComment) {
+            tr.td().tx(tgt.comment || '');
+          }
+        }
+      }
+    }
+    this.addUnmapped(tbl, grp);
+  }
+
+  /**
+   * Render a complex ConceptMap group with dependsOn, product, and/or property columns.
+   * This is the "!ok" path from the Java code.
+   */
+  async renderComplexConceptMapGroup(x, grp, hasComment, hasProperties, props, sources, targets) {
+    // Check if any targets have relationships
+    let hasRelationships = false;
+    for (const elem of grp.element || []) {
+      for (const tgt of elem.target || []) {
+        if (tgt.relationship) {
+          hasRelationships = true;
+        }
+      }
+    }
+
+    const tbl = x.table("grid");
+
+    // First header row: Source Details | Relationship | Target Details | Comment | Properties
+    let tr = tbl.tr();
+    const sourceColCount = 1 + Object.keys(sources).length - 1; // code + dependsOn attributes
+    const targetColCount = 1 + Object.keys(targets).length - 1; // code + product attributes
+    tr.td().setAttribute('colspan', String(sourceColCount + 1)).b().tx(this.translate('CONC_MAP_SRC_DET'));
+    if (hasRelationships) {
+      tr.td().b().tx(this.translate('CONC_MAP_REL'));
+    }
+    tr.td().setAttribute('colspan', String(targetColCount + 1)).b().tx(this.translate('CONC_MAP_TRGT_DET'));
+    if (hasComment) {
+      tr.td().b().tx(this.translate('GENERAL_COMMENT'));
+    }
+    if (hasProperties) {
+      tr.td().setAttribute('colspan', String(Object.keys(props).length)).b().tx(this.translate('GENERAL_PROPS'));
+    }
+
+    // Second header row: actual column headers
+    tr = tbl.tr();
+
+    // Source code column
+    if (sources.code.size === 1) {
+      const url = [...sources.code][0];
+      await this.renderCSDetailsLink(tr, url, true);
+    } else {
+      tr.td().b().tx(this.translate('GENERAL_CODE'));
+    }
+    // Source dependsOn attribute columns
+    for (const s of Object.keys(sources)) {
+      if (s !== 'code') {
+        if (sources[s].size === 1) {
+          const url = [...sources[s]][0];
+          await this.renderCSDetailsLink(tr, url, false);
+        } else {
+          tr.td().b().tx(this.getDescForConcept(s));
+        }
+      }
+    }
+    // Relationship column
+    if (hasRelationships) {
+      tr.td();
+    }
+    // Target code column
+    if (targets.code.size === 1) {
+      const url = [...targets.code][0];
+      await this.renderCSDetailsLink(tr, url, true);
+    } else {
+      tr.td().b().tx(this.translate('GENERAL_CODE'));
+    }
+    // Target product attribute columns
+    for (const s of Object.keys(targets)) {
+      if (s !== 'code') {
+        if (targets[s].size === 1) {
+          const url = [...targets[s]][0];
+          await this.renderCSDetailsLink(tr, url, false);
+        } else {
+          tr.td().b().tx(this.getDescForConcept(s));
+        }
+      }
+    }
+    // Comment column header
+    if (hasComment) {
+      tr.td();
+    }
+    // Property column headers
+    if (hasProperties) {
+      for (const s of Object.keys(props)) {
+        if (props[s].size === 1) {
+          const url = [...props[s]][0];
+          await this.renderCSDetailsLink(tr, url, false);
+        } else {
+          tr.td().b().tx(this.getDescForConcept(s));
+        }
+      }
+    }
+
+    // Data rows
+    for (const elem of grp.element || []) {
+      if (elem.noMap) {
+        tr = tbl.tr();
+        const td = tr.td().style("border-right-width: 0px");
+        if (sources.code.size === 1) {
+          td.tx(elem.code);
+        } else {
+          td.tx(grp.source + " / " + elem.code);
+        }
+        const display = elem.display || await this.getDisplayForConcept(grp.source, elem.code);
+        tr.td().style("border-left-width: 0px").tx(display || '');
+
+        const nomapComment = Extensions.readString(elem, 'http://hl7.org/fhir/StructureDefinition/conceptmap-nomap-comment');
+        if (nomapComment) {
+          tr.td().setAttribute('colspan',"3").style("background-color: #efefef").tx("(not mapped)");
+          tr.td().style("background-color: #efefef").tx(nomapComment);
+        } else {
+          tr.td().setAttribute('colspan',"4").style("background-color: #efefef").tx("(not mapped)");
+        }
+      } else {
+        let first = true;
+        for (let ti = 0; ti < (elem.target || []).length; ti++) {
+          const tgt = elem.target[ti];
+          const last = ti === elem.target.length - 1;
+          tr = tbl.tr();
+
+          // Source code cell
+          const td = tr.td().style("border-right-width: 0px");
+          if (!first && !last) {
+            td.style("border-top-style: none; border-bottom-style: none");
+          } else if (!first) {
+            td.style("border-top-style: none");
+          } else if (!last) {
+            td.style("border-bottom-style: none");
+          }
+
+          if (first) {
+            if (sources.code.size === 1) {
+              td.tx(elem.code);
+            } else {
+              td.tx(grp.source + " / " + elem.code);
+            }
+            const display = elem.display || await this.getDisplayForConcept(grp.source, elem.code);
+            const dispTd = tr.td();
+            if (!last) {
+              dispTd.style("border-left-width: 0px; border-bottom-style: none");
+            } else {
+              dispTd.style("border-left-width: 0px");
+            }
+            dispTd.tx(display || '');
+          } else {
+            // Empty display cell for subsequent targets
+            const dispTd = tr.td();
+            if (!last) {
+              dispTd.style("border-left-width: 0px; border-top-style: none; border-bottom-style: none");
+            } else {
+              dispTd.style("border-top-style: none; border-left-width: 0px");
+            }
+          }
+
+          // Source dependsOn columns
+          for (const s of Object.keys(sources)) {
+            if (s !== 'code') {
+              const depTd = tr.td();
+              const val = this.getDependsOnValue(tgt.dependsOn, s, sources[s].size !== 1);
+              depTd.tx(val || '');
+              const depDisplay = this.getDependsOnDisplay(tgt.dependsOn, s);
+              if (depDisplay) {
+                depTd.tx(" (" + depDisplay + ")");
+              }
+            }
+          }
+
+          first = false;
+
+          // Relationship cell
+          if (hasRelationships) {
+            this.renderConceptMapRelationship(tr, tgt);
+          }
+
+          // Target code cell
+          const tgtTd = tr.td().style("border-right-width: 0px");
+          if (targets.code.size === 1) {
+            tgtTd.tx(tgt.code || '');
+          } else {
+            tgtTd.tx((grp.target || '') + " / " + (tgt.code || ''));
+          }
+          const tgtDisplay = tgt.display || await this.getDisplayForConcept(grp.target, tgt.code);
+          tr.td().style("border-left-width: 0px").tx(tgtDisplay || '');
+
+          // Target product columns
+          for (const s of Object.keys(targets)) {
+            if (s !== 'code') {
+              const prodTd = tr.td();
+              const val = this.getDependsOnValue(tgt.product, s, targets[s].size !== 1);
+              prodTd.tx(val || '');
+              const prodDisplay = this.getDependsOnDisplay(tgt.product, s);
+              if (prodDisplay) {
+                prodTd.tx(" (" + prodDisplay + ")");
+              }
+            }
+          }
+
+          // Comment cell
+          if (hasComment) {
+            tr.td().tx(tgt.comment || '');
+          }
+
+          // Property cells
+          if (hasProperties) {
+            for (const s of Object.keys(props)) {
+              const propTd = tr.td();
+              propTd.tx(this.getPropertyValueFromList(tgt.property, s));
+            }
+          }
+        }
+      }
+    }
+    this.addUnmapped(tbl, grp);
+  }
+
+  /**
+   * Render the relationship cell for a target element.
+   * Handles both R5 relationship codes and legacy R4 equivalence codes via extension.
+   */
+  renderConceptMapRelationship(tr, tgt) {
+    if (tgt.relationship) {
+      tr.td().tx(this.presentRelationshipCode(tgt.relationship));
+    } else if (tgt.equivalence) {
+      tr.td().tx(this.presentEquivalenceCode(tgt.equivalence));
+    } else {
+      tr.td().tx("(" + "equivalent" + ")");
+    }
+  }
+
+  /**
+   * Render a code system details link in a header cell.
+   * Mirrors Java renderCSDetailsLink.
+   */
+  async renderCSDetailsLink(tr, url, span2) {
+    const td = tr.td();
+    if (span2) {
+      td.setAttribute('colspan',"2");
+    }
+    td.b().tx(this.translate('CONC_MAP_CODES'));
+    td.tx(" " + this.translate('CONC_MAP_FRM') + " ");
+    const linkinfo = this.linkResolver ? await this.linkResolver.resolveURL(this.opContext, url) : null;
+    if (linkinfo) {
+      td.ah(linkinfo.link).tx(linkinfo.description);
+    } else {
+      td.tx(url);
+    }
+  }
+
+  /**
+   * Translate a FHIR R5 ConceptMap relationship code to a human-readable string.
+   * Uses the same strings as the Java renderer.
+   */
+  presentRelationshipCode(code) {
+    switch (code) {
+      case 'related-to':                   return 'is related to';
+      case 'equivalent':                   return 'is equivalent to';
+      case 'source-is-narrower-than-target': return 'is narrower than';
+      case 'source-is-broader-than-target':  return 'is broader than';
+      case 'not-related-to':               return 'is not related to';
+      default:                             return code;
+    }
+  }
+
+  /**
+   * Translate a legacy (R2/R3/R4) ConceptMap equivalence code to a human-readable string.
+   * Uses the same strings as the Java renderer.
+   */
+  presentEquivalenceCode(code) {
+    switch (code) {
+      case 'relatedto':    return 'is related to';
+      case 'equivalent':   return 'is equivalent to';
+      case 'equal':        return 'is equal to';
+      case 'wider':        return 'maps to wider concept';
+      case 'subsumes':     return 'is subsumed by';
+      case 'narrower':     return 'maps to narrower concept';
+      case 'specializes':  return 'has specialization';
+      case 'inexact':      return 'maps loosely to';
+      case 'unmatched':    return 'has no match';
+      case 'disjoint':     return 'is not related to';
+      default:             return code;
+    }
+  }
+
+  /**
+   * Check if a code and its display text are essentially the same
+   * (ignoring spaces, hyphens, and case).
+   */
+  isSameCodeAndDisplay(code, display) {
+    if (!code || !display) return false;
+    const c = code.replace(/[ -]/g, '').toLowerCase();
+    const d = display.replace(/[ -]/g, '').toLowerCase();
+    return c === d;
+  }
+
+  /**
+   * Look up a display string for a concept. Delegates to the linkResolver if available.
+   */
+  async getDisplayForConcept(system, code) {
+    if (!system || !code) return null;
+    if (!this.linkResolver) return null;
+    const result = await this.linkResolver.resolveCode(this.opContext, system, null, code);
+    return result ? result.description : null;
+  }
+
+  /**
+   * Get a description for a concept attribute code (used in complex table headers).
+   * Mirrors Java getDescForConcept.
+   */
+  getDescForConcept(s) {
+    if (s.startsWith('http://hl7.org/fhir/v2/element/')) {
+      return 'v2 ' + s.substring('http://hl7.org/fhir/v2/element/'.length);
+    }
+    return s;
+  }
+
+  /**
+   * Extract a value from a dependsOn or product list by attribute name.
+   */
+  getDependsOnValue(list, attribute) {
+    if (!list) return null;
+    for (const item of list) {
+      if (item.attribute === attribute) {
+        // R5 uses value[x], try common types
+        if (item.valueCode) return item.valueCode;
+        if (item.valueString) return item.valueString;
+        if (item.valueCoding) return item.valueCoding.code || '';
+        if (item.value) return String(item.value);
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Extract a display from a dependsOn or product list by attribute name.
+   */
+  // eslint-disable-next-line no-unused-vars
+  getDependsOnDisplay(list, attribute) {
+    // In current FHIR, dependsOn display is not directly available;
+    // would require a lookup. Return null for now (matches Java which also returns null).
+    return null;
+  }
+
+  /**
+   * Extract a property value from a target's property list by code.
+   */
+  getPropertyValueFromList(list, code) {
+    if (!list) return '';
+    const results = [];
+    for (const item of list) {
+      if (item.code === code) {
+        // R5 MappingPropertyComponent uses value[x]
+        if (item.valueCode !== undefined) results.push(item.valueCode);
+        else if (item.valueString !== undefined) results.push(item.valueString);
+        else if (item.valueCoding !== undefined) results.push(item.valueCoding.code || '');
+        else if (item.valueBoolean !== undefined) results.push(String(item.valueBoolean));
+        else if (item.valueInteger !== undefined) results.push(String(item.valueInteger));
+        else if (item.valueDecimal !== undefined) results.push(String(item.valueDecimal));
+        else if (item.valueDateTime !== undefined) results.push(item.valueDateTime);
+      }
+    }
+    return results.join(', ');
+  }
+
+  /**
+   * Render the unmapped section for a group, if present.
+   * Currently a stub matching the Java implementation.
+   */
+  addUnmapped(tbl, grp) {
+    if (grp.unmapped) {
+      // TODO: render unmapped mode/code/url when needed
+    }
+  }
+
+  featureSummary(ext) {
+    let defn = Extensions.readString(ext, 'definition');
+    let value = Extensions.readString(ext, 'value');
+    switch (defn) {
+      case 'http://hl7.org/fhir/uv/tx-tests/FeatureDefinition/test-version':
+        return 'Tx Test version = ' + value;
+      case 'http://hl7.org/fhir/uv/tx-ecosystem/FeatureDefinition/CodeSystemAsParameter':
+        return 'CodeSystems as parameters = ' + value;
+      default:
+        return defn+' = ' + value;
+    }
+  }
+
+  readFilterOp(f) {
+    if (f._op) {
+      return Extensions.readString(f._op, 'http://hl7.org/fhir/5.0/StructureDefinition/extension-ValueSet.compose.include.filter.op');
+    } else {
+      return f.op;
+    }
   }
 }
 

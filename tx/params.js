@@ -34,6 +34,9 @@ class TxParameters {
   limit = -1;
   offset = -1;
   validating = false;
+  abstractOk = true; // note true!
+  inferSystem = false;
+  sort = 'design';
 
   constructor(languages, i18n, validating) {
     validateParameter(languages, 'languages', LanguageDefinitions);
@@ -45,6 +48,7 @@ class TxParameters {
     this.FVersionRules = [];
     this.FProperties = [];
     this.FDesignations = [];
+    this.supplements = new Set;
     this.FGenerateNarrative = true;
 
     this.FHTTPLanguages = null;
@@ -54,29 +58,27 @@ class TxParameters {
 
     this.FActiveOnly = false;
     this.FExcludeNested = false;
-    this.FLimitedExpansion = false;
     this.FExcludeNotForUI = false;
     this.FExcludePostCoordinated = false;
     this.FIncludeDesignations = false;
     this.FIncludeDefinition = false;
     this.FDefaultToLatestVersion = false;
-    this.FIncompleteOK = false;
     this.FDisplayWarning = false;
     this.FMembershipOnly = false;
     this.FDiagnostics = false;
+    this.FVersionsMatch = false;
 
     this.hasActiveOnly = false;
     this.hasExcludeNested = false;
     this.hasGenerateNarrative = false;
-    this.hasLimitedExpansion = false;
     this.hasExcludeNotForUI = false;
     this.hasExcludePostCoordinated = false;
     this.hasIncludeDesignations = false;
     this.hasIncludeDefinition = false;
     this.hasDefaultToLatestVersion = false;
-    this.hasIncompleteOK = false;
     this.hasDisplayWarning = false;
     this.hasMembershipOnly = false;
+    this.hasVersionsMatch = false;
   }
 
   readParams(params) {
@@ -84,6 +86,12 @@ class TxParameters {
 
     if (!params.parameter) {
       return;
+    }
+    if (!this.hasHTTPLanguages && this.hasParam(params, "__Content-Language")) {
+      this.HTTPLanguages = Languages.fromAcceptLanguage(this.paramstr(params, "__Content-Language"), this.languageDefinitions, !this.validating);
+    }
+    if (!this.hasHTTPLanguages && this.hasParam(params, "__Accept-Language")) {
+      this.HTTPLanguages = Languages.fromAcceptLanguage(this.paramstr(params, "__Accept-Language"), this.languageDefinitions, !this.validating);
     }
 
     for (let p of params.parameter) {
@@ -106,11 +114,11 @@ class TxParameters {
           break;
         }
         case 'force-valueset-version': {
-          this.seeVersionRule().push(getValuePrimitive(p), true, 'override');
+          this.seeVersionRule(getValuePrimitive(p), true, 'override');
           break;
         }
         case 'check-valueset-version': {
-          this.seeVersionRule().push(getValuePrimitive(p), true, 'check');
+          this.seeVersionRule(getValuePrimitive(p), true, 'check');
           break;
         }
 
@@ -118,7 +126,7 @@ class TxParameters {
           try {
             this.DisplayLanguages = Languages.fromAcceptLanguage(getValuePrimitive(p), this.languageDefinitions, !this.validating);
           } catch (error) {
-            throw new Issue("error", "processing", null, 'INVALID_DISPLAY_NAME', this.i18n.translate('INVALID_DISPLAY_NAME', this.HTTPLanguages, getValuePrimitive(p))).handleAsOO(400);
+            throw new Issue("error", "processing", null, 'INVALID_DISPLAY_NAME', this.i18n.translate('INVALID_DISPLAY_NAME', this.HTTPLanguages, [getValuePrimitive(p)]), "invalid-display").handleAsOO(400);
           }
           break;
         }
@@ -193,11 +201,16 @@ class TxParameters {
           if (getValuePrimitive(p) == true) this.membershipOnly = true;
           break;
         }
+        case 'versionsMatch' : {
+          if (getValuePrimitive(p) == true) this.FVersionsMatch = true;
+          break;
+        }
         case 'profile' : {
           let value = p.resource;
           if (value && (value.resourceType === 'Parameters' || value.resourceType === 'ExpansionProfile')) {
             this.readParams(value);
           }
+          break;
         }
         // eslint-disable-next-line no-fallthrough
         case 'term': // jQuery support
@@ -218,15 +231,34 @@ class TxParameters {
           this.limit = Utilities.parseIntOrDefault(getValuePrimitive(p), -1);
           break;
         }
+
+        case 'useSupplement' : {
+          this.supplements.add(getValuePrimitive(p));
+          break;
+        }
+
+        case 'abstract': {
+          if (getValuePrimitive(p) == true) {
+            this.abstractOk = true;
+          } else if (getValuePrimitive(p) == false) {
+            this.abstractOk = false;
+          }
+          break;
+        }
+        case 'inferSystem': {
+          if (getValuePrimitive(p) == true) this.inferSystem = true;
+          break;
+        }
+        case 'sort': {
+          this.sort = getValuePrimitive(p);
+          break;
+        }
+        case "exclude-system": {
+          throw new Issue('error', 'not-supported', null, null, "The parameter 'exclude-system' is not supported by this system", null, 400);
+        }
       }
     }
 
-    if (!this.hasHTTPLanguages && this.hasParam(params, "__Content-Language")) {
-      this.HTTPLanguages = Languages.fromAcceptLanguage(this.paramstr(params, "__Content-Language"), this.languageDefinitions, !this.validating);
-    }
-    if (!this.hasHTTPLanguages && this.hasParam(params, "__Accept-Language")) {
-      this.HTTPLanguages = Languages.fromAcceptLanguage(this.paramstr(params, "__Accept-Language"), this.languageDefinitions, !this.validating);
-    }
   }
 
   paramstr(params, name) {
@@ -298,15 +330,6 @@ class TxParameters {
     this.hasGenerateNarrative = true;
   }
 
-  get limitedExpansion() {
-    return this.FLimitedExpansion;
-  }
-
-  set limitedExpansion(value) {
-    this.FLimitedExpansion = value;
-    this.hasLimitedExpansion = true;
-  }
-
   get excludeNotForUI() {
     return this.FExcludeNotForUI;
   }
@@ -352,15 +375,6 @@ class TxParameters {
     this.hasDefaultToLatestVersion = true;
   }
 
-  get incompleteOK() {
-    return this.FIncompleteOK;
-  }
-
-  set incompleteOK(value) {
-    this.FIncompleteOK = value;
-    this.hasIncompleteOK = true;
-  }
-
   get displayWarning() {
     return this.FDisplayWarning;
   }
@@ -379,6 +393,15 @@ class TxParameters {
     this.hasMembershipOnly = true;
   }
 
+  get versionsMatch() {
+    return this.FVersionsMatch;
+  }
+
+  set versionsMatch(value) {
+    this.FVersionsMatch = value;
+    this.hasVersionsMatch = true;
+  }
+e
   get versionRules() {
     return this.FVersionRules;
   }
@@ -403,6 +426,10 @@ class TxParameters {
 
       if (name === 'designation') {
         this.designations.push(getValuePrimitive(value));
+      }
+
+      if (name === 'versionsMatch') {
+        this.versionsMatch = getValuePrimitive(value) === 'true';
       }
     }
   }
@@ -489,14 +516,13 @@ class TxParameters {
     b('active-only', this.FActiveOnly);
     b('exclude-nested', this.FExcludeNested);
     b('generate-narrative', this.FGenerateNarrative);
-    b('limited-expansion', this.FLimitedExpansion);
     b('for-ui', this.FExcludeNotForUI);
     b('exclude-post-coordinated', this.FExcludePostCoordinated);
     b('include-designations', this.FIncludeDesignations);
     b('include-definition', this.FIncludeDefinition);
     b('membership-only', this.FMembershipOnly);
+    b('versions-match', this.FVersionsMatch);
     b('default-to-latest', this.FDefaultToLatestVersion);
-    b('incomplete-ok', this.FIncompleteOK);
     b('display-warning', this.FDisplayWarning);
 
     return result;
@@ -520,11 +546,11 @@ class TxParameters {
     };
 
     let s = '|'+this.count+'|'+this.limit+'|'+this.offset+
-      this.FUid + '|' + b(this.FMembershipOnly) + '|' + this.FProperties.join(',') + '|' +
-      b(this.FActiveOnly) + b(this.FIncompleteOK) + b(this.FDisplayWarning) + b(this.FExcludeNested) + b(this.FGenerateNarrative) + b(this.FLimitedExpansion) + b(this.FExcludeNotForUI) + b(this.FExcludePostCoordinated) +
+      this.FUid + '|' + b(this.FMembershipOnly) + '|' + b(this.FVersionsMatch)+'|' + this.FProperties.join(',') + '|' +
+      b(this.FActiveOnly) + b(this.FDisplayWarning) + b(this.FExcludeNested) + b(this.FGenerateNarrative) + b(this.FExcludeNotForUI) + b(this.FExcludePostCoordinated) +
       b(this.FIncludeDesignations) + b(this.FIncludeDefinition) + b(this.hasActiveOnly) + b(this.hasExcludeNested) + b(this.hasGenerateNarrative) +
-      b(this.hasLimitedExpansion) + b(this.hasExcludeNotForUI) + b(this.hasExcludePostCoordinated) + b(this.hasIncludeDesignations) +
-      b(this.hasIncludeDefinition) + b(this.hasDefaultToLatestVersion) + b(this.hasIncompleteOK) + b(this.hasDisplayWarning) + b(this.hasExcludeNotForUI) + b(this.hasMembershipOnly) + b(this.FDefaultToLatestVersion);
+      b(this.hasExcludeNotForUI) + b(this.hasExcludePostCoordinated) + b(this.hasIncludeDesignations) + this.sort+'|'+
+      b(this.hasIncludeDefinition) + b(this.hasDefaultToLatestVersion) + b(this.hasDisplayWarning) + b(this.hasExcludeNotForUI) + b(this.hasMembershipOnly) + b(this.hasVersionsMatch) + b(this.FDefaultToLatestVersion);
 
     if (this.hasHTTPLanguages) {
       s = s + this.FHTTPLanguages.asString(true) + '|';
@@ -565,29 +591,27 @@ class TxParameters {
     this.FActiveOnly = other.FActiveOnly;
     this.FExcludeNested = other.FExcludeNested;
     this.FGenerateNarrative = other.FGenerateNarrative;
-    this.FLimitedExpansion = other.FLimitedExpansion;
     this.FExcludeNotForUI = other.FExcludeNotForUI;
     this.FExcludePostCoordinated = other.FExcludePostCoordinated;
     this.FIncludeDesignations = other.FIncludeDesignations;
     this.FIncludeDefinition = other.FIncludeDefinition;
     this.FUid = other.FUid;
     this.FMembershipOnly = other.FMembershipOnly;
+    this.FVersionsMatch = other.FVersionsMatch;
     this.FDefaultToLatestVersion = other.FDefaultToLatestVersion;
-    this.FIncompleteOK = other.FIncompleteOK;
     this.FDisplayWarning = other.FDisplayWarning;
     this.FDiagnostics = other.FDiagnostics;
     this.hasActiveOnly = other.hasActiveOnly;
     this.hasExcludeNested = other.hasExcludeNested;
     this.hasGenerateNarrative = other.hasGenerateNarrative;
-    this.hasLimitedExpansion = other.hasLimitedExpansion;
     this.hasExcludeNotForUI = other.hasExcludeNotForUI;
     this.hasExcludePostCoordinated = other.hasExcludePostCoordinated;
     this.hasIncludeDesignations = other.hasIncludeDesignations;
     this.hasIncludeDefinition = other.hasIncludeDefinition;
     this.hasDefaultToLatestVersion = other.hasDefaultToLatestVersion;
-    this.hasIncompleteOK = other.hasIncompleteOK;
-    this.hasMembershipOnly = other.hasMembershipOnly;
+    this.hasVersionsMatch = other.hasVersionsMatch;
     this.hasDisplayWarning = other.hasDisplayWarning;
+    this.sort = other.sort;
 
     if (other.FProperties) {
       this.FProperties = [...other.FProperties];

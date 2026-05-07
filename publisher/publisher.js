@@ -5,6 +5,8 @@ const Database = require('sqlite3').Database;
 const bcrypt = require('bcrypt');
 const session = require('express-session');
 const folders = require('../library/folder-setup');
+const escape = require('escape-html');
+const {Utilities} = require("../library/utilities");
 
 
 class PublisherModule {
@@ -50,8 +52,8 @@ class PublisherModule {
   async initializeDatabase() {
     // Ensure database directory exists
     const dbPath = path.isAbsolute(this.config.database)
-      ? this.config.database
-      : folders.filePath('publisher', this.config.database);
+        ? this.config.database
+        : folders.filePath('publisher', this.config.database);
     const dbDir = path.dirname(dbPath);
     const fs = require('fs');
     if (!fs.existsSync(dbDir)) {
@@ -77,82 +79,84 @@ class PublisherModule {
     const tables = [
       // Users table
       `CREATE TABLE IF NOT EXISTS users (
-                                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                            name TEXT NOT NULL,
-                                            login TEXT UNIQUE NOT NULL,
-                                            password_hash TEXT NOT NULL,
-                                            is_admin BOOLEAN DEFAULT 0,
-                                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                                          id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                          name TEXT NOT NULL,
+                                          login TEXT UNIQUE NOT NULL,
+                                          password_hash TEXT NOT NULL,
+                                          is_admin BOOLEAN DEFAULT 0,
+                                          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
        )`,
 
       // Websites table
       `CREATE TABLE IF NOT EXISTS websites (
-                                               id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                               name TEXT NOT NULL,
-                                               local_folder TEXT NOT NULL,
-                                               server_update_script TEXT NOT NULL,
-                                               is_active BOOLEAN DEFAULT 1,
-                                               created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                                             id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                             name TEXT NOT NULL,
+                                             local_folder TEXT NOT NULL,
+                                             history_templates TEXT NOT NULL,
+                                             web_templates TEXT NOT NULL,
+                                             server_update_script TEXT NOT NULL,
+                                             is_active BOOLEAN DEFAULT 1,
+                                             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
        )`,
 
       // User website permissions
       `CREATE TABLE IF NOT EXISTS user_website_permissions (
-                                                               user_id INTEGER,
-                                                               website_id INTEGER,
-                                                               can_queue BOOLEAN DEFAULT 0,
-                                                               can_approve BOOLEAN DEFAULT 0,
-                                                               PRIMARY KEY (user_id, website_id),
-          FOREIGN KEY (user_id) REFERENCES users (id),
-          FOREIGN KEY (website_id) REFERENCES websites (id)
-          )`,
+                                                             user_id INTEGER,
+                                                             website_id INTEGER,
+                                                             can_queue BOOLEAN DEFAULT 0,
+                                                             can_approve BOOLEAN DEFAULT 0,
+                                                             PRIMARY KEY (user_id, website_id),
+        FOREIGN KEY (user_id) REFERENCES users (id),
+        FOREIGN KEY (website_id) REFERENCES websites (id)
+        )`,
 
       // Tasks table
       `CREATE TABLE IF NOT EXISTS tasks (
-                                            id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                            user_id INTEGER NOT NULL,
-                                            website_id INTEGER NOT NULL,
-                                            status TEXT DEFAULT 'queued',
-                                            github_org TEXT NOT NULL,
-                                            github_repo TEXT NOT NULL,
-                                            git_branch TEXT NOT NULL,
-                                            npm_package_id TEXT NOT NULL,
-                                            version TEXT NOT NULL,
-                                            local_folder TEXT,
-                                            build_output_path TEXT,
-                                            failure_reason TEXT,
-                                            announcement TEXT,
-                                            approved_by INTEGER,
-                                            queued_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                                            building_at DATETIME,
-                                            waiting_approval_at DATETIME,
-                                            publishing_at DATETIME,
-                                            completed_at DATETIME,
-                                            failed_at DATETIME,
-                                            FOREIGN KEY (user_id) REFERENCES users (id),
-          FOREIGN KEY (website_id) REFERENCES websites (id),
-          FOREIGN KEY (approved_by) REFERENCES users (id)
-          )`,
+                                          id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                          user_id INTEGER NOT NULL,
+                                          website_id INTEGER NOT NULL,
+                                          status TEXT DEFAULT 'queued',
+                                          github_org TEXT NOT NULL,
+                                          github_repo TEXT NOT NULL,
+                                          git_branch TEXT NOT NULL,
+                                          npm_package_id TEXT NOT NULL,
+                                          version TEXT NOT NULL,
+                                          local_folder TEXT,
+                                          build_output_path TEXT,
+                                          failure_reason TEXT,
+                                          announcement TEXT,
+                                          approved_by INTEGER,
+                                          queued_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                          building_at DATETIME,
+                                          waiting_approval_at DATETIME,
+                                          publishing_at DATETIME,
+                                          completed_at DATETIME,
+                                          failed_at DATETIME,
+                                          FOREIGN KEY (user_id) REFERENCES users (id),
+        FOREIGN KEY (website_id) REFERENCES websites (id),
+        FOREIGN KEY (approved_by) REFERENCES users (id)
+        )`,
 
       // Task logs
       `CREATE TABLE IF NOT EXISTS task_logs (
-                                                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                                task_id TEXT NOT NULL,
-                                                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                                                level TEXT NOT NULL,
-                                                message TEXT NOT NULL,
-                                                FOREIGN KEY (task_id) REFERENCES tasks (id)
-          )`,
+                                              id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                              task_id TEXT NOT NULL,
+                                              timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                              level TEXT NOT NULL,
+                                              message TEXT NOT NULL,
+                                              FOREIGN KEY (task_id) REFERENCES tasks (id)
+        )`,
 
       // User actions audit
       `CREATE TABLE IF NOT EXISTS user_actions (
-                                                   id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                                   user_id INTEGER,
-                                                   action TEXT NOT NULL,
-                                                   target_id TEXT,
-                                                   timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                                                   ip_address TEXT,
-                                                   FOREIGN KEY (user_id) REFERENCES users (id)
-          )`
+                                                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                                 user_id INTEGER,
+                                                 action TEXT NOT NULL,
+                                                 target_id TEXT,
+                                                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                                                 ip_address TEXT,
+                                                 FOREIGN KEY (user_id) REFERENCES users (id)
+        )`
     ];
 
     for (const sql of tables) {
@@ -195,6 +199,24 @@ class PublisherModule {
         });
       });
     }
+    const websiteColumns = await new Promise((resolve, reject) => {
+      this.db.all("PRAGMA table_info(websites)", (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows || []);
+      });
+    });
+    const websiteColumnNames = websiteColumns.map(c => c.name);
+    if (!websiteColumnNames.includes('git_root')) {
+      await new Promise((resolve, reject) => {
+        this.db.run('ALTER TABLE websites ADD COLUMN git_root TEXT', (err) => {
+          if (err) reject(err);
+          else {
+            this.logger.info('Migration: added git_root column to websites table');
+            resolve();
+          }
+        });
+      });
+    }
   }
 
   async createDefaultAdmin() {
@@ -214,17 +236,17 @@ class PublisherModule {
             }
 
             this.db.run(
-              'INSERT INTO users (name, login, password_hash, is_admin) VALUES (?, ?, ?, ?)',
-              ['Administrator', 'admin', hash, 1],
-              (err) => {
-                if (err) {
-                  this.logger.error('Failed to create default admin:', err);
-                  reject(err);
-                } else {
-                  this.logger.warn('Created default admin user - login: admin, password: admin123 - CHANGE THIS!');
-                  resolve();
+                'INSERT INTO users (name, login, password_hash, is_admin) VALUES (?, ?, ?, ?)',
+                ['Administrator', 'admin', hash, 1],
+                (err) => {
+                  if (err) {
+                    this.logger.error('Failed to create default admin:', err);
+                    reject(err);
+                  } else {
+                    this.logger.warn('Created default admin user - login: admin, password: admin123 - CHANGE THIS!');
+                    resolve();
+                  }
                 }
-              }
             );
           });
         } else {
@@ -247,7 +269,8 @@ class PublisherModule {
     this.router.get('/tasks', this.renderTasks.bind(this));
     this.router.post('/tasks', this.requireAuth.bind(this), this.createTask.bind(this));
     this.router.post('/tasks/:id/approve', this.requireAuth.bind(this), this.approveTask.bind(this));
-    this.router.post('/tasks/:id/delete', this.requireAdmin.bind(this), this.deleteTask.bind(this));
+    this.router.post('/tasks/:id/delete', this.requireAuth.bind(this), this.deleteTask.bind(this));
+    this.router.post('/tasks/:id/retry', this.requireAuth.bind(this), this.retryTask.bind(this));
     this.router.get('/tasks/:id/output', this.getTaskOutput.bind(this));
     this.router.get('/tasks/:id/history', this.getTaskHistory.bind(this));
     this.router.get('/tasks/:id/qa', this.getTaskQA.bind(this));
@@ -265,6 +288,8 @@ class PublisherModule {
     // Admin routes
     this.router.get('/admin/websites', this.requireAdmin.bind(this), this.renderWebsites.bind(this));
     this.router.post('/admin/websites', this.requireAdmin.bind(this), this.createWebsite.bind(this));
+    this.router.get('/admin/websites/:id/edit', this.requireAdmin.bind(this), this.renderEditWebsite.bind(this));
+    this.router.post('/admin/websites/:id/edit', this.requireAdmin.bind(this), this.updateWebsite.bind(this));
     this.router.get('/admin/users', this.requireAdmin.bind(this), this.renderUsers.bind(this));
     this.router.post('/admin/users', this.requireAdmin.bind(this), this.createUser.bind(this));
     this.router.post('/admin/permissions', this.requireAdmin.bind(this), this.updatePermissions.bind(this));
@@ -272,38 +297,57 @@ class PublisherModule {
 
   // Background Task Processing
   startTaskProcessor() {
-    const pollInterval = this.config.pollInterval || 5000; // Default 5 seconds
+    const pollInterval = this.config.pollInterval || 5000;
 
     this.logger.info('Starting task processor with ' + pollInterval + 'ms poll interval');
+    this.isProcessingStarted = null;
+
+    this.stats.addTask('Publisher', Utilities.formatDuration(pollInterval));  // or however you want to display the frequency
 
     this.taskProcessor = setInterval(async () => {
-      if (!this.isProcessing && !this.shutdownRequested) {
-        await this.processNextTask();
+      if (this.shutdownRequested) return;
+
+      if (this.isProcessing) {
+        const stuckMs = this.isProcessingStarted ? Date.now() - this.isProcessingStarted : 0;
+        if (stuckMs > 60 * 60 * 1000) {
+          this.logger.warn('Task processor appears stuck (' + Math.round(stuckMs / 60000) + ' min) — resetting');
+          this.isProcessing = false;
+        } else {
+          return;
+        }
       }
+
+      await this.processNextTask();
     }, pollInterval);
   }
 
   async processNextTask() {
     this.isProcessing = true;
+    this.isProcessingStarted = Date.now();
 
     try {
       // Look for queued tasks first (draft builds)
       let task = await this.getNextQueuedTask();
       if (task) {
+        this.stats.task('Publisher', 'Building ' + task.npm_package_id + '#' + task.version);
         await this.processDraftBuild(task);
+        this.stats.taskDone('Publisher', 'Built ' + task.npm_package_id + '#' + task.version);
         return;
       }
 
       // Then look for approved tasks (publishing)
       task = await this.getNextApprovedTask();
       if (task) {
+        this.stats.task('Publisher', 'Publishing ' + task.npm_package_id + '#' + task.version);
         await this.processPublication(task);
+        this.stats.taskDone('Publisher', 'Published ' + task.npm_package_id + '#' + task.version);
         return;
       }
 
       // No tasks to process
     } catch (error) {
       this.logger.error('Error in task processor:', error);
+      this.stats.taskError('Publisher', 'Error: ' + error.message);
     } finally {
       this.isProcessing = false;
     }
@@ -312,12 +356,12 @@ class PublisherModule {
   async getNextQueuedTask() {
     return new Promise((resolve, reject) => {
       this.db.get(
-        'SELECT * FROM tasks WHERE status = ? ORDER BY queued_at ASC LIMIT 1',
-        ['queued'],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
+          'SELECT * FROM tasks WHERE status = ? ORDER BY queued_at ASC LIMIT 1',
+          ['queued'],
+          (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+          }
       );
     });
   }
@@ -325,12 +369,12 @@ class PublisherModule {
   async getNextApprovedTask() {
     return new Promise((resolve, reject) => {
       this.db.get(
-        'SELECT * FROM tasks WHERE status = ? ORDER BY publishing_at ASC LIMIT 1',
-        ['publishing'],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
+          'SELECT * FROM tasks WHERE status = ? ORDER BY publishing_at ASC LIMIT 1',
+          ['publishing'],
+          (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+          }
       );
     });
   }
@@ -360,12 +404,12 @@ class PublisherModule {
 
     return new Promise((resolve, reject) => {
       this.db.run(
-        'UPDATE tasks SET ' + fields.join(', ') + ' WHERE id = ?',
-        values,
-        (err) => {
-          if (err) reject(err);
-          else resolve();
-        }
+          'UPDATE tasks SET ' + fields.join(', ') + ' WHERE id = ?',
+          values,
+          (err) => {
+            if (err) reject(err);
+            else resolve();
+          }
       );
     });
   }
@@ -373,9 +417,9 @@ class PublisherModule {
   async logTaskMessage(taskId, level, message) {
     return new Promise((resolve) => {
       this.db.run(
-        'INSERT INTO task_logs (task_id, level, message) VALUES (?, ?, ?)',
-        [taskId.toString(), level, message],
-        () => resolve() // Don't fail if logging fails
+          'INSERT INTO task_logs (task_id, level, message) VALUES (?, ?, ?)',
+          [taskId.toString(), level, message],
+          () => resolve() // Don't fail if logging fails
       );
     });
   }
@@ -431,8 +475,8 @@ class PublisherModule {
 
   async runDraftBuild(task) {
     const workspaceRoot = path.isAbsolute(this.config.workspaceRoot)
-      ? this.config.workspaceRoot
-      : folders.filePath('publisher', this.config.workspaceRoot);
+        ? this.config.workspaceRoot
+        : folders.filePath('publisher', this.config.workspaceRoot);
 
     const taskDir = path.join(workspaceRoot, 'task-' + task.id);
     const draftDir = path.join(taskDir, 'draft');
@@ -442,6 +486,13 @@ class PublisherModule {
 
     // Step 1: Create/scrub task directory
     await this.createTaskDirectory(taskDir);
+
+    // Record the log file path and local folder immediately so they're accessible
+    // even if the build fails later
+    await this.updateTaskStatus(task.id, 'building', {
+      build_output_path: logFile,
+      local_folder: taskDir
+    });
 
     // Step 2: Download latest publisher
     const publisherJar = await this.downloadPublisher(taskDir, task.id);
@@ -455,26 +506,13 @@ class PublisherModule {
     // Step 5: Verify package-id and version match the task
     await this.verifyBuildOutput(task, draftDir);
 
-    // Update task with build output path
-    await this.updateTaskStatus(task.id, task.status, {
-      build_output_path: logFile,
-      local_folder: taskDir
-    });
-
     this.logger.info('Draft build completed for ' + task.npm_package_id + '#' + task.version);
   }
 
   async createTaskDirectory(taskDir) {
-    const rimraf = require('rimraf');
-
     // Remove existing directory if it exists
     if (fs.existsSync(taskDir)) {
-      await new Promise((resolve, reject) => {
-        rimraf(taskDir, (err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
+      await require('fs').promises.rm(taskDir, { recursive: true, force: true });
     }
 
     // Create fresh directory
@@ -491,7 +529,7 @@ class PublisherModule {
       // Get latest release info from GitHub API
       const releaseResponse = await axios.get('https://api.github.com/repos/HL7/fhir-ig-publisher/releases/latest');
       const downloadUrl = releaseResponse.data.assets.find(asset =>
-        asset.name === 'publisher.jar'
+          asset.name === 'publisher.jar'
       )?.browser_download_url;
 
       if (!downloadUrl) {
@@ -676,17 +714,38 @@ class PublisherModule {
 
     // Step 1: Clone supporting repositories into the task directory
     const registryDir = path.join(taskDir, 'ig-registry');
-    const historyDir = path.join(taskDir, 'fhir-ig-history-template');
-    const templatesDir = path.join(taskDir, 'fhir-web-templates');
 
-    await this.runCommand('git', ['clone', 'https://github.com/FHIR/ig-registry.git', registryDir],
-      {}, task.id, 'Cloning ig-registry');
+    await this.runCommand('git', ['clone', 'git@github.com:FHIR/ig-registry.git', registryDir],
+        {}, task.id, 'Cloning ig-registry');
 
-    await this.runCommand('git', ['clone', 'https://github.com/HL7/fhir-ig-history-template.git', historyDir],
-      {}, task.id, 'Cloning fhir-ig-history-template');
+    // Use website-configured history templates path if provided, otherwise clone the default repo
+    let historyDir;
+    if (website.history_templates) {
+      historyDir = website.history_templates;
+      await this.logTaskMessage(task.id, 'info', 'Using configured history templates: ' + historyDir);
+      if (!fs.existsSync(historyDir)) {
+        throw new Error('Configured history_templates path does not exist: ' + historyDir);
+      }
+    } else {
+      historyDir = path.join(taskDir, 'fhir-ig-history-template');
+      await this.runCommand('git', ['clone', 'https://github.com/HL7/fhir-ig-history-template.git', historyDir],
+          {}, task.id, 'Cloning fhir-ig-history-template');
+    }
 
-    await this.runCommand('git', ['clone', 'https://github.com/HL7/fhir-web-templates.git', templatesDir],
-      {}, task.id, 'Cloning fhir-web-templates');
+    // Use website-configured web templates path if provided, otherwise clone the default repo.
+    // This allows pointing to a subdirectory of the templates repo for different target websites.
+    let templatesDir;
+    if (website.web_templates) {
+      templatesDir = website.web_templates;
+      await this.logTaskMessage(task.id, 'info', 'Using configured web templates: ' + templatesDir);
+      if (!fs.existsSync(templatesDir)) {
+        throw new Error('Configured web_templates path does not exist: ' + templatesDir);
+      }
+    } else {
+      templatesDir = path.join(taskDir, 'fhir-web-templates');
+      await this.runCommand('git', ['clone', 'https://github.com/HL7/fhir-web-templates.git', templatesDir],
+          {}, task.id, 'Cloning fhir-web-templates');
+    }
 
     // Step 2: Reuse the publisher.jar from the draft build
     const publisherJar = path.join(taskDir, 'publisher.jar');
@@ -695,11 +754,11 @@ class PublisherModule {
     }
 
     // Step 3: Pull latest web folder before publishing into it
-    await this.runCommand('git', ['pull'], { cwd: website.local_folder }, task.id, 'Pulling latest web folder');
+    await this.runCommand('git', ['pull'], { cwd: website.git_root }, task.id, 'Pulling latest web folder');
 
     // Step 4: Run the IG publisher in go-publish mode
     await this.runPublisherGoPublish(task.id, publisherJar, draftDir, website.local_folder,
-      registryDir, historyDir, templatesDir, zipsDir, publishLogFile);
+        registryDir, historyDir, templatesDir, zipsDir, publishLogFile);
 
     // Step 5: Verify publication succeeded by checking for the log file
     const pubLogName = task.npm_package_id + '#' + task.version + '.log';
@@ -713,9 +772,9 @@ class PublisherModule {
     await this.logTaskMessage(task.id, 'info', 'Committing changes to web folder...');
     const gitUrl = 'https://github.com/' + task.github_org + '/' + task.github_repo + '.git';
     const commitMsg = 'publish ' + task.npm_package_id + '#' + task.version + ' from ' + gitUrl + ' ' + task.git_branch;
-    await this.runCommand('git', ['add', '.'], { cwd: website.local_folder }, task.id, 'Staging web folder changes');
-    await this.runCommand('git', ['commit', '-m', commitMsg], { cwd: website.local_folder }, task.id, 'Committing web folder changes');
-    await this.runCommand('git', ['push'], { cwd: website.local_folder }, task.id, 'Pushing web folder changes');
+    await this.runCommand('git', ['add', '.'], { cwd: website.git_root }, task.id, 'Staging web folder changes');
+    await this.runCommand('git', ['commit', '-m', commitMsg], { cwd: website.git_root }, task.id, 'Committing web folder changes');
+    await this.runCommand('git', ['push'], { cwd: website.git_root }, task.id, 'Pushing web folder changes');
 
     // Step 7: Commit and push the ig-registry
     await this.logTaskMessage(task.id, 'info', 'Committing changes to ig-registry...');
@@ -856,7 +915,7 @@ class PublisherModule {
             content += '<a href="/publisher/admin/users" class="btn btn-secondary">Manage Users</a>';
           }
           content += '<form style="display: inline-block; margin-left: 10px;" method="post" action="/publisher/logout">';
-          content += '<button type="submit" class="btn btn-outline-secondary">Logout</button>';
+          content += '<button type="submit" class="btn btn-outline-secondary">' + escape(req.session.userName) + ' \u2014 Logout</button>';
           content += '</form>';
           content += '</div>';
         } else {
@@ -894,7 +953,7 @@ class PublisherModule {
         const html = htmlServer.renderPage('publisher', 'FHIR Publisher', content, {
           taskCount: tasks.length,
           templateVars: {
-            loginTitle: req.session.userId ? "Logout" : 'Login',
+            loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
             loginPath: req.session.userId ? "logout" : 'login',
             loginAction: req.session.userId ? "POST" : 'GET'
           }
@@ -936,7 +995,7 @@ class PublisherModule {
 
       const html = htmlServer.renderPage('publisher', 'Login - FHIR Publisher', content, {
         templateVars: {
-          loginTitle: req.session.userId ? "Logout" : 'Login',
+          loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
           loginPath: req.session.userId ? "logout" : 'login',
           loginAction: req.session.userId ? "POST" : 'GET'
         }});
@@ -956,12 +1015,12 @@ class PublisherModule {
 
         const user = await new Promise((resolve, reject) => {
           this.db.get(
-            'SELECT * FROM users WHERE login = ?',
-            [login],
-            (err, row) => {
-              if (err) reject(err);
-              else resolve(row);
-            }
+              'SELECT * FROM users WHERE login = ?',
+              [login],
+              (err, row) => {
+                if (err) reject(err);
+                else resolve(row);
+              }
           );
         });
 
@@ -1070,7 +1129,15 @@ class PublisherModule {
 
           for (const task of tasks) {
             const canApprove = req.session.userId && task.status === 'waiting for approval' &&
-              await this.userCanApprove(req.session.userId, task.website_id);
+                await this.userCanApprove(req.session.userId, task.website_id);
+
+            // Determine if the current user can delete this task (mirrors deleteTask backend logic)
+            const isPreApprovalStatus = task.status === 'waiting for approval' || task.status === 'queued' || (task.status === 'failed' && !task.approved_by);
+            const isPostApprovalFailed = task.status === 'failed' && task.approved_by;
+            const canDelete = req.session.userId && (
+                (isPreApprovalStatus && await this.userCanQueue(req.session.userId, task.website_id)) ||
+                (isPostApprovalFailed && req.session.isAdmin)
+            );
 
             content += '<tr>';
             content += '<td><strong>#' + task.id + '</strong></td>';
@@ -1084,7 +1151,8 @@ class PublisherModule {
             content += '<a href="/publisher/tasks/' + task.id + '/history" class="btn btn-sm btn-outline-secondary me-1">History</a>';
 
             if (task.status === 'waiting for approval') {
-              content += '<a href="/publisher/tasks/' + task.id + '/output" class="btn btn-sm btn-outline-info me-1">View Output</a>';
+              content += '<a href="/publisher/tasks/' + task.id + '/output" class="btn btn-sm btn-outline-info me-1">View Log</a>';
+              content += '<a href="/publisher/tasks/' + task.id + '/qa-files/index.html" class="btn btn-sm btn-outline-secondary me-1">View IG</a>';
               content += '<a href="/publisher/tasks/' + task.id + '/qa" class="btn btn-sm btn-outline-secondary me-1">View QA</a>';
               if (canApprove) {
                 content += '<form method="post" action="/publisher/tasks/' + task.id + '/approve" style="display: inline;">';
@@ -1092,17 +1160,26 @@ class PublisherModule {
                 content += '</form>';
               }
             } else {
-              if (task.build_output_path) {
+              if (task.build_output_path || task.local_folder) {
                 content += '<a href="/publisher/tasks/' + task.id + '/output" class="btn btn-sm btn-outline-info me-1">View Output</a>';
               }
+              if (task.announcement) {
+                content += '<a href="/publisher/tasks/' + task.id + '/history" class="btn btn-sm btn-outline-success me-1">📢 Announcement</a>';
+              }
               if (task.failure_reason) {
-                content += '<span class="text-danger small me-1">' + this.escapeHtml(task.failure_reason) + '</span>';
+                content += '<span class="text-danger small me-1">' + escape(task.failure_reason) + '</span>';
               }
             }
 
-            if (req.session.isAdmin && (task.status === 'waiting for approval' || task.status === 'failed')) {
+            if (canDelete) {
               content += '<form method="post" action="/publisher/tasks/' + task.id + '/delete" style="display: inline;" onsubmit="return confirm(\'Delete task #' + task.id + ' and all its build output? This cannot be undone.\')">';
               content += '<button type="submit" class="btn btn-sm btn-danger">Delete</button>';
+              content += '</form>';
+            }
+
+            if (req.session.userId && task.status === 'failed') {
+              content += ' <form method="post" action="/publisher/tasks/' + task.id + '/retry" style="display: inline;">';
+              content += '<button type="submit" class="btn btn-sm btn-warning">Retry</button>';
               content += '</form>';
             }
 
@@ -1119,7 +1196,7 @@ class PublisherModule {
 
         const html = htmlServer.renderPage('publisher', 'Tasks - FHIR Publisher', content, {
           templateVars: {
-            loginTitle: req.session.userId ? "Logout" : 'Login',
+            loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
             loginPath: req.session.userId ? "logout" : 'login',
             loginAction: req.session.userId ? "POST" : 'GET'
           }});
@@ -1158,12 +1235,12 @@ class PublisherModule {
         // Insert task (ID will be auto-generated)
         const result = await new Promise((resolve, reject) => {
           this.db.run(
-            'INSERT INTO tasks (user_id, website_id, github_org, github_repo, git_branch, npm_package_id, version) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [req.session.userId, website_id, github_org, github_repo, git_branch, npm_package_id, version],
-            function (err) {
-              if (err) reject(err);
-              else resolve(this.lastID);
-            }
+              'INSERT INTO tasks (user_id, website_id, github_org, github_repo, git_branch, npm_package_id, version) VALUES (?, ?, ?, ?, ?, ?, ?)',
+              [req.session.userId, website_id, github_org, github_repo, git_branch, npm_package_id, version],
+              function (err) {
+                if (err) reject(err);
+                else resolve(this.lastID);
+              }
           );
         });
 
@@ -1208,12 +1285,12 @@ class PublisherModule {
         // Update task status
         await new Promise((resolve, reject) => {
           this.db.run(
-            'UPDATE tasks SET status = ?, approved_by = ?, publishing_at = CURRENT_TIMESTAMP WHERE id = ?',
-            ['publishing', req.session.userId, taskId],
-            (err) => {
-              if (err) reject(err);
-              else resolve();
-            }
+              'UPDATE tasks SET status = ?, approved_by = ?, publishing_at = CURRENT_TIMESTAMP WHERE id = ?',
+              ['publishing', req.session.userId, taskId],
+              (err) => {
+                if (err) reject(err);
+                else resolve();
+              }
           );
         });
 
@@ -1242,21 +1319,31 @@ class PublisherModule {
           return res.status(404).send('Task not found');
         }
 
-        if (task.status !== 'waiting for approval' && task.status !== 'failed') {
-          return res.status(400).send('Only tasks waiting for approval or failed can be deleted');
+        if (task.status !== 'waiting for approval' && task.status !== 'failed' && task.status !== 'queued') {
+          return res.status(400).send('Only tasks that are queued, waiting for approval, or failed can be deleted');
+        }
+
+        // Pre-approval statuses: any user with queue rights on this website can delete
+        // Post-approval (failed after publishing started): admin only
+        const isPostApproval = task.status === 'failed' && task.approved_by;
+        if (isPostApproval) {
+          if (!req.session.isAdmin) {
+            return res.status(403).send('Admin access required to delete a task that has been approved');
+          }
+        } else {
+          const canQueue = await this.userCanQueue(req.session.userId, task.website_id);
+          if (!canQueue) {
+            return res.status(403).send('You do not have permission to delete tasks for this website');
+          }
         }
 
         // Remove build output directory
         if (task.local_folder && fs.existsSync(task.local_folder)) {
-          const rimraf = require('rimraf');
-          await new Promise((resolve) => {
-            rimraf(task.local_folder, (err) => {
-              if (err) {
-                this.logger.warn('Failed to remove task directory ' + task.local_folder + ': ' + err.message);
-              }
-              resolve(); // Continue even if directory removal fails
-            });
-          });
+          try {
+            await require('fs').promises.rm(task.local_folder, { recursive: true, force: true });
+          } catch (err) {
+            this.logger.warn('Failed to remove task directory ' + task.local_folder + ': ' + err.message);
+          }
         }
 
         // Delete task logs
@@ -1276,14 +1363,45 @@ class PublisherModule {
         });
 
         this.logUserAction(req.session.userId, 'delete_task', taskId, req.ip);
-        this.logger.info('Task deleted: ' + taskId + ' by admin ' + req.session.userId);
+        this.logger.info('Task deleted: ' + taskId + ' by user ' + req.session.userId);
         res.redirect('/publisher/tasks');
       } catch (error) {
         this.logger.error('Error deleting task:', error);
-        res.status(500).send('Failed to delete task');
+        res.status(500).send('Failed to delete task: ' + error.message);
       }
     } finally {
       this.stats.countRequest('delete-task', Date.now() - start);
+    }
+  }
+
+  async retryTask(req, res) {
+    const start = Date.now();
+    try {
+      try {
+        const taskId = req.params.id;
+        const task = await this.getTask(taskId);
+        if (!task) return res.status(404).send('Task not found');
+        if (task.status !== 'failed') return res.status(400).send('Only failed tasks can be retried');
+        const canQueue = await this.userCanQueue(req.session.userId, task.website_id);
+        if (!canQueue) return res.status(403).send('You do not have permission to queue tasks for this website');
+        const existingTask = await this.findActiveTask(task.npm_package_id, task.version);
+        if (existingTask) return res.status(400).send('An active task for this package and version is already in progress.');
+        const newTaskId = await new Promise((resolve, reject) => {
+          this.db.run(
+              'INSERT INTO tasks (user_id, website_id, github_org, github_repo, git_branch, npm_package_id, version) VALUES (?, ?, ?, ?, ?, ?, ?)',
+              [req.session.userId, task.website_id, task.github_org, task.github_repo, task.git_branch, task.npm_package_id, task.version],
+              function (err) { if (err) reject(err); else resolve(this.lastID); }
+          );
+        });
+        this.logUserAction(req.session.userId, 'retry_task', newTaskId.toString(), req.ip);
+        this.logger.info('Task retried: new ID=' + newTaskId + ' from task #' + taskId);
+        res.redirect('/publisher/tasks/' + newTaskId + '/history');
+      } catch (error) {
+        this.logger.error('Error retrying task:', error);
+        res.status(500).send('Failed to retry task: ' + error.message);
+      }
+    } finally {
+      this.stats.countRequest('retry-task', Date.now() - start);
     }
   }
 
@@ -1309,6 +1427,19 @@ class PublisherModule {
             buildLog = fs.readFileSync(task.build_output_path, 'utf8');
           } catch (error) {
             buildLog = 'Error reading build log: ' + error.message;
+          }
+        }
+
+        // Get publication log if available
+        let publishLog = '';
+        if (task.local_folder) {
+          const publishLogPath = path.join(task.local_folder, 'publication.log');
+          if (fs.existsSync(publishLogPath)) {
+            try {
+              publishLog = fs.readFileSync(publishLogPath, 'utf8');
+            } catch (error) {
+              publishLog = 'Error reading publication log: ' + error.message;
+            }
           }
         }
 
@@ -1340,20 +1471,36 @@ class PublisherModule {
             content += '</div>';
           }
 
+          // Announcement section
+          if (task.announcement) {
+            content += '<h4>Announcement</h4>';
+            content += '<button onclick="navigator.clipboard.writeText(document.getElementById(\'announcement-text\').innerText)" class="btn btn-sm btn-outline-secondary mb-2">Copy to clipboard</button>';
+            content += '<div id="announcement-text" class="output-viewer" style="white-space: pre-wrap;">' + escape(task.announcement) + '</div>';
+          }
+
           // Build log section
           if (buildLog) {
             content += '<h4>Build Log</h4>';
-            content += '<div class="output-viewer">' + this.escapeHtml(buildLog) + '</div>';
+            content += '<div class="output-viewer">' + escape(buildLog) + '</div>';
           } else if (task.status === 'building') {
             content += '<h4>Build Log</h4>';
             content += '<p><em>Build in progress... Log will appear when available.</em></p>';
+          }
+
+          // Publication log section
+          if (publishLog) {
+            content += '<h4>Publication Log</h4>';
+            content += '<div class="output-viewer">' + escape(publishLog) + '</div>';
+          } else if (task.status === 'publishing') {
+            content += '<h4>Publication Log</h4>';
+            content += '<p><em>Publication in progress... Log will appear when available.</em></p>';
           }
 
           content += '<div class="mt-3"><a href="/publisher/tasks" class="btn btn-secondary">Back to Tasks</a></div>';
 
           const html = htmlServer.renderPage('publisher', 'Task Output - FHIR Publisher', content, {
             templateVars: {
-              loginTitle: req.session.userId ? "Logout" : 'Login',
+              loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
               loginPath: req.session.userId ? "logout" : 'login',
               loginAction: req.session.userId ? "POST" : 'GET'
             }});
@@ -1384,6 +1531,11 @@ class PublisherModule {
           if (buildLog) {
             output += '\n--- Build Log ---\n';
             output += buildLog;
+          }
+
+          if (publishLog) {
+            output += '\n--- Publication Log ---\n';
+            output += publishLog;
           }
 
           res.setHeader('Content-Type', 'text/plain');
@@ -1424,28 +1576,28 @@ class PublisherModule {
 
         const htmlServer = require('../library/html-server');
 
-        let content = '<h3>Task History: #' + task.id + ' — ' + this.escapeHtml(task.npm_package_id) + '#' + this.escapeHtml(task.version) + '</h3>';
+        let content = '<h3>Task History: #' + task.id + ' — ' + escape(task.npm_package_id) + '#' + escape(task.version) + '</h3>';
 
         // Task details summary card
         content += '<div class="card mb-4"><div class="card-body">';
         content += '<div class="row">';
         content += '<div class="col-md-6">';
         content += '<p><strong>Status:</strong> <span class="badge bg-' + this.getStatusColor(task.status) + '">' + task.status + '</span></p>';
-        content += '<p><strong>Package:</strong> <code>' + this.escapeHtml(task.npm_package_id) + '</code></p>';
-        content += '<p><strong>Version:</strong> ' + this.escapeHtml(task.version) + '</p>';
-        content += '<p><strong>Website:</strong> ' + this.escapeHtml(task.website_name) + '</p>';
+        content += '<p><strong>Package:</strong> <code>' + escape(task.npm_package_id) + '</code></p>';
+        content += '<p><strong>Version:</strong> ' + escape(task.version) + '</p>';
+        content += '<p><strong>Website:</strong> ' + escape(task.website_name) + '</p>';
         content += '</div>';
         content += '<div class="col-md-6">';
-        content += '<p><strong>GitHub:</strong> ' + this.escapeHtml(task.github_org) + '/' + this.escapeHtml(task.github_repo) + ' (' + this.escapeHtml(task.git_branch) + ')</p>';
-        content += '<p><strong>Created by:</strong> ' + this.escapeHtml(task.user_name) + ' (' + this.escapeHtml(task.user_login) + ')</p>';
+        content += '<p><strong>GitHub:</strong> ' + escape(task.github_org) + '/' + escape(task.github_repo) + ' (' + escape(task.git_branch) + ')</p>';
+        content += '<p><strong>Created by:</strong> ' + escape(task.user_name) + ' (' + escape(task.user_login) + ')</p>';
         if (task.approved_by_name) {
-          content += '<p><strong>Approved by:</strong> ' + this.escapeHtml(task.approved_by_name) + '</p>';
+          content += '<p><strong>Approved by:</strong> ' + escape(task.approved_by_name) + '</p>';
         }
         if (task.local_folder) {
-          content += '<p><strong>Local folder:</strong> <code>' + this.escapeHtml(task.local_folder) + '</code></p>';
+          content += '<p><strong>Local folder:</strong> <code>' + escape(task.local_folder) + '</code></p>';
         }
         if (task.failure_reason) {
-          content += '<p><strong>Failure reason:</strong> <span class="text-danger">' + this.escapeHtml(task.failure_reason) + '</span></p>';
+          content += '<p><strong>Failure reason:</strong> <span class="text-danger">' + escape(task.failure_reason) + '</span></p>';
         }
         content += '</div>';
         content += '</div>';
@@ -1454,8 +1606,11 @@ class PublisherModule {
         // Announcement section (for completed publications)
         if (task.announcement) {
           content += '<div class="card mb-4"><div class="card-body">';
-          content += '<h5>Announcement</h5>';
-          content += '<pre class="mb-0" style="white-space: pre-wrap;">' + this.escapeHtml(task.announcement) + '</pre>';
+          content += '<div class="d-flex justify-content-between align-items-center mb-2">';
+          content += '<h5 class="mb-0">Announcement</h5>';
+          content += '<button onclick="navigator.clipboard.writeText(document.getElementById(\'hist-announcement\').innerText)" class="btn btn-sm btn-outline-secondary">Copy to clipboard</button>';
+          content += '</div>';
+          content += '<pre id="hist-announcement" class="mb-0" style="white-space: pre-wrap;">' + escape(task.announcement) + '</pre>';
           content += '</div></div>';
         }
 
@@ -1464,7 +1619,7 @@ class PublisherModule {
 
         // Status transition timestamps from the task record
         if (task.queued_at) {
-          events.push({ timestamp: task.queued_at, type: 'status', icon: '📋', label: 'Task queued', detail: 'Created by ' + this.escapeHtml(task.user_name), css: '' });
+          events.push({ timestamp: task.queued_at, type: 'status', icon: '📋', label: 'Task queued', detail: 'Created by ' + escape(task.user_name), css: '' });
         }
         if (task.building_at) {
           events.push({ timestamp: task.building_at, type: 'status', icon: '🔨', label: 'Draft build started', detail: '', css: '' });
@@ -1473,14 +1628,14 @@ class PublisherModule {
           events.push({ timestamp: task.waiting_approval_at, type: 'status', icon: '⏳', label: 'Waiting for approval', detail: 'Draft build completed', css: '' });
         }
         if (task.publishing_at) {
-          const approver = task.approved_by_name ? 'Approved by ' + this.escapeHtml(task.approved_by_name) : '';
+          const approver = task.approved_by_name ? 'Approved by ' + escape(task.approved_by_name) : '';
           events.push({ timestamp: task.publishing_at, type: 'status', icon: '🚀', label: 'Publishing started', detail: approver, css: '' });
         }
         if (task.completed_at) {
           events.push({ timestamp: task.completed_at, type: 'status', icon: '✅', label: 'Completed', detail: '', css: 'text-success' });
         }
         if (task.failed_at) {
-          events.push({ timestamp: task.failed_at, type: 'status', icon: '❌', label: 'Failed', detail: task.failure_reason ? this.escapeHtml(task.failure_reason) : '', css: 'text-danger' });
+          events.push({ timestamp: task.failed_at, type: 'status', icon: '❌', label: 'Failed', detail: task.failure_reason ? escape(task.failure_reason) : '', css: 'text-danger' });
         }
 
         // Task log entries
@@ -1489,7 +1644,7 @@ class PublisherModule {
             timestamp: log.timestamp,
             type: 'log',
             icon: log.level === 'error' ? '🔴' : log.level === 'warn' ? '🟡' : '🔵',
-            label: this.escapeHtml(log.message),
+            label: escape(log.message),
             detail: '',
             css: log.level === 'error' ? 'text-danger' : log.level === 'warn' ? 'text-warning' : 'text-muted'
           });
@@ -1497,8 +1652,8 @@ class PublisherModule {
 
         // User actions
         for (const action of actions) {
-          const who = action.user_name ? this.escapeHtml(action.user_name) + ' (' + this.escapeHtml(action.user_login) + ')' : 'Unknown';
-          const ip = action.ip_address ? ' from ' + this.escapeHtml(action.ip_address) : '';
+          const who = action.user_name ? escape(action.user_name) + ' (' + escape(action.user_login) + ')' : 'Unknown';
+          const ip = action.ip_address ? ' from ' + escape(action.ip_address) : '';
           let actionLabel = action.action;
           if (action.action === 'create_task') actionLabel = 'Created task';
           else if (action.action === 'approve_task') actionLabel = 'Approved task';
@@ -1536,8 +1691,8 @@ class PublisherModule {
           for (const evt of events) {
             const ts = new Date(evt.timestamp).toLocaleString();
             const typeBadge = evt.type === 'status' ? '<span class="badge bg-primary">status</span>'
-              : evt.type === 'action' ? '<span class="badge bg-info">user</span>'
-                : '<span class="badge bg-secondary">log</span>';
+                : evt.type === 'action' ? '<span class="badge bg-info">user</span>'
+                    : '<span class="badge bg-secondary">log</span>';
             content += '<tr>';
             content += '<td class="text-nowrap"><small>' + ts + '</small></td>';
             content += '<td>' + evt.icon + '</td>';
@@ -1554,18 +1709,37 @@ class PublisherModule {
 
         // Links at the bottom
         content += '<div class="mt-3">';
-        if (task.build_output_path) {
-          content += '<a href="/publisher/tasks/' + task.id + '/output" class="btn btn-outline-info me-2">View Build Output</a>';
+        if (task.build_output_path || task.local_folder) {
+          content += '<a href="/publisher/tasks/' + task.id + '/output" class="btn btn-outline-info me-2">View Output</a>';
         }
         if (task.status === 'waiting for approval') {
           content += '<a href="/publisher/tasks/' + task.id + '/qa" class="btn btn-outline-secondary me-2">View QA Report</a>';
+        }
+        if (req.session.userId && task.status === 'failed') {
+          content += '<form method="post" action="/publisher/tasks/' + task.id + '/retry" style="display: inline;" class="me-2">';
+          content += '<button type="submit" class="btn btn-warning">Retry</button>';
+          content += '</form>';
+        }
+        // Show delete button using same logic as backend deleteTask:
+        // Pre-approval (queued, waiting for approval, or failed without approval): user with queue rights can delete
+        // Post-approval (failed after approval): admin only
+        const detailIsPreApproval = task.status === 'waiting for approval' || task.status === 'queued' || (task.status === 'failed' && !task.approved_by);
+        const detailIsPostApprovalFailed = task.status === 'failed' && task.approved_by;
+        const detailCanDelete = req.session.userId && (
+            (detailIsPreApproval && await this.userCanQueue(req.session.userId, task.website_id)) ||
+            (detailIsPostApprovalFailed && req.session.isAdmin)
+        );
+        if (detailCanDelete) {
+          content += '<form method="post" action="/publisher/tasks/' + task.id + '/delete" style="display: inline;" class="me-2" onsubmit="return confirm(\'Delete task #' + task.id + ' and all its build output? This cannot be undone.\')">';
+          content += '<button type="submit" class="btn btn-danger">Delete</button>';
+          content += '</form>';
         }
         content += '<a href="/publisher/tasks" class="btn btn-secondary">Back to Tasks</a>';
         content += '</div>';
 
         const html = htmlServer.renderPage('publisher', 'Task History - FHIR Publisher', content, {
           templateVars: {
-            loginTitle: req.session.userId ? "Logout" : 'Login',
+            loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
             loginPath: req.session.userId ? "logout" : 'login',
             loginAction: req.session.userId ? "POST" : 'GET'
           }});
@@ -1580,13 +1754,69 @@ class PublisherModule {
     }
   }
 
-  escapeHtml(text) {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
+  async renderEditWebsite(req, res) {
+    const start = Date.now();
+    try {
+      const htmlServer = require('../library/html-server');
+      const website = await this.getWebsite(req.params.id);
+      if (!website) return res.status(404).send('Website not found');
+
+      let content = '<h3>Edit Website</h3>';
+      content += '<form method="post" action="/publisher/admin/websites/' + website.id + '/edit" class="row g-3">';
+      content += '<div class="col-md-4"><label class="form-label">Website Name</label>';
+      content += '<input type="text" class="form-control" name="name" value="' + escape(website.name) + '" required></div>';
+      content += '<div class="col-md-4"><label class="form-label">Local Folder</label>';
+      content += '<input type="text" class="form-control" name="local_folder" value="' + escape(website.local_folder) + '" required></div>';
+      content += '<div class="col-md-4"><label class="form-label">Git Root (repo root for git operations)</label>';
+      content += '<input type="text" class="form-control" name="git_root" value="' + escape(website.git_root || '') + '"></div>';
+      content += '<div class="col-md-4"><label class="form-label">History Templates</label>';
+      content += '<input type="text" class="form-control" name="history_templates" value="' + escape(website.history_templates) + '" required></div>';
+      content += '<div class="col-md-4"><label class="form-label">Web Templates</label>';
+      content += '<input type="text" class="form-control" name="web_templates" value="' + escape(website.web_templates) + '" required></div>';
+      content += '<div class="col-md-4"><label class="form-label">Update Script</label>';
+      content += '<input type="text" class="form-control" name="server_update_script" value="' + escape(website.server_update_script) + '" required></div>';
+      content += '<div class="col-md-4"><label class="form-label">Active</label>';
+      content += '<select class="form-control" name="is_active"><option value="1"' + (website.is_active ? ' selected' : '') + '>Yes</option><option value="0"' + (!website.is_active ? ' selected' : '') + '>No</option></select></div>';
+      content += '<div class="col-12"><button type="submit" class="btn btn-primary">Save Changes</button> ';
+      content += '<a href="/publisher/admin/websites" class="btn btn-secondary">Cancel</a></div>';
+      content += '</form>';
+
+      const html = htmlServer.renderPage('publisher', 'Edit Website - FHIR Publisher', content, {
+        templateVars: { loginTitle: (req.session.userName || '') + ' \u2014 Logout', loginPath: 'logout', loginAction: 'POST' }
+      });
+      res.setHeader('Content-Type', 'text/html');
+      res.send(html);
+    } catch (error) {
+      this.logger.error('Error rendering edit website:', error);
+      res.status(500).send('Internal server error');
+    } finally {
+      this.stats.countRequest('websites-edit', Date.now() - start);
+    }
+  }
+
+  async updateWebsite(req, res) {
+    const start = Date.now();
+    try {
+      const { name, local_folder,  git_root, history_templates, web_templates, server_update_script, is_active } = req.body;
+      const websiteId = req.params.id;
+
+      await new Promise((resolve, reject) => {
+        this.db.run(
+            'UPDATE websites SET name=?, local_folder=?,  git_root = ?, history_templates=?, web_templates=?, server_update_script=?, is_active=? WHERE id=?',
+            [name, local_folder,  git_root, history_templates, web_templates, server_update_script, is_active === '1' ? 1 : 0, websiteId],
+            (err) => err ? reject(err) : resolve()
+        );
+      });
+
+      this.logUserAction(req.session.userId, 'update_website', websiteId, req.ip);
+      this.logger.info('Website updated: ' + websiteId + ' by user ' + req.session.userId);
+      res.redirect('/publisher/admin/websites');
+    } catch (error) {
+      this.logger.error('Error updating website:', error);
+      res.status(500).send('Failed to update website');
+    } finally {
+      this.stats.countRequest('websites-update', Date.now() - start);
+    }
   }
 
   async renderWebsites(req, res) {
@@ -1613,6 +1843,18 @@ class PublisherModule {
         content += '<input type="text" class="form-control" id="local_folder" name="local_folder" required>';
         content += '</div>';
         content += '<div class="col-md-4">';
+        content += '<label class="form-label">Git Root (repo root for git operations)</label>';
+        content += '<input type="text" class="form-control" name="git_root" required>';
+        content += '</div>';
+        content += '<div class="col-md-4">';
+        content += '<label for="history_templates" class="form-label">History Templates</label>';
+        content += '<input type="text" class="form-control" id="history_templates" name="history_templates" required>';
+        content += '</div>';
+        content += '<div class="col-md-4">';
+        content += '<label for="web_templates" class="form-label">Web Templates</label>';
+        content += '<input type="text" class="form-control" id="web_templates" name="web_templates" required>';
+        content += '</div>';
+        content += '<div class="col-md-4">';
         content += '<label for="server_update_script" class="form-label">Update Script</label>';
         content += '<input type="text" class="form-control" id="server_update_script" name="server_update_script" required>';
         content += '</div>';
@@ -1632,16 +1874,20 @@ class PublisherModule {
         } else {
           content += '<div class="table-responsive">';
           content += '<table class="table table-striped">';
-          content += '<thead><tr><th>Name</th><th>Local Folder</th><th>Update Script</th><th>Active</th><th>Created</th></tr></thead>';
+          content += '<thead><tr><th>Name</th><th>Local Folder</th><th>Git Root</th><th>History Templates</th><th>Web Templates</th><th>Update Script</th><th>Active</th><th>Created</th><th>Actions</th></tr></thead>';
           content += '<tbody>';
 
           websites.forEach(website => {
             content += '<tr>';
             content += '<td>' + website.name + '</td>';
-            content += '<td><code>' + website.local_folder + '</code></td>';
-            content += '<td><code>' + website.server_update_script + '</code></td>';
+            content += '<td><code>' + escape(website.local_folder) + '</code></td>';
+            content += '<td><code>' + escape(website.git_root || '') + '</code></td>';
+            content += '<td><code>' + escape(website.history_templates) + '</code></td>';
+            content += '<td><code>' + escape(website.web_templates) + '</code></td>';
+            content += '<td><code>' + escape(website.server_update_script) + '</code></td>';
             content += '<td>' + (website.is_active ? '✓' : '✗') + '</td>';
             content += '<td>' + new Date(website.created_at).toLocaleString() + '</td>';
+            content += '<td><a href="/publisher/admin/websites/' + website.id + '/edit" class="btn btn-sm btn-outline-primary">Edit</a></td>';
             content += '</tr>';
           });
 
@@ -1654,7 +1900,7 @@ class PublisherModule {
 
         const html = htmlServer.renderPage('publisher', 'Websites - FHIR Publisher', content, {
           templateVars: {
-            loginTitle: req.session.userId ? "Logout" : 'Login',
+            loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
             loginPath: req.session.userId ? "logout" : 'login',
             loginAction: req.session.userId ? "POST" : 'GET'
           }});
@@ -1673,16 +1919,16 @@ class PublisherModule {
     const start = Date.now();
     try {
       try {
-        const {name, local_folder, server_update_script} = req.body;
+        const {name, local_folder,  git_root, history_templates, web_templates, server_update_script} = req.body;
 
         await new Promise((resolve, reject) => {
           this.db.run(
-            'INSERT INTO websites (name, local_folder, server_update_script) VALUES (?, ?, ?)',
-            [name, local_folder, server_update_script],
-            function (err) {
-              if (err) reject(err);
-              else resolve();
-            }
+              'INSERT INTO websites (name, local_folder,  git_root, history_templates, web_templates, server_update_script) VALUES (?, ?, ?, ?, ?, ?)',
+              [name, local_folder, git_root, history_templates, web_templates, server_update_script],
+              function (err) {
+                if (err) reject(err);
+                else resolve();
+              }
           );
         });
 
@@ -1796,7 +2042,7 @@ class PublisherModule {
 
         const html = htmlServer.renderPage('publisher', 'Users - FHIR Publisher', content, {
           templateVars: {
-            loginTitle: req.session.userId ? "Logout" : 'Login',
+            loginTitle: req.session.userId ? (req.session.userName + ' \u2014 Logout') : 'Login',
             loginPath: req.session.userId ? "logout" : 'login',
             loginAction: req.session.userId ? "POST" : 'GET'
           }});
@@ -1821,12 +2067,12 @@ class PublisherModule {
 
         await new Promise((resolve, reject) => {
           this.db.run(
-            'INSERT INTO users (name, login, password_hash, is_admin) VALUES (?, ?, ?, ?)',
-            [name, login, passwordHash, is_admin ? 1 : 0],
-            function (err) {
-              if (err) reject(err);
-              else resolve();
-            }
+              'INSERT INTO users (name, login, password_hash, is_admin) VALUES (?, ?, ?, ?)',
+              [name, login, passwordHash, is_admin ? 1 : 0],
+              function (err) {
+                if (err) reject(err);
+                else resolve();
+              }
           );
         });
 
@@ -1871,12 +2117,12 @@ class PublisherModule {
           if (canQueue || canApprove) {
             await new Promise((resolve, reject) => {
               this.db.run(
-                'INSERT INTO user_website_permissions (user_id, website_id, can_queue, can_approve) VALUES (?, ?, ?, ?)',
-                [user_id, website.id, canQueue ? 1 : 0, canApprove ? 1 : 0],
-                (err) => {
-                  if (err) reject(err);
-                  else resolve();
-                }
+                  'INSERT INTO user_website_permissions (user_id, website_id, can_queue, can_approve) VALUES (?, ?, ?, ?)',
+                  [user_id, website.id, canQueue ? 1 : 0, canApprove ? 1 : 0],
+                  (err) => {
+                    if (err) reject(err);
+                    else resolve();
+                  }
               );
             });
           }
@@ -1912,12 +2158,12 @@ class PublisherModule {
   async getTask(taskId) {
     return new Promise((resolve, reject) => {
       this.db.get(
-        'SELECT t.*, u.name as user_name, u.login as user_login, w.name as website_name, approver.name as approved_by_name FROM tasks t JOIN users u ON t.user_id = u.id JOIN websites w ON t.website_id = w.id LEFT JOIN users approver ON t.approved_by = approver.id WHERE t.id = ?',
-        [taskId],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
+          'SELECT t.*, u.name as user_name, u.login as user_login, w.name as website_name, approver.name as approved_by_name FROM tasks t JOIN users u ON t.user_id = u.id JOIN websites w ON t.website_id = w.id LEFT JOIN users approver ON t.approved_by = approver.id WHERE t.id = ?',
+          [taskId],
+          (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+          }
       );
     });
   }
@@ -1925,12 +2171,12 @@ class PublisherModule {
   async getTaskLogs(taskId) {
     return new Promise((resolve, reject) => {
       this.db.all(
-        'SELECT * FROM task_logs WHERE task_id = ? ORDER BY timestamp ASC',
-        [taskId.toString()],
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
-        }
+          'SELECT * FROM task_logs WHERE task_id = ? ORDER BY timestamp ASC',
+          [taskId.toString()],
+          (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+          }
       );
     });
   }
@@ -1938,12 +2184,12 @@ class PublisherModule {
   async getTaskActions(taskId) {
     return new Promise((resolve, reject) => {
       this.db.all(
-        'SELECT ua.*, u.name as user_name, u.login as user_login FROM user_actions ua LEFT JOIN users u ON ua.user_id = u.id WHERE ua.target_id = ? ORDER BY ua.timestamp ASC',
-        [taskId.toString()],
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
-        }
+          'SELECT ua.*, u.name as user_name, u.login as user_login FROM user_actions ua LEFT JOIN users u ON ua.user_id = u.id WHERE ua.target_id = ? ORDER BY ua.timestamp ASC',
+          [taskId.toString()],
+          (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+          }
       );
     });
   }
@@ -1951,12 +2197,12 @@ class PublisherModule {
   async getUserWebsites(userId) {
     return new Promise((resolve, reject) => {
       this.db.all(
-        'SELECT w.* FROM websites w JOIN user_website_permissions p ON w.id = p.website_id WHERE p.user_id = ? AND p.can_queue = 1 AND w.is_active = 1',
-        [userId],
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
-        }
+          'SELECT w.* FROM websites w JOIN user_website_permissions p ON w.id = p.website_id WHERE p.user_id = ? AND p.can_queue = 1 AND w.is_active = 1',
+          [userId],
+          (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+          }
       );
     });
   }
@@ -1964,12 +2210,12 @@ class PublisherModule {
   async userCanQueue(userId, websiteId) {
     return new Promise((resolve, reject) => {
       this.db.get(
-        'SELECT can_queue FROM user_website_permissions WHERE user_id = ? AND website_id = ?',
-        [userId, websiteId],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row && row.can_queue);
-        }
+          'SELECT can_queue FROM user_website_permissions WHERE user_id = ? AND website_id = ?',
+          [userId, websiteId],
+          (err, row) => {
+            if (err) reject(err);
+            else resolve(row && row.can_queue);
+          }
       );
     });
   }
@@ -1977,12 +2223,12 @@ class PublisherModule {
   async userCanApprove(userId, websiteId) {
     return new Promise((resolve, reject) => {
       this.db.get(
-        'SELECT can_approve FROM user_website_permissions WHERE user_id = ? AND website_id = ?',
-        [userId, websiteId],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row && row.can_approve);
-        }
+          'SELECT can_approve FROM user_website_permissions WHERE user_id = ? AND website_id = ?',
+          [userId, websiteId],
+          (err, row) => {
+            if (err) reject(err);
+            else resolve(row && row.can_approve);
+          }
       );
     });
   }
@@ -1990,12 +2236,12 @@ class PublisherModule {
   async findActiveTask(packageId, version) {
     return new Promise((resolve, reject) => {
       this.db.get(
-        'SELECT * FROM tasks WHERE npm_package_id = ? AND version = ? AND status NOT IN (?, ?) ORDER BY queued_at DESC LIMIT 1',
-        [packageId, version, 'complete', 'failed'],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
+          'SELECT * FROM tasks WHERE npm_package_id = ? AND version = ? AND status NOT IN (?, ?) ORDER BY queued_at DESC LIMIT 1',
+          [packageId, version, 'complete', 'failed'],
+          (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+          }
       );
     });
   }
@@ -2003,12 +2249,12 @@ class PublisherModule {
   async findExistingTask(packageId, version) {
     return new Promise((resolve, reject) => {
       this.db.get(
-        'SELECT * FROM tasks WHERE npm_package_id = ? AND version = ? ORDER BY queued_at DESC LIMIT 1',
-        [packageId, version],
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
+          'SELECT * FROM tasks WHERE npm_package_id = ? AND version = ? ORDER BY queued_at DESC LIMIT 1',
+          [packageId, version],
+          (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+          }
       );
     });
   }
@@ -2082,12 +2328,12 @@ class PublisherModule {
   async getUserPermissions(userId) {
     return new Promise((resolve, reject) => {
       this.db.all(
-        'SELECT * FROM user_website_permissions WHERE user_id = ?',
-        [userId],
-        (err, rows) => {
-          if (err) reject(err);
-          else resolve(rows || []);
-        }
+          'SELECT * FROM user_website_permissions WHERE user_id = ?',
+          [userId],
+          (err, rows) => {
+            if (err) reject(err);
+            else resolve(rows || []);
+          }
       );
     });
   }
@@ -2143,9 +2389,9 @@ class PublisherModule {
   async logUserAction(userId, action, targetId, ipAddress) {
     return new Promise((resolve) => {
       this.db.run(
-        'INSERT INTO user_actions (user_id, action, target_id, ip_address) VALUES (?, ?, ?, ?)',
-        [userId, action, targetId, ipAddress],
-        () => resolve() // Don't fail if logging fails
+          'INSERT INTO user_actions (user_id, action, target_id, ip_address) VALUES (?, ?, ?, ?)',
+          [userId, action, targetId, ipAddress],
+          () => resolve() // Don't fail if logging fails
       );
     });
   }

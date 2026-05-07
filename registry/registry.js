@@ -8,6 +8,7 @@ const htmlServer = require('../library/html-server');
 const Logger = require('../library/logger');
 const regLog = Logger.getInstance().child({ module: 'registry' });
 const folders = require('../library/folder-setup');
+const escape = require('escape-html');
 
 class RegistryModule {
   constructor(stats) {
@@ -20,7 +21,7 @@ class RegistryModule {
     this.isInitialized = false;
     this.lastCrawlTime = null;
     this.crawlInProgress = false;
-    
+
     // Thread-safe data storage
     this.currentData = null;
     this.dataLock = false;
@@ -43,9 +44,9 @@ class RegistryModule {
         apiKeys: config.apiKeys || {}
       };
 
-      this.crawler = new RegistryCrawler(crawlerConfig);
+      this.crawler = new RegistryCrawler(crawlerConfig, this.stats);
       this.crawler.useLog(regLog);
-      
+
       // Initialize API with crawler
       this.api = new RegistryAPI(this.crawler);
 
@@ -78,13 +79,13 @@ class RegistryModule {
       const dataPath = folders.ensureFilePath('registry', 'registry-data.json');  // <-- CHANGE
       const data = await fs.readFile(dataPath, 'utf8');
       const jsonData = JSON.parse(data);
-      
+
       // Thread-safe update
       await this.updateData(() => {
         this.crawler.loadData(jsonData);
         this.currentData = this.crawler.getData();
       });
-      
+
       this.logger.info('Loaded saved registry data');
     } catch (error) {
       this.logger.info('No saved registry data found, will fetch fresh data');
@@ -112,13 +113,14 @@ class RegistryModule {
    */
   startPeriodicCrawl(intervalMinutes) {
     const intervalMs = intervalMinutes * 60 * 1000;
-    
+
     // Run initial crawl after a short delay
     setTimeout(() => {
       this.performCrawl();
     }, 5000);
 
     // Set up periodic crawling
+    this.stats.addTask("TxRegistry", `${intervalMinutes} min`);
     this.crawlInterval = setInterval(() => {
       this.performCrawl();
     }, intervalMs);
@@ -134,6 +136,7 @@ class RegistryModule {
       this.logger.info('Crawl already in progress, skipping...');
       return;
     }
+    this.stats.task('TxRegistry', 'Crawling');
 
     this.crawlInProgress = true;
     this.logger.info('Starting registry crawl...');
@@ -142,7 +145,7 @@ class RegistryModule {
     try {
       // Perform the crawl
       const newData = await this.crawler.crawl(this.config.masterUrl);
-      
+
       // Thread-safe update of current data
       await this.updateData(() => {
         this.currentData = newData;
@@ -150,39 +153,30 @@ class RegistryModule {
 
       this.lastCrawlTime = new Date();
       const elapsed = Date.now() - startTime;
-      
+
       // Save to disk
       await this.saveData();
-      
+
       // Get metadata
       const metadata = this.crawler.getMetadata();
       this.logger.info(`Crawl completed in ${(elapsed/1000).toFixed(1)}s. ` +
-                      `Found ${newData.registries.length} registries, ` +
-                      `${metadata.errors.length} errors, ` +
-                      `downloaded ${this.crawler.formatBytes(metadata.totalBytes)}`);
-      
+        `Found ${newData.registries.length} registries, ` +
+        `${metadata.errors.length} errors, ` +
+        `downloaded ${this.crawler.formatBytes(metadata.totalBytes)}`);
+      this.stats.taskDone('TxRegistry', 'Crawling Finished');
     } catch (error) {
       this.logger.error('Crawl failed:', error);
+      this.stats.taskError('TxRegistry', 'Crawling Error: '+error.message);
     } finally {
       this.crawlInProgress = false;
     }
   }
 
   /**
-   * Thread-safe data update
+   * Data update - no locking needed, Node.js is single-threaded
    */
   async updateData(updateFn) {
-    // Simple lock mechanism - in production, consider using a proper mutex
-    while (this.dataLock) {
-      await new Promise(resolve => setTimeout(resolve, 10));
-    }
-    
-    this.dataLock = true;
-    try {
-      updateFn();
-    } finally {
-      this.dataLock = false;
-    }
+    updateFn();
   }
 
   _normalizeQueryParams(query) {
@@ -244,12 +238,12 @@ class RegistryModule {
    */
   renderHtmlPage(req, res, jsonResult, basePath, registry, server, fhirVersion, codeSystem, valueSet) {
     // Generate path with query parameters
-    let path = basePath;
-    if (registry) path += `&registry=${encodeURIComponent(registry)}`;
-    if (server) path += `&server=${encodeURIComponent(server)}`;
-    if (fhirVersion) path += `&fhirVersion=${encodeURIComponent(fhirVersion)}`;
-    if (codeSystem) path += `&url=${encodeURIComponent(codeSystem)}`;
-    if (valueSet) path += `&valueSet=${encodeURIComponent(valueSet)}`;
+    let pagePath = basePath;
+    if (registry) pagePath += `&registry=${encodeURIComponent(registry)}`;
+    if (server) pagePath += `&server=${encodeURIComponent(server)}`;
+    if (fhirVersion) pagePath += `&fhirVersion=${encodeURIComponent(fhirVersion)}`;
+    if (codeSystem) pagePath += `&url=${encodeURIComponent(codeSystem)}`;
+    if (valueSet) pagePath += `&valueSet=${encodeURIComponent(valueSet)}`;
 
     // Get registry documentation and info
     const data = this.api.getData();
@@ -260,7 +254,7 @@ class RegistryModule {
 
     // Render matches table
     const matchesTable = this.api.renderJsonToHtml(
-      jsonResult, path, registry, server, fhirVersion
+      jsonResult, pagePath, registry, server, fhirVersion
     );
 
     // Render registry info
@@ -268,7 +262,7 @@ class RegistryModule {
 
     // Assemble template variables
     const templateVars = {
-      path,
+      path: pagePath,
       matches: matchesTable,
       count: jsonResult.results.length,
       registry: registry || '',
@@ -284,7 +278,7 @@ class RegistryModule {
     // Use HTML server to render the page
     try {
       if (!htmlServer.hasTemplate('registry')) {
-        const templatePath = path.join(__dirname, 'tx-registry-template.html');
+        const templatePath = path.join(__dirname, 'registry-template.html');
         htmlServer.loadTemplate('registry', templatePath);
       }
 
@@ -299,7 +293,7 @@ class RegistryModule {
       );
     } catch (error) {
       this.logger.error('Error rendering page:', error);
-      return `<html><body><h1>Error rendering page</h1><p>${error.message}</p></body></html>`;
+      return `<html><body><h1>Error rendering page</h1><p>${escape(error.message)}</p></body></html>`;
     }
   }
 
@@ -311,9 +305,9 @@ class RegistryModule {
     if (this.crawlInProgress) {
       return 'Scanning for updates now';
     } else if (!this.lastCrawlTime) {
-      const nextScan = this.crawlInterval ? 
+      const nextScan = this.crawlInterval ?
         new Date(Date.now() + this.crawlInterval) : null;
-      
+
       if (nextScan) {
         const timeUntil = this.describePeriod(nextScan - Date.now());
         return `First Scan in ${timeUntil}`;
@@ -321,9 +315,9 @@ class RegistryModule {
         return 'No automatic scanning configured';
       }
     } else {
-      const nextScan = this.crawlInterval ? 
+      const nextScan = this.crawlInterval ?
         new Date(this.lastCrawlTime.getTime() + (this.config.crawlInterval * 60 * 1000)) : null;
-      
+
       if (nextScan) {
         const timeUntil = this.describePeriod(nextScan - Date.now());
         const timeSince = this.describePeriod(Date.now() - this.lastCrawlTime);
@@ -341,7 +335,7 @@ class RegistryModule {
    */
   describePeriod(milliseconds) {
     const seconds = Math.floor(milliseconds / 1000);
-    
+
     if (seconds < 60) {
       return `${seconds} seconds`;
     } else if (seconds < 3600) {
@@ -360,56 +354,63 @@ class RegistryModule {
     const start = Date.now();
     try {
 
-    const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
-    
-    if (!acceptsHtml) {
-      // Return JSON overview
-      return res.json({
-        name: 'FHIR Terminology Server Registry',
-        description: 'Registry and discovery service for FHIR terminology servers',
-        endpoints: {
-          status: '/registry/api/status',
-          statistics: '/registry/api/stats',
-          registries: '/registry/api/registries',
-          queryCodeSystem: '/registry/api/query/codesystem',
-          queryValueSet: '/registry/api/query/valueset',
-          bestServer: '/registry/api/best-server/{type}',
-          errors: '/registry/api/errors'
-        },
-        documentation: 'https://github.com/your-org/fhir-registry'
-      });
-    }
+      const acceptsHtml = req.headers.accept && req.headers.accept.includes('text/html');
 
-    // Render HTML page
-    try {
-      const startTime = Date.now();
-      
-      // Load template if needed
-      if (!htmlServer.hasTemplate('registry')) {
-        const templatePath = path.join(__dirname, 'registry-template.html');
-        htmlServer.loadTemplate('registry', templatePath);
+      if (!acceptsHtml) {
+        // Return JSON overview
+        return res.json({
+          name: 'FHIR Terminology Server Registry',
+          description: 'Registry and discovery service for FHIR terminology servers',
+          endpoints: {
+            status: '/registry/api/status',
+            statistics: '/registry/api/stats',
+            registries: '/registry/api/registries',
+            queryCodeSystem: '/registry/api/query/codesystem',
+            queryValueSet: '/registry/api/query/valueset',
+            bestServer: '/registry/api/best-server/{type}',
+            errors: '/registry/api/errors'
+          },
+          documentation: 'https://github.com/your-org/fhir-registry'
+        });
       }
 
-      const content = await this.buildHtmlContent();
-      const stats = this.api.getStatistics();
-      stats.processingTime = Date.now() - startTime;
-      stats.crawlInProgress = this.crawlInProgress;
-      stats.lastCrawl = this.lastCrawlTime;
+      // Render HTML page
+      try {
+        const startTime = Date.now();
 
-      const html = htmlServer.renderPage(
-        'registry',
-        'FHIR Terminology Server Registry',
-        content,
-        stats
-      );
-      
-      res.setHeader('Content-Type', 'text/html');
-      res.send(html);
-      
-    } catch (error) {
-      this.logger.error('Error rendering registry page:', error);
-      htmlServer.sendErrorResponse(res, 'registry', error);
-    }
+        // Load template if needed
+        if (!htmlServer.hasTemplate('registry')) {
+          const templatePath = path.join(__dirname, 'registry-template.html');
+          try {
+            htmlServer.loadTemplate('registry', templatePath);
+          } catch (templateError) {
+            this.logger.error('Failed to load registry template:', templateError);
+            return res.status(500).send(`<html><body><h1>Template Error</h1><p>Could not load registry-template.html: ${escape(templateError.message)}</p></body></html>`);
+          }
+        }
+
+        const content = await this.buildHtmlContent();
+        this.logger.info('Registry: buildHtmlContent completed');
+        const stats = this.api.getStatistics();
+        this.logger.info('Registry: getStatistics completed');
+        stats.processingTime = Date.now() - startTime;
+        stats.crawlInProgress = this.crawlInProgress;
+        stats.lastCrawl = this.lastCrawlTime;
+
+        const html = htmlServer.renderPage(
+          'registry',
+          'FHIR Terminology Server Registry',
+          content,
+          stats
+        );
+
+        res.setHeader('Content-Type', 'text/html');
+        res.send(html);
+
+      } catch (error) {
+        this.logger.error('Error rendering registry page:', error);
+        res.status(500).send(`<html><body><h1>Error rendering registry page</h1><pre>${escape(error.message)}\n${escape(error.stack || '')}</pre></body></html>`);
+      }
     } finally {
       this.stats.countRequest('home', Date.now() - start);
     }
@@ -425,11 +426,18 @@ class RegistryModule {
     const stats = this.api.getStatistics();
     let html = '';
 
-    // Skip the overview card and search forms
+    const data = this.api.getData();
+
+    if (!data || !data.registries) {
+      html += '<div class="alert alert-info">';
+      html += '<h4>Registry data not yet available</h4>';
+      html += '<p>The initial crawl is in progress. Please refresh in a moment.</p>';
+      html += '</div>';
+      return html;
+    }
 
     // Gather all server versions into a flat list
     const serverVersions = [];
-    const data = this.api.getData();
 
     data.registries.forEach(registry => {
       const authority = registry.authority || '';
@@ -487,15 +495,15 @@ class RegistryModule {
 
     for (const server of serverVersions) {
       html += '<tr>';
-      html += `<td><a href="${server.serverUrl}" target="_blank">${this._escapeHtml(server.serverUrl)}</a></td>`;
-      html += `<td>${this._escapeHtml(server.software.replace("Reference Server", "HealthIntersections"))}</td>`;
-      html += `<td>${this._escapeHtml(server.authority.replace("Published by", ""))}</td>`;
-      html += `<td>${this._escapeHtml(server.version)}</td>`;
-      html += `<td>${this._escapeHtml(server.security || '')}</td>`;
+      html += `<td><a href="${server.serverUrl}" target="_blank">${escape(server.serverUrl)}</a></td>`;
+      html += `<td>${escape(server.software.replace("Reference Server", "HealthIntersections"))}</td>`;
+      html += `<td>${escape(server.authority.replace("Published by", ""))}</td>`;
+      html += `<td>${escape(server.version)}</td>`;
+      html += `<td>${escape(server.security || '')}</td>`;
       html += '<td>';
       if (server.usage && server.usage.length > 0) {
         const badges = server.usage.map(tag =>
-          (tag == 'public' ? '' : `<span class="badge badge-info mr-1">${this._escapeHtml(tag)}</span>`)
+          (tag == 'public' ? '' : `<span class="badge badge-info mr-1">${escape(tag)}</span>`)
         );
         html += badges.join(' ');
       }
@@ -535,25 +543,14 @@ class RegistryModule {
   }
 
   /**
-   * Helper function to escape HTML special characters
-   */
-  _escapeHtml(text) {
-    if (!text) return '';
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  }
-
-  /**
    * Gather information about authoritative code systems
    * @returns {Array} Array of objects with code system information
    */
   _getAuthoritativeCodeSystems() {
     const data = this.crawler.getData();
     const authCSMap = new Map();
+
+    if (!data || !data.registries) return [];
 
     // Gather all authoritative code systems
     data.registries.forEach(registry => {
@@ -614,6 +611,8 @@ class RegistryModule {
   _getAuthoritativeValueSets() {
     const data = this.crawler.getData();
     const authVSMap = new Map();
+
+    if (!data || !data.registries) return [];
 
     // Gather all authoritative value sets
     data.registries.forEach(registry => {
@@ -821,8 +820,8 @@ class RegistryModule {
       // First row for this code system
       const rowspan = cs.servers.length;
       html += '<tr>';
-      html += `<td rowspan="${rowspan}">${this._highlightWildcard(this._escapeHtml(formattedMask))}</td>`;
-      html += `<td><a href="${this._escapeHtml(cs.servers[0].url)}" target="_blank">${this._escapeHtml(cs.servers[0].url)}</a></td>`;
+      html += `<td rowspan="${rowspan}">${this._highlightWildcard(escape(formattedMask))}</td>`;
+      html += `<td><a href="${escape(cs.servers[0].url)}" target="_blank">${escape(cs.servers[0].url)}</a></td>`;
 
       // Format versions as R3/R4/R5
       const formattedVersions = cs.servers[0].versions.map(v => this._formatFhirVersion(v));
@@ -832,7 +831,7 @@ class RegistryModule {
       // Additional rows for this code system (if any)
       for (let i = 1; i < cs.servers.length; i++) {
         html += '<tr>';
-        html += `<td><a href="${this._escapeHtml(cs.servers[i].url)}" target="_blank">${this._escapeHtml(cs.servers[i].url)}</a></td>`;
+        html += `<td><a href="${escape(cs.servers[i].url)}" target="_blank">${escape(cs.servers[i].url)}</a></td>`;
 
         // Format versions as R3/R4/R5
         const formattedVersions = cs.servers[i].versions.map(v => this._formatFhirVersion(v));
@@ -877,8 +876,8 @@ class RegistryModule {
       // First row for this value set
       const rowspan = vs.servers.length;
       html += '<tr>';
-      html += `<td rowspan="${rowspan}">${this._highlightWildcard(this._escapeHtml(vs.mask))}</td>`;
-      html += `<td><a href="${this._escapeHtml(vs.servers[0].url)}" target="_blank">${this._escapeHtml(vs.servers[0].url)}</a></td>`;
+      html += `<td rowspan="${rowspan}">${this._highlightWildcard(escape(vs.mask))}</td>`;
+      html += `<td><a href="${escape(vs.servers[0].url)}" target="_blank">${escape(vs.servers[0].url)}</a></td>`;
 
       // Format versions as R3/R4/R5
       const formattedVersions = vs.servers[0].versions.map(v => this._formatFhirVersion(v));
@@ -888,7 +887,7 @@ class RegistryModule {
       // Additional rows for this value set (if any)
       for (let i = 1; i < vs.servers.length; i++) {
         html += '<tr>';
-        html += `<td><a href="${this._escapeHtml(vs.servers[i].url)}" target="_blank">${this._escapeHtml(vs.servers[i].url)}</a></td>`;
+        html += `<td><a href="${escape(vs.servers[i].url)}" target="_blank">${escape(vs.servers[i].url)}</a></td>`;
 
         // Format versions as R3/R4/R5
         const formattedVersions = vs.servers[i].versions.map(v => this._formatFhirVersion(v));
@@ -911,7 +910,7 @@ class RegistryModule {
   getStatus() {
     const metadata = this.crawler ? this.crawler.getMetadata() : null;
     const stats = this.api ? this.api.getStatistics() : null;
-    
+
     return {
       enabled: true,
       initialized: this.isInitialized,
@@ -928,13 +927,16 @@ class RegistryModule {
    */
   async shutdown() {
     this.logger.info('Shutting down Registry module...');
-    
+
     // Stop periodic crawling
     if (this.crawlInterval) {
       clearInterval(this.crawlInterval);
       this.crawlInterval = null;
     }
 
+    if (this.crawler) {
+      this.crawler.shutdown();
+    }
     // Save current data
     if (this.crawler && this.currentData) {
       await this.saveData();
@@ -1103,11 +1105,11 @@ class RegistryModule {
     html += '<h2 class="card-title">Query Information</h2>';
     html += '</div>';
     html += '<div class="card-body">';
-    html += `<p><strong>FHIR Version:</strong> ${this._escapeHtml(fhirVersion)}</p>`;
-    html += `<p><strong>Resource URL:</strong> ${this._escapeHtml(resourceUrl)}</p>`;
-    html += `<p><strong>Registry URL:</strong> <a href="${result['registry-url']}" target="_blank">${this._escapeHtml(result['registry-url'])}</a></p>`;
+    html += `<p><strong>FHIR Version:</strong> ${escape(fhirVersion)}</p>`;
+    html += `<p><strong>Resource URL:</strong> ${escape(resourceUrl)}</p>`;
+    html += `<p><strong>Registry URL:</strong> <a href="${result['registry-url']}" target="_blank">${escape(result['registry-url'])}</a></p>`;
     if (usage) {
-      html += `<p><strong>Usage:</strong> ${this._escapeHtml(usage)}</p>`;
+      html += `<p><strong>Usage:</strong> ${escape(usage)}</p>`;
     }
     html += '</div>';
     html += '</div>';
@@ -1133,10 +1135,10 @@ class RegistryModule {
 
       result.authoritative.forEach(server => {
         html += '<tr>';
-        html += `<td>${this._escapeHtml(server['server-name'])}</td>`;
-        html += `<td><a href="${server.url}" target="_blank">${this._escapeHtml(server.url)}</a></td>`;
+        html += `<td>${escape(server['server-name'])}</td>`;
+        html += `<td><a href="${server.url}" target="_blank">${escape(server.url)}</a></td>`;
         html += `<td>${this.renderSecurityTags(server)}</td>`;
-        html += `<td>${server.access_info ? this._escapeHtml(server.access_info) : ''}</td>`;
+        html += `<td>${server.access_info ? escape(server.access_info) : ''}</td>`;
         html += '</tr>';
       });
 
@@ -1164,16 +1166,18 @@ class RegistryModule {
       html += '<th>URL</th>';
       html += '<th>Security</th>';
       html += '<th>Access Info</th>';
+      html += '<th>Content</th>';
       html += '</tr>';
       html += '</thead>';
       html += '<tbody>';
 
       result.candidates.forEach(server => {
         html += '<tr>';
-        html += `<td>${this._escapeHtml(server['server-name'])}</td>`;
-        html += `<td><a href="${server.url}" target="_blank">${this._escapeHtml(server.url)}</a></td>`;
+        html += `<td>${escape(server['server-name'])}</td>`;
+        html += `<td><a href="${server.url}" target="_blank">${escape(server.url)}</a></td>`;
         html += `<td>${this.renderSecurityTags(server)}</td>`;
-        html += `<td>${server.access_info ? this._escapeHtml(server.access_info) : ''}</td>`;
+        html += `<td>${server.access_info ? escape(server.access_info) : ''}</td>`;
+        html += `<td>${server.content ? escape(server.content) : ''}</td>`;
         html += '</tr>';
       });
 
@@ -1230,7 +1234,7 @@ class RegistryModule {
     html += '<p>';
     html += '<label for="fhirVersion" class="form-label fw-bold">FHIR Version <span class="text-danger">*</span></label>';
     html += `<input type="text" class="form-control" id="fhirVersion" name="fhirVersion" size="8" 
-           value="${this._escapeHtml(fhirVersion)}" required>`;
+           value="${escape(fhirVersion)}" required>`;
     html += '</p>';
     html += '<p class="text-muted small">Examples: R4, 4.0.1, 5.0.0, etc.</p>';
 
@@ -1238,7 +1242,7 @@ class RegistryModule {
     html += '<p>';
     html += '<label for="url" class="form-label fw-bold">Code System URL</label>';
     html += `<input type="url" class="form-control" id="url" name="url" 
-           value="${this._escapeHtml(url)}">`;
+           value="${escape(url)}">`;
     html += '</p>';
     html += '<p class="text-muted small">Example: http://loinc.org</p>';
 
@@ -1246,7 +1250,7 @@ class RegistryModule {
     html += '<p>';
     html += '<label for="valueSet" class="form-label fw-bold">Value Set URL</label>';
     html += `<input type="url" class="form-control" id="valueSet" name="valueSet" 
-           value="${this._escapeHtml(valueSet)}">`;
+           value="${escape(valueSet)}">`;
     html += '</p>';
     html += '<p class="text-muted small">Example: http://hl7.org/fhir/ValueSet/observation-codes</p>';
 
@@ -1382,7 +1386,7 @@ class RegistryModule {
         }
 
         // Format: [time] [LEVEL] message
-        html += `<span style="color: #666;">[${timeDisplay}]</span> <span style="${levelStyle}">[${log.level.toUpperCase()}]</span> ${this._escapeHtml(log.message)}\n`;
+        html += `<span style="color: #666;">[${timeDisplay}]</span> <span style="${levelStyle}">[${log.level.toUpperCase()}]</span> ${escape(log.message)}\n`;
       });
     }
 

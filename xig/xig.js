@@ -15,8 +15,10 @@ const { EventEmitter } = require('events');
 const zlib = require('zlib');
 const htmlServer = require('../library/html-server');
 const folders = require('../library/folder-setup');
+const escape = require('escape-html');
 
 const Logger = require('../library/logger');
+const {describeCron} = require("../library/cron-utilities");
 const xigLog = Logger.getInstance().child({ module: 'xig' });
 
 const router = express.Router();
@@ -69,26 +71,6 @@ function getUpdateHistory() {
   return updateHistory;
 }
 
-// Enhanced HTML escaping
-function escapeHtml(text) {
-  if (typeof text !== 'string') {
-    return String(text);
-  }
-
-  const map = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#x27;',
-    '/': '&#x2F;',
-    '`': '&#x60;',
-    '=': '&#x3D;'
-  };
-
-  return text.replace(/[&<>"'`=/]/g, function(m) { return map[m]; });
-}
-
 // URL validation for external requests
 function validateExternalUrl(url) {
   try {
@@ -117,14 +99,15 @@ function validateExternalUrl(url) {
 
 // Secure SQL query building with parameterized queries
 function buildSecureResourceQuery(queryParams, offset = 0, limit = 50) {
-  const { realm, auth, ver, type, rt, text } = queryParams;
+  const { realm, auth, ver, type, rt, text, pkg, onlyUsed } = queryParams;
 
   let baseQuery = `
       SELECT
           ResourceKey, ResourceType, Type, Kind, Description, PackageKey,
           Realm, Authority, R2, R2B, R3, R4, R4B, R5, R6,
           Id, Url, Version, Status, Date, Name, Title, Content,
-          Supplements, Details, FMM, WG, StandardsStatus, Web
+          Supplements, Details, FMM, WG, StandardsStatus, Web,
+          (SELECT COUNT(*) FROM DependencyList WHERE TargetKey = Resources.ResourceKey) AS UsageCount
       FROM Resources
       WHERE 1=1
   `;
@@ -243,6 +226,17 @@ function buildSecureResourceQuery(queryParams, offset = 0, limit = 50) {
     }
   }
 
+  // Package filter - matches packageId#version containing the search string
+  if (pkg && pkg !== '') {
+    conditions.push('AND PackageKey IN (SELECT PackageKey FROM Packages WHERE (Id || \'#\' || Version) LIKE ?)');
+    params.push(`%${pkg}%`);
+  }
+
+  // Only used filter
+  if (onlyUsed === 'true') {
+    conditions.push('AND EXISTS (SELECT 1 FROM DependencyList WHERE TargetKey = Resources.ResourceKey)');
+  }
+
   // Build final query
   const fullQuery = baseQuery + ' ' + conditions.join(' ') + ' ORDER BY ResourceType, Type, Description LIMIT ? OFFSET ?';
   params.push(limit, offset);
@@ -251,7 +245,7 @@ function buildSecureResourceQuery(queryParams, offset = 0, limit = 50) {
 }
 
 function buildSecureResourceCountQuery(queryParams) {
-  const { realm, auth, ver, type, rt, text } = queryParams;
+  const { realm, auth, ver, type, rt, text, pkg, onlyUsed } = queryParams;
 
   let baseQuery = 'SELECT COUNT(*) as total FROM Resources WHERE 1=1';
   const conditions = [];
@@ -342,6 +336,17 @@ function buildSecureResourceCountQuery(queryParams) {
     }
   }
 
+  // Package filter - matches packageId#version containing the search string
+  if (pkg && pkg !== '') {
+    conditions.push('AND PackageKey IN (SELECT PackageKey FROM Packages WHERE (Id || \'#\' || Version) LIKE ?)');
+    params.push(`%${pkg}%`);
+  }
+
+  // Only used filter
+  if (onlyUsed === 'true') {
+    conditions.push('AND EXISTS (SELECT 1 FROM DependencyList WHERE TargetKey = Resources.ResourceKey)');
+  }
+
   const fullQuery = baseQuery + ' ' + conditions.join(' ');
   return { query: fullQuery, params };
 }
@@ -421,13 +426,13 @@ function buildContentHtml(contentData) {
   let html = '';
 
   if (contentData.message) {
-    html += `<p>${escapeHtml(contentData.message)}</p>`;
+    html += `<p>${escape(contentData.message)}</p>`;
   }
 
   if (contentData.data && Array.isArray(contentData.data)) {
     html += '<ul>';
     contentData.data.forEach(item => {
-      html += `<li>${escapeHtml(item)}</li>`;
+      html += `<li>${escape(item)}</li>`;
     });
     html += '</ul>';
   }
@@ -437,7 +442,7 @@ function buildContentHtml(contentData) {
     if (contentData.table.headers) {
       html += '<thead><tr>';
       contentData.table.headers.forEach(header => {
-        html += `<th>${escapeHtml(header)}</th>`;
+        html += `<th>${escape(header)}</th>`;
       });
       html += '</tr></thead>';
     }
@@ -446,7 +451,7 @@ function buildContentHtml(contentData) {
       contentData.table.rows.forEach(row => {
         html += '<tr>';
         row.forEach(cell => {
-          html += `<td>${escapeHtml(cell)}</td>`;
+          html += `<td>${escape(cell)}</td>`;
         });
         html += '</tr>';
       });
@@ -467,7 +472,7 @@ function sqlEscapeString(str) {
 }
 
 function buildSqlFilter(queryParams) {
-  const { realm, auth, ver, type, rt, text } = queryParams;
+  const { realm, auth, ver, type, rt, text, pkg, onlyUsed } = queryParams;
   let filter = '';
 
   // Realm filter
@@ -573,6 +578,17 @@ function buildSqlFilter(queryParams) {
     }
   }
 
+  // Package filter - matches packageId#version containing the search string
+  if (pkg && pkg !== '') {
+    const escapedPkg = sqlEscapeString(pkg);
+    filter += ` and PackageKey in (select PackageKey from Packages where (Id || '#' || Version) like '%${escapedPkg}%')`;
+  }
+
+  // Only used filter
+  if (onlyUsed === 'true') {
+    filter += ` and exists (select 1 from DependencyList where TargetKey = Resources.ResourceKey)`;
+  }
+
   // Convert to proper WHERE clause
   if (filter !== '') {
     // Remove the first " and " and prepend "WHERE "
@@ -618,7 +634,8 @@ function buildResourceListQuery(queryParams, offset = 0, limit = 50) {
           FMM,
           WG,
           StandardsStatus,
-          Web
+          Web,
+          (SELECT COUNT(*) FROM DependencyList WHERE TargetKey = Resources.ResourceKey) AS UsageCount
       FROM Resources
           ${whereClause}
       ORDER BY ResourceType, Type, Description
@@ -712,9 +729,9 @@ function renderExtension(details) {
     const modifier = parts[1] || '';
     const type = parts[2] || '';
 
-    return `<td>${escapeHtml(context)}</td><td>${escapeHtml(modifier)}</td><td>${escapeHtml(type)}</td>`;
+    return `<td>${escape(context)}</td><td>${escape(modifier)}</td><td>${escape(type)}</td>`;
   } catch (error) {
-    return `<td colspan="3">${escapeHtml(details)}</td>`;
+    return `<td colspan="3">${escape(details)}</td>`;
   }
 }
 
@@ -802,6 +819,7 @@ async function buildResourceTable(queryParams, resourceCount, offset = 0) {
         break;
     }
 
+    parts.push('<th>Usage #</th>');
     parts.push('</tr>');
 
     const resourceRows = await new Promise((resolve, reject) => {
@@ -841,16 +859,16 @@ async function buildResourceTable(queryParams, resourceCount, offset = 0) {
       // Package column
       const packageObj = getPackage(row.PackageKey);
       if (packageObj && packageObj.Web) {
-        parts.push(`<td><a href="${escapeHtml(packageObj.Web)}" target="_blank">${escapeHtml(packageObj.Id)}</a></td>`);
+        parts.push(`<td><a href="${escape(packageObj.Web)}" target="_blank">${escape(packageObj.Id)}</a></td>`);
       } else if (packageObj) {
-        parts.push(`<td>${escapeHtml(packageObj.Id)}</td>`);
+        parts.push(`<td>${escape(packageObj.Id)}</td>`);
       } else {
-        parts.push(`<td>Package ${escapeHtml(String(row.PackageKey))}</td>`);
+        parts.push(`<td>Package ${escape(String(row.PackageKey))}</td>`);
       }
 
       // Version column (if not filtered)
       if (!ver || ver === '') {
-        parts.push(`<td>${escapeHtml(showVersion(row))}</td>`);
+        parts.push(`<td>${escape(showVersion(row))}</td>`);
       }
 
       // Identity column with complex link logic
@@ -864,53 +882,53 @@ async function buildResourceTable(queryParams, resourceCount, offset = 0) {
       }
 
       const identityText = (row.ResourceType + '/').replace(resourceTypePrefix, '') + row.Id;
-      parts.push(`<td><a href="${identityLink}">${escapeHtml(identityText)}</a></td>`);
+      parts.push(`<td><a href="${identityLink}">${escape(identityText)}</a></td>`);
 
       // Name/Title column
       const displayName = row.Title || row.Name || '';
-      parts.push(`<td>${escapeHtml(displayName)}</td>`);
+      parts.push(`<td>${escape(displayName)}</td>`);
 
       // Status column
       if (row.StandardsStatus) {
-        parts.push(`<td>${escapeHtml(row.StandardsStatus || '')}</td>`);
+        parts.push(`<td>${escape(row.StandardsStatus || '')}</td>`);
       } else {
-        parts.push(`<td>${escapeHtml(row.Status || '')}</td>`);
+        parts.push(`<td>${escape(row.Status || '')}</td>`);
       }
 
       // FMM/WG Columns
-      parts.push(`<td>${escapeHtml(row.FMM || '')}</td>`);
-      parts.push(`<td>${escapeHtml(row.WG || '')}</td>`);
+      parts.push(`<td>${escape(row.FMM || '')}</td>`);
+      parts.push(`<td>${escape(row.WG || '')}</td>`);
 
       // Date column
       parts.push(`<td>${formatDate(row.Date)}</td>`);
 
       // Realm column (if not filtered)
       if (!realm || realm === '') {
-        parts.push(`<td>${escapeHtml(row.Realm || '')}</td>`);
+        parts.push(`<td>${escape(row.Realm || '')}</td>`);
       }
 
       // Authority column (if not filtered)
       if (!auth || auth === '') {
-        parts.push(`<td>${escapeHtml(row.Authority || '')}</td>`);
+        parts.push(`<td>${escape(row.Authority || '')}</td>`);
       }
 
       // Type-specific columns
       switch (type) {
         case 'cs': // CodeSystem
           if (row.Supplements && row.Supplements !== '') {
-            parts.push(`<td>Suppl: ${escapeHtml(row.Supplements)}</td>`);
+            parts.push(`<td>Suppl: ${escape(row.Supplements)}</td>`);
           } else {
-            parts.push(`<td>${escapeHtml(row.Content || '')}</td>`);
+            parts.push(`<td>${escape(row.Content || '')}</td>`);
           }
           break;
         case 'rp': // Resource Profiles
           if (!rt || rt === '') {
-            parts.push(`<td>${escapeHtml(row.Type || '')}</td>`);
+            parts.push(`<td>${escape(row.Type || '')}</td>`);
           }
           break;
         case 'dp': // Datatype Profiles
           if (!rt || rt === '') {
-            parts.push(`<td>${escapeHtml(row.Type || '')}</td>`);
+            parts.push(`<td>${escape(row.Type || '')}</td>`);
           }
           break;
         case 'ext': // Extensions
@@ -919,16 +937,20 @@ async function buildResourceTable(queryParams, resourceCount, offset = 0) {
         case 'vs': // ValueSets
         case 'cm': { // ConceptMaps
           const details = (row.Details || '').replace(/,/g, ' ');
-          parts.push(`<td>${escapeHtml(details)}</td>`);
+          parts.push(`<td>${escape(details)}</td>`);
           break;
         }
         case 'lm': { // Logical Models
           const packageCanonical = packageObj ? packageObj.Canonical : '';
           const typeText = (row.Type || '').replace(packageCanonical + 'StructureDefinition/', '');
-          parts.push(`<td>${escapeHtml(typeText)}</td>`);
+          parts.push(`<td>${escape(typeText)}</td>`);
           break;
         }
       }
+
+      // Usage count column
+      const usageCount = row.UsageCount || 0;
+      parts.push(`<td>${usageCount > 0 ? usageCount.toLocaleString() : ''}</td>`);
 
       parts.push('</tr>');
     }
@@ -940,8 +962,131 @@ async function buildResourceTable(queryParams, resourceCount, offset = 0) {
 
   } catch (error) {
     xigLog.error(`Error building resource table: ${error.message}`);
-    return `<p class="text-danger">Error loading resource list: ${escapeHtml(error.message)}</p>`;
+    return `<p class="text-danger">Error loading resource list: ${escape(error.message)}</p>`;
   }
+}
+
+async function fetchResourceRows(queryParams, offset = 0, limit = 200) {
+  const { query: resourceQuery, params: qp } = buildSecureResourceQuery(queryParams, offset, limit);
+  return new Promise((resolve, reject) => {
+    xigDb.all(resourceQuery, qp, (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows || []);
+    });
+  });
+}
+
+function rowToObject(row, queryParams) {
+  const { ver, realm, auth, type, rt } = queryParams;
+  const packageObj = getPackage(row.PackageKey);
+
+  const obj = {
+    package: packageObj ? packageObj.Id : `Package ${row.PackageKey}`,
+    packageWeb: packageObj?.Web || null,
+    resourceType: row.ResourceType,
+    id: row.Id,
+    url: row.Url || null,
+    name: row.Name || null,
+    title: row.Title || null,
+    status: row.StandardsStatus || row.Status || null,
+    fmm: row.FMM || null,
+    wg: row.WG || null,
+    date: formatDate(row.Date),
+    realm: row.Realm || null,
+    authority: row.Authority || null,
+    versions: showVersion(row),
+    usageCount: row.UsageCount || 0
+  };
+
+  // Type-specific fields
+  switch (type) {
+    case 'cs':
+      obj.content = row.Supplements ? `Suppl: ${row.Supplements}` : (row.Content || null);
+      break;
+    case 'rp':
+    case 'dp':
+      obj.type = row.Type || null;
+      break;
+    case 'ext': {
+      const parts = (row.Details || '').split('|');
+      obj.context = parts[0] || null;
+      obj.modifier = parts[1] || null;
+      obj.extensionType = parts[2] || null;
+      break;
+    }
+    case 'vs':
+    case 'cm':
+      obj.sources = (row.Details || '').replace(/,/g, ' ') || null;
+      break;
+    case 'lm': {
+      const packageCanonical = packageObj ? packageObj.Canonical : '';
+      obj.type = (row.Type || '').replace(packageCanonical + 'StructureDefinition/', '');
+      break;
+    }
+  }
+
+  return obj;
+}
+
+async function buildResourceJson(queryParams) {
+  if (!xigDb) return [];
+  const rows = await fetchResourceRows(queryParams, 0, 1000000);
+  return rows.map(row => rowToObject(row, queryParams));
+}
+
+async function buildResourceCsv(queryParams) {
+  if (!xigDb) return '';
+  const { type, ver, realm, auth, rt } = queryParams;
+
+  // Build headers
+  const headers = ['Package'];
+  if (!ver || ver === '') headers.push('Versions');
+  headers.push('ResourceType', 'Id', 'Name/Title', 'Status', 'FMM', 'WG', 'Date');
+  if (!realm || realm === '') headers.push('Realm');
+  if (!auth || auth === '') headers.push('Authority');
+
+  switch (type) {
+    case 'cs': headers.push('Content'); break;
+    case 'rp': if (!rt || rt === '') headers.push('Resource'); break;
+    case 'dp': if (!rt || rt === '') headers.push('DataType'); break;
+    case 'ext': headers.push('Context', 'Modifier', 'Type'); break;
+    case 'vs': case 'cm': headers.push('Sources'); break;
+    case 'lm': headers.push('Type'); break;
+  }
+  headers.push('UsageCount');
+
+  const csvEscape = v => {
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    return s.includes(',') || s.includes('"') || s.includes('\n')
+      ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+
+  const rows = await fetchResourceRows(queryParams, 0, 1000000);
+  const lines = [headers.join(',')];
+
+  for (const row of rows) {
+    const obj = rowToObject(row, queryParams);
+    const cells = [obj.package];
+    if (!ver || ver === '') cells.push(obj.versions);
+    cells.push(obj.resourceType, obj.id, obj.title || obj.name || '', obj.status || '',
+      obj.fmm || '', obj.wg || '', obj.date || '');
+    if (!realm || realm === '') cells.push(obj.realm || '');
+    if (!auth || auth === '') cells.push(obj.authority || '');
+
+    switch (type) {
+      case 'cs': cells.push(obj.content || ''); break;
+      case 'rp': case 'dp': if (!rt || rt === '') cells.push(obj.type || ''); break;
+      case 'ext': cells.push(obj.context || '', obj.modifier || '', obj.extensionType || ''); break;
+      case 'vs': case 'cm': cells.push(obj.sources || ''); break;
+      case 'lm': cells.push(obj.type || ''); break;
+    }
+    cells.push(obj.usageCount);
+
+    lines.push(cells.map(csvEscape).join(','));
+  }
+
+  return lines.join('\r\n');
 }
 
 // Summary Statistics Functions
@@ -980,9 +1125,9 @@ async function buildSummaryStats(queryParams, baseUrl) {
           });
 
           const linkUrl = buildVersionLinkUrl(baseUrl, queryParams, version);
-          html += `<li><a href="${linkUrl}">${escapeHtml(version)}</a>: ${count.toLocaleString()}</li>`;
+          html += `<li><a href="${linkUrl}">${escape(version)}</a>: ${count.toLocaleString()}</li>`;
         } catch (error) {
-          html += `<li>${escapeHtml(version)}: Error</li>`;
+          html += `<li>${escape(version)}: Error</li>`;
         }
       }
       html += '</ul>';
@@ -1015,7 +1160,7 @@ async function buildSummaryStats(queryParams, baseUrl) {
           html += `<li>none: ${count.toLocaleString()}</li>`;
         } else {
           const linkUrl = buildAuthorityLinkUrl(baseUrl, queryParams, authority);
-          html += `<li><a href="${linkUrl}">${escapeHtml(authority)}</a>: ${count.toLocaleString()}</li>`;
+          html += `<li><a href="${linkUrl}">${escape(authority)}</a>: ${count.toLocaleString()}</li>`;
         }
       });
       html += '</ul>';
@@ -1051,7 +1196,7 @@ async function buildSummaryStats(queryParams, baseUrl) {
           c++;
         } else {
           const linkUrl = buildRealmLinkUrl(baseUrl, queryParams, realmCode);
-          html += `<li><a href="${linkUrl}">${escapeHtml(realmCode)}</a>: ${count.toLocaleString()}</li>`;
+          html += `<li><a href="${linkUrl}">${escape(realmCode)}</a>: ${count.toLocaleString()}</li>`;
         }
       });
       if (c > 0) {
@@ -1064,7 +1209,7 @@ async function buildSummaryStats(queryParams, baseUrl) {
   } catch (error) {
     console.error(error);
     xigLog.error(`Error building summary stats: ${error.message}`);
-    html += `<p class="text-warning">Error loading summary statistics: ${escapeHtml(error.message)}</p>`;
+    html += `<p class="text-warning">Error loading summary statistics: ${escape(error.message)}</p>`;
   }
 
   return html;
@@ -1123,9 +1268,9 @@ function makeSelect(selectedValue, optionsList, name = 'rt') {
     }
 
     if (selectedValue === code) {
-      html += `<option value="${escapeHtml(code)}" selected="true">${escapeHtml(display)}</option>`;
+      html += `<option value="${escape(code)}" selected="true">${escape(display)}</option>`;
     } else {
-      html += `<option value="${escapeHtml(code)}">${escapeHtml(display)}</option>`;
+      html += `<option value="${escape(code)}">${escape(display)}</option>`;
     }
   });
 
@@ -1134,19 +1279,19 @@ function makeSelect(selectedValue, optionsList, name = 'rt') {
 }
 
 function buildAdditionalForm(queryParams) {
-  const { ver, realm, auth, type, rt, text } = queryParams;
+  const { ver, realm, auth, type, rt, text, pkg, onlyUsed } = queryParams;
 
   let html = '<form method="GET" action="" style="background-color: #eeeeee; border: 1px black solid; padding: 6px; font-size: 12px; font-family: verdana;">';
 
   // Add hidden inputs to preserve current filter state
   if (ver && ver !== '') {
-    html += `<input type="hidden" name="ver" value="${escapeHtml(ver)}"/>`;
+    html += `<input type="hidden" name="ver" value="${escape(ver)}"/>`;
   }
   if (realm && realm !== '') {
-    html += `<input type="hidden" name="realm" value="${escapeHtml(realm)}"/>`;
+    html += `<input type="hidden" name="realm" value="${escape(realm)}"/>`;
   }
   if (auth && auth !== '') {
-    html += `<input type="hidden" name="auth" value="${escapeHtml(auth)}"/>`;
+    html += `<input type="hidden" name="auth" value="${escape(auth)}"/>`;
   }
 
   // Add type-specific fields
@@ -1160,6 +1305,7 @@ function buildAdditionalForm(queryParams) {
       const profileResources = getCachedSet('profileResources');
       if (profileResources.length > 0) {
         html += 'Type: ' + makeSelect(rt, profileResources) + ' ';
+        html += '<br/>';
       }
       break;
     }
@@ -1168,6 +1314,7 @@ function buildAdditionalForm(queryParams) {
       const profileTypes = getCachedSet('profileTypes');
       if (profileTypes.length > 0) {
         html += 'Type: ' + makeSelect(rt, profileTypes) + ' ';
+        html += '<br/>';
       }
       break;
     }
@@ -1180,6 +1327,7 @@ function buildAdditionalForm(queryParams) {
       const extensionContexts = getCachedSet('extensionContexts');
       if (extensionContexts.length > 0) {
         html += 'Context: ' + makeSelect(rt, extensionContexts) + ' ';
+        html += '<br/>';
       }
       break;
     }
@@ -1189,7 +1337,8 @@ function buildAdditionalForm(queryParams) {
       if (Object.keys(txSources).length > 0) {
         // Convert txSources map to "code=display" format
         const sourceOptions = Object.keys(txSources).map(code => `${code}=${txSources[code]}`);
-        html += 'Source: ' + makeSelect(rt, sourceOptions) + ' ';
+        html += 'Source: ' + makeSelect(rt, sourceOptions, 'rt') + ' ';
+        html += '<br/>';
       }
       break;
     }
@@ -1199,7 +1348,8 @@ function buildAdditionalForm(queryParams) {
       if (Object.keys(txSourcesCM).length > 0) {
         // Convert txSources map to "code=display" format
         const sourceOptionsCM = Object.keys(txSourcesCM).map(code => `${code}=${txSourcesCM[code]}`);
-        html += 'Source: ' + makeSelect(rt, sourceOptionsCM) + ' ';
+        html += 'Source: ' + makeSelect(rt, sourceOptionsCM, 'source') + ' ';
+        html += '<br/>';
       }
       break;
     }
@@ -1208,15 +1358,20 @@ function buildAdditionalForm(queryParams) {
       const resourceTypes = getCachedSet('resourceTypes');
       if (resourceTypes.length > 0) {
         html += 'Type: ' + makeSelect(rt, resourceTypes);
+        html += '<br/>';
       }
       break;
     }
   }
 
-  // Add text search field
-  html += `Text: <input type="text" name="text" value="${escapeHtml(text || '')}" class="" style="width: 200px;"/> `;
 
-  // Add submit button
+  // Add text search field and package filter field
+  html += `Text: <input type="text" name="text" value="${escape(text || '')}" class="" style="width: 200px;"/> `;
+  html += `Package: <input type="text" name="pkg" value="${escape(pkg || '')}" placeholder="e.g. hl7.fhir.us" class="" style="width: 200px;"/> `;
+
+  // Add submit button with 'only used' checkbox immediately before it
+  const onlyUsedChecked = onlyUsed === 'true' ? ' checked' : '';
+  html += `<input type="checkbox" name="onlyUsed" value="true"${onlyUsedChecked}/> Only Show Used `;
   html += '<input type="submit" value="Search" style="color:rgb(89, 137, 241)"/>';
 
   html += '</form>';
@@ -1275,7 +1430,7 @@ function buildPageHeading(queryParams) {
     default:
       // No type selected or unknown type
       if (rt && rt !== '') {
-        heading += `Resources - ${escapeHtml(rt)}`;
+        heading += `Resources - ${escape(rt)}`;
       } else {
         heading += 'Resources - All Kinds';
       }
@@ -1284,15 +1439,15 @@ function buildPageHeading(queryParams) {
 
   // Add additional qualifiers
   if (realm && realm !== '') {
-    heading += `, Realm ${escapeHtml(realm.toUpperCase())}`;
+    heading += `, Realm ${escape(realm.toUpperCase())}`;
   }
 
   if (auth && auth !== '') {
-    heading += `, Authority ${escapeHtml(capitalizeFirst(auth))}`;
+    heading += `, Authority ${escape(capitalizeFirst(auth))}`;
   }
 
   if (ver && ver !== '') {
-    heading += `, Version ${escapeHtml(ver)}`;
+    heading += `, Version ${escape(ver)}`;
   }
 
   heading += '</h2>';
@@ -1329,10 +1484,10 @@ function buildVersionBar(baseUrl, currentParams) {
   const versions = getCachedSet('versions');
   versions.forEach(version => {
     if (version === ver) {
-      html += ` | <b>${escapeHtml(version)}</b>`;
+      html += ` | <b>${escape(version)}</b>`;
     } else {
       const separator = baseUrlWithoutVer.includes('?') ? '&' : '?';
-      html += ` | <a href="${baseUrlWithoutVer}${separator}ver=${encodeURIComponent(version)}">${escapeHtml(version)}</a>`;
+      html += ` | <a href="${baseUrlWithoutVer}${separator}ver=${encodeURIComponent(version)}">${escape(version)}</a>`;
     }
   });
 
@@ -1356,10 +1511,10 @@ function buildAuthorityBar(baseUrl, currentParams) {
   const authorities = getCachedSet('authorities');
   authorities.forEach(authority => {
     if (authority === auth) {
-      html += ` | <b>${escapeHtml(authority)}</b>`;
+      html += ` | <b>${escape(authority)}</b>`;
     } else {
       const separator = baseUrlWithoutAuth.includes('?') ? '&' : '?';
-      html += ` | <a href="${baseUrlWithoutAuth}${separator}auth=${encodeURIComponent(authority)}">${escapeHtml(authority)}</a>`;
+      html += ` | <a href="${baseUrlWithoutAuth}${separator}auth=${encodeURIComponent(authority)}">${escape(authority)}</a>`;
     }
   });
 
@@ -1383,10 +1538,10 @@ function buildRealmBar(baseUrl, currentParams) {
   const realms = getCachedSet('realms');
   realms.forEach(realmCode => {
     if (realmCode === realm) {
-      html += ` | <b>${escapeHtml(realmCode)}</b>`;
+      html += ` | <b>${escape(realmCode)}</b>`;
     } else {
       const separator = baseUrlWithoutRealm.includes('?') ? '&' : '?';
-      html += ` | <a href="${baseUrlWithoutRealm}${separator}realm=${encodeURIComponent(realmCode)}">${escapeHtml(realmCode)}</a>`;
+      html += ` | <a href="${baseUrlWithoutRealm}${separator}realm=${encodeURIComponent(realmCode)}">${escape(realmCode)}</a>`;
     }
   });
 
@@ -1411,10 +1566,10 @@ function buildTypeBar(baseUrl, currentParams) {
   if (typesMap instanceof Map) {
     typesMap.forEach((display, code) => {
       if (code === type) {
-        html += ` | <b>${escapeHtml(display)}</b>`;
+        html += ` | <b>${escape(display)}</b>`;
       } else {
         const separator = baseUrlWithoutType.includes('?') ? '&' : '?';
-        html += ` | <a href="${baseUrlWithoutType}${separator}type=${encodeURIComponent(code)}">${escapeHtml(display)}</a>`;
+        html += ` | <a href="${baseUrlWithoutType}${separator}type=${encodeURIComponent(code)}">${escape(display)}</a>`;
       }
     });
   }
@@ -1471,6 +1626,9 @@ function hasCachedValue(tableName, value) {
   if (cache instanceof Set) {
     return cache.has(value);
   }
+  if (cache instanceof Map) {
+    return cache.has(value);
+  }
   return false;
 }
 
@@ -1519,6 +1677,9 @@ function getMetadata(key) {
 function downloadFile(url, destination, maxRedirects = 5) {
   return new Promise((resolve, reject) => {
     xigLog.info(`Starting download from ${url}`);
+    if (globalStats) {
+      globalStats.task('XIG Download', `Downloading from ${url}`)
+    }
     const downloadMeta = {
       url: url,
       finalUrl: url,
@@ -1564,6 +1725,9 @@ function downloadFile(url, destination, maxRedirects = 5) {
           }
 
           if (response.statusCode !== 200) {
+            if (globalStats) {
+              globalStats.taskError('XIG Download', `Download failed:  ${response.statusCode}`)
+            }
             reject(Object.assign(
               new Error(`Download failed with HTTP ${response.statusCode}`),
               { downloadMeta }
@@ -1574,6 +1738,9 @@ function downloadFile(url, destination, maxRedirects = 5) {
           // Check content length
           const maxSize = 10 * 1024 * 1024 * 1024; // 10GB limit
           if (downloadMeta.contentLength && downloadMeta.contentLength > maxSize) {
+            if (globalStats) {
+              globalStats.taskError('XIG Download', `Download failed: too large`)
+            }
             reject(Object.assign(new Error('File too large'), { downloadMeta }));
             return;
           }
@@ -1584,6 +1751,9 @@ function downloadFile(url, destination, maxRedirects = 5) {
             downloadMeta.downloadedBytes += chunk.length;
             if (downloadMeta.downloadedBytes > maxSize) {
               request.destroy();
+              if (globalStats) {
+                globalStats.taskError('XIG Download', `Download failed: file too large`);
+              }
               fs.unlink(destination, () => {}); // Clean up
               reject(Object.assign(new Error('File too large'), { downloadMeta }));
               return;
@@ -1596,21 +1766,33 @@ function downloadFile(url, destination, maxRedirects = 5) {
             fileStream.close();
             downloadMeta.durationMs = Date.now() - downloadMeta.startTime;
             xigLog.info(`Download completed successfully. Downloaded ${downloadMeta.downloadedBytes} bytes to ${destination}`);
+            if (globalStats) {
+              globalStats.taskDone('XIG Download', `Downloaded ${downloadMeta.downloadedBytes} bytes to ${destination}`);
+            }
             resolve(downloadMeta);
           });
 
           fileStream.on('error', (err) => {
+            if (globalStats) {
+              globalStats.taskError('XIG Download', `Download failed`);
+            }
             fs.unlink(destination, () => {}); // Delete partial file
             reject(Object.assign(err, { downloadMeta }));
           });
         });
 
         request.on('error', (err) => {
+          if (globalStats) {
+            globalStats.taskError('XIG Download', `Download Error`);
+          }
           reject(Object.assign(err, { downloadMeta }));
         });
 
         request.setTimeout(300000, () => { // 5 minutes timeout
           request.destroy();
+          if (globalStats) {
+            globalStats.taskError('XIG Download', `Download Timeout`);
+          }
           reject(Object.assign(new Error('Download timeout after 5 minutes'), { downloadMeta }));
         });
 
@@ -2037,7 +2219,7 @@ function buildStatsTable(statsData) {
     Object.keys(statsData.cache.tables).forEach(tableName => {
       const tableInfo = statsData.cache.tables[tableName];
       html += `<tr>`;
-      html += `<td>Cache: ${escapeHtml(tableName)}</td>`;
+      html += `<td>Cache: ${escape(tableName)}</td>`;
       html += `<td>${tableInfo.size.toLocaleString()}</td>`;
       html += `<td>${tableInfo.type}</td>`;
       html += `</tr>`;
@@ -2058,12 +2240,12 @@ function buildStatsTable(statsData) {
   html += `<tr>`;
   html += `<td>Database File</td>`;
   html += `<td>${(statsData.database.fileSize / 1024 / 1024).toFixed(2)} MB</td>`;
-  html += `<td>${escapeHtml(XIG_DB_PATH)}</td>`;
+  html += `<td>${escape(XIG_DB_PATH)}</td>`;
   html += `</tr>`;
 
   html += `<tr>`;
   html += `<td>Download Source</td>`;
-  html += `<td colspan="2"><code>${escapeHtml(XIG_DB_URL)}</code></td>`;
+  html += `<td colspan="2"><code>${escape(XIG_DB_URL)}</code></td>`;
   html += `</tr>`;
 
   html += `<tr>`;
@@ -2114,13 +2296,13 @@ function buildStatsTable(statsData) {
           detail += ` (HTTP ${entry.downloadMeta.httpStatus})`;
         }
       } else if (entry.status === 'failed') {
-        detail = escapeHtml(entry.error || 'Unknown error');
+        detail = escape(entry.error || 'Unknown error');
         if (entry.downloadMeta) {
           if (entry.downloadMeta.httpStatus) {
             detail += ` (HTTP ${entry.downloadMeta.httpStatus})`;
           }
           if (entry.downloadMeta.finalUrl !== entry.sourceUrl) {
-            detail += `<br>Redirected to: <code>${escapeHtml(entry.downloadMeta.finalUrl)}</code>`;
+            detail += `<br>Redirected to: <code>${escape(entry.downloadMeta.finalUrl)}</code>`;
           }
           if (entry.downloadMeta.downloadedBytes > 0) {
             detail += `<br>Partial download: ${(entry.downloadMeta.downloadedBytes / 1024 / 1024).toFixed(1)} MB`;
@@ -2202,29 +2384,39 @@ function getDatabaseInfo() {
   });
 }
 
+function getRequestedFormat(req) {
+  const fmt = req.query._fmt;
+  if (fmt === 'json') return 'json';
+  if (fmt === 'csv') return 'csv';
+  const accept = req.headers['accept'] || '';
+  if (accept.includes('application/json')) return 'json';
+  if (accept.includes('text/csv')) return 'csv';
+  return 'html';
+}
+
 // Routes
 router.get('/:packagePid/:resourceType/:resourceId', async (req, res) => {
   const start = Date.now();
   try {
 
-  const { packagePid, resourceType, resourceId } = req.params;
+    const { packagePid, resourceType, resourceId } = req.params;
 
-  // Check if this looks like a package/resource pattern
-  // Package PIDs typically contain dots and pipes: hl7.fhir.uv.extensions|current
-  // Resource types are FHIR resource names: StructureDefinition, ValueSet, etc.
+    // Check if this looks like a package/resource pattern
+    // Package PIDs typically contain dots and pipes: hl7.fhir.uv.extensions|current
+    // Resource types are FHIR resource names: StructureDefinition, ValueSet, etc.
 
-  const isPackagePidFormat = packagePid.includes('.') || packagePid.includes('|');
-  const isFhirResourceType = /^[A-Z][a-zA-Z]+$/.test(resourceType);
+    const isPackagePidFormat = packagePid.includes('.') || packagePid.includes('|');
+    const isFhirResourceType = /^[A-Z][a-zA-Z]+$/.test(resourceType);
 
-  if (isPackagePidFormat && isFhirResourceType) {
-    // This looks like a legacy resource URL, redirect to the proper format
-    res.redirect(301, `/xig/resource/${packagePid}/${resourceType}/${resourceId}`);
-  } else {
-    // Not a resource URL pattern, return 404
-    res.status(404).send('Not Found');
-  }
+    if (isPackagePidFormat && isFhirResourceType) {
+      // This looks like a legacy resource URL, redirect to the proper format
+      res.redirect(301, `/xig/resource/${packagePid}/${resourceType}/${resourceId}`);
+    } else {
+      // Not a resource URL pattern, return 404
+      res.status(404).send('Not Found');
+    }
   } finally {
-    this.stats.countRequest(':id', Date.now() - start);
+    globalStats.countRequest(':id', Date.now() - start);
   }
 });
 
@@ -2246,11 +2438,29 @@ router.get('/', async (req, res) => {
         type: req.query.type || '',
         rt: req.query.rt || '',
         text: req.query.text || '',
+        pkg: req.query.pkg || '',
+        onlyUsed: req.query.onlyUsed || '',
         offset: req.query.offset || '0'
       };
 
       // Parse offset for pagination
       const offset = parseInt(queryParams.offset) || 0;
+
+      // ── Format negotiation ──────────────────────────────────────
+      const fmt = getRequestedFormat(req);
+
+      if (fmt === 'json') {
+        const data = await buildResourceJson(queryParams, offset);
+        res.setHeader('Content-Type', 'application/json');
+        return res.send(JSON.stringify(data, null, 2));
+      }
+
+      if (fmt === 'csv') {
+        const csv = await buildResourceCsv(queryParams, offset);
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename="xig-resources.csv"');
+        return res.send(csv);
+      }
 
       // Build control panel
       const controlPanel = buildControlPanel('/xig', queryParams);
@@ -2283,10 +2493,20 @@ router.get('/', async (req, res) => {
       // Build resource count paragraph
       let countParagraph = '<p>';
       if (countError) {
-        countParagraph += `<span class="text-warning">Unable to get resource count: ${escapeHtml(countError)}</span>`;
+        countParagraph += `<span class="text-warning">Unable to get resource count: ${escape(countError)}</span>`;
       } else {
         countParagraph += `${resourceCount.toLocaleString()} resources`;
       }
+      const downloadParams = { ...queryParams };
+      delete downloadParams.offset;
+      const downloadQs = Object.keys(downloadParams)
+        .filter(key => downloadParams[key] && downloadParams[key] !== '')
+        .map(key => `${key}=${encodeURIComponent(downloadParams[key])}`)
+        .join('&');
+      const downloadBase = '/xig' + (downloadQs ? '?' + downloadQs + '&' : '?');
+      countParagraph += ` (<a href="${downloadBase}_fmt=json">JSON</a>`;
+      countParagraph += ` | <a href="${downloadBase}_fmt=csv">CSV</a>)`;
+
       countParagraph += '</p>';
 
       // Build additional form
@@ -2327,74 +2547,74 @@ router.get('/stats', async (req, res) => {
   const start = Date.now();
   try {
 
-  const startTime = Date.now(); // Add this at the very beginning
+    const startTime = Date.now(); // Add this at the very beginning
 
-  try {
+    try {
 
-    const [dbInfo, tableCounts] = await Promise.all([
-      getDatabaseInfo(),
-      getDatabaseTableCounts()
-    ]);
+      const [dbInfo, tableCounts] = await Promise.all([
+        getDatabaseInfo(),
+        getDatabaseTableCounts()
+      ]);
 
-    const statsData = {
-      cache: getCacheStats(),
-      database: dbInfo,
-      databaseAge: getDatabaseAgeInfo(),
-      tableCounts: tableCounts,
-      requests: getRequestStats()
-    };
+      const statsData = {
+        cache: getCacheStats(),
+        database: dbInfo,
+        databaseAge: getDatabaseAgeInfo(),
+        tableCounts: tableCounts,
+        requests: getRequestStats()
+      };
 
-    const content = buildStatsTable(statsData);
+      const content = buildStatsTable(statsData);
 
-    let introContent = '';
-    const lastAttempt = getLastUpdateAttempt();
+      let introContent = '';
+      const lastAttempt = getLastUpdateAttempt();
 
-    if (statsData.databaseAge.daysOld !== null && statsData.databaseAge.daysOld > 1) {
-      introContent += `<div class="alert alert-warning">`;
-      introContent += `<strong>⚠ Database is ${statsData.databaseAge.daysOld} days old.</strong> `;
-      introContent += `Automatic updates are scheduled daily at 2 AM. `;
-      if (lastAttempt) {
-        if (lastAttempt.status === 'failed') {
-          introContent += `<br><strong>Last update attempt failed</strong> at ${new Date(lastAttempt.timestamp).toLocaleString()}: `;
-          introContent += `${escapeHtml(lastAttempt.error || 'Unknown error')}`;
-          if (lastAttempt.downloadMeta && lastAttempt.downloadMeta.httpStatus) {
-            introContent += ` (HTTP ${lastAttempt.downloadMeta.httpStatus})`;
+      if (statsData.databaseAge.daysOld !== null && statsData.databaseAge.daysOld > 1) {
+        introContent += `<div class="alert alert-warning">`;
+        introContent += `<strong>⚠ Database is ${statsData.databaseAge.daysOld} days old.</strong> `;
+        introContent += `Automatic updates are scheduled daily at 2 AM. `;
+        if (lastAttempt) {
+          if (lastAttempt.status === 'failed') {
+            introContent += `<br><strong>Last update attempt failed</strong> at ${new Date(lastAttempt.timestamp).toLocaleString()}: `;
+            introContent += `${escape(lastAttempt.error || 'Unknown error')}`;
+            if (lastAttempt.downloadMeta && lastAttempt.downloadMeta.httpStatus) {
+              introContent += ` (HTTP ${lastAttempt.downloadMeta.httpStatus})`;
+            }
+          } else if (lastAttempt.status === 'success') {
+            introContent += `<br>Last successful update: ${new Date(lastAttempt.timestamp).toLocaleString()} `;
+            introContent += `(file age based on filesystem mtime)`;
           }
-        } else if (lastAttempt.status === 'success') {
-          introContent += `<br>Last successful update: ${new Date(lastAttempt.timestamp).toLocaleString()} `;
-          introContent += `(file age based on filesystem mtime)`;
+        } else {
+          introContent += `<br>No update attempts recorded since server started.`;
         }
-      } else {
-        introContent += `<br>No update attempts recorded since server started.`;
+        introContent += `</div>`;
+      } else if (lastAttempt && lastAttempt.status === 'failed') {
+        // DB is fresh but last attempt failed — still worth showing
+        introContent += `<div class="alert alert-warning">`;
+        introContent += `<strong>Last update attempt failed</strong> at ${new Date(lastAttempt.timestamp).toLocaleString()}: `;
+        introContent += `${escape(lastAttempt.error || 'Unknown error')}`;
+        introContent += `</div>`;
       }
-      introContent += `</div>`;
-    } else if (lastAttempt && lastAttempt.status === 'failed') {
-      // DB is fresh but last attempt failed — still worth showing
-      introContent += `<div class="alert alert-warning">`;
-      introContent += `<strong>Last update attempt failed</strong> at ${new Date(lastAttempt.timestamp).toLocaleString()}: `;
-      introContent += `${escapeHtml(lastAttempt.error || 'Unknown error')}`;
-      introContent += `</div>`;
+
+      if (!statsData.cache.loaded) {
+        introContent += `<div class="alert alert-info">`;
+        introContent += `<strong>Info:</strong> Cache is still loading. Some statistics may be incomplete.`;
+        introContent += `</div>`;
+      }
+
+      const fullContent = introContent + content;
+
+      const stats = await gatherPageStatistics();
+      stats.processingTime = Date.now() - startTime;
+
+      const html = renderPage('FHIR IG Statistics Status', fullContent, stats);
+      res.setHeader('Content-Type', 'text/html');
+      res.send(html);
+
+    } catch (error) {
+      xigLog.error(`Error generating stats page: ${error.message}`);
+      htmlServer.sendErrorResponse(res, 'xig', error);
     }
-
-    if (!statsData.cache.loaded) {
-      introContent += `<div class="alert alert-info">`;
-      introContent += `<strong>Info:</strong> Cache is still loading. Some statistics may be incomplete.`;
-      introContent += `</div>`;
-    }
-
-    const fullContent = introContent + content;
-
-    const stats = await gatherPageStatistics();
-    stats.processingTime = Date.now() - startTime;
-
-    const html = renderPage('FHIR IG Statistics Status', fullContent, stats);
-    res.setHeader('Content-Type', 'text/html');
-    res.send(html);
-
-  } catch (error) {
-    xigLog.error(`Error generating stats page: ${error.message}`);
-    htmlServer.sendErrorResponse(res, 'xig', error);
-  }
   } finally {
     globalStats.countRequest('stats', Date.now() - start);
   }
@@ -2404,56 +2624,56 @@ router.get('/stats', async (req, res) => {
 router.get('/resource/:packagePid/:resourceType/:resourceId', async (req, res) => {
   const start = Date.now();
   try {
-  const startTime = Date.now(); // Add this at the very beginning
-  try {
-    const { packagePid, resourceType, resourceId } = req.params;
+    const startTime = Date.now(); // Add this at the very beginning
+    try {
+      const { packagePid, resourceType, resourceId } = req.params;
 
-    // Convert URL-safe package PID back to database format (| to #)
-    const dbPackagePid = packagePid.replace(/\|/g, '#');
+      // Convert URL-safe package PID back to database format (| to #)
+      const dbPackagePid = packagePid.replace(/\|/g, '#');
 
-    if (!xigDb) {
-      throw new Error('Database not available');
-    }
+      if (!xigDb) {
+        throw new Error('Database not available');
+      }
 
-    // Get package information first
-    const packageObj = getPackageByPid(dbPackagePid);
-    if (!packageObj) {
-      return res.status(404).send(renderPage('Resource Not Found',
-        `<div class="alert alert-danger">Unknown Package: ${escapeHtml(packagePid)}</div>`));
-    }
+      // Get package information first
+      const packageObj = getPackageByPid(dbPackagePid);
+      if (!packageObj) {
+        return res.status(404).send(renderPage('Resource Not Found',
+          `<div class="alert alert-danger">Unknown Package: ${escape(packagePid)}</div>`));
+      }
 
-    // Get resource details
-    const resourceQuery = `
-        SELECT * FROM Resources
-        WHERE PackageKey = ? AND ResourceType = ? AND Id = ?
-    `;
+      // Get resource details
+      const resourceQuery = `
+          SELECT * FROM Resources
+          WHERE PackageKey = ? AND ResourceType = ? AND Id = ?
+      `;
 
-    const resourceData = await new Promise((resolve, reject) => {
-      xigDb.get(resourceQuery, [packageObj.PackageKey, resourceType, resourceId], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
+      const resourceData = await new Promise((resolve, reject) => {
+        xigDb.get(resourceQuery, [packageObj.PackageKey, resourceType, resourceId], (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        });
       });
-    });
 
-    if (!resourceData) {
-      return res.status(404).send(renderPage('Resource Not Found',
-        `<div class="alert alert-danger">Unknown Resource: ${escapeHtml(resourceType)}/${escapeHtml(resourceId)} in package ${escapeHtml(packagePid)}</div>`));
+      if (!resourceData) {
+        return res.status(404).send(renderPage('Resource Not Found',
+          `<div class="alert alert-danger">Unknown Resource: ${escape(resourceType)}/${escape(resourceId)} in package ${escape(packagePid)}</div>`));
+      }
+
+      // Build the resource detail page
+      const content = await buildResourceDetailPage(packageObj, resourceData, req.secure);
+      const title = `${resourceType}/${resourceId}`;
+      const stats = await gatherPageStatistics();
+      stats.processingTime = Date.now() - startTime;
+
+      const html = renderPage(title, content, stats);
+      res.setHeader('Content-Type', 'text/html');
+      res.send(html);
+
+    } catch (error) {
+      xigLog.error(`Error rendering resource detail page: ${error.message}`);
+      htmlServer.sendErrorResponse(res, 'xig', error);
     }
-
-    // Build the resource detail page
-    const content = await buildResourceDetailPage(packageObj, resourceData, req.secure);
-    const title = `${resourceType}/${resourceId}`;
-    const stats = await gatherPageStatistics();
-    stats.processingTime = Date.now() - startTime;
-
-    const html = renderPage(title, content, stats);
-    res.setHeader('Content-Type', 'text/html');
-    res.send(html);
-
-  } catch (error) {
-    xigLog.error(`Error rendering resource detail page: ${error.message}`);
-    htmlServer.sendErrorResponse(res, 'xig', error);
-  }
   } finally {
     globalStats.countRequest(':pid', Date.now() - start);
   }
@@ -2491,7 +2711,7 @@ async function buildResourceDetailPage(packageObj, resourceData, secure = false)
 
   } catch (error) {
     xigLog.error(`Error building resource detail content: ${error.message}`);
-    html += `<div class="alert alert-warning">Error loading some content: ${escapeHtml(error.message)}</div>`;
+    html += `<div class="alert alert-warning">Error loading some content: ${escape(error.message)}</div>`;
   }
 
   return html;
@@ -2503,28 +2723,28 @@ async function buildResourceMetadataTable(packageObj, resourceData) {
 
   // Package
   if (packageObj && packageObj.Web) {
-    html += `<tr><td><strong>Package</strong></td><td><a href="${escapeHtml(packageObj.Web)}" target="_blank">${escapeHtml(packageObj.Id)}</a></td></tr>`;
+    html += `<tr><td><strong>Package</strong></td><td><a href="${escape(packageObj.Web)}" target="_blank">${escape(packageObj.Id)}</a></td></tr>`;
   } else if (packageObj) {
-    html += `<tr><td><strong>Package</strong></td><td>${escapeHtml(packageObj.Id)}</td></tr>`;
+    html += `<tr><td><strong>Package</strong></td><td>${escape(packageObj.Id)}</td></tr>`;
   }
 
   // Type
-  html += `<tr><td><strong>Resource Type</strong></td><td>${escapeHtml(resourceData.ResourceType)}</td></tr>`;
+  html += `<tr><td><strong>Resource Type</strong></td><td>${escape(resourceData.ResourceType)}</td></tr>`;
 
   // Id
-  html += `<tr><td><strong>Id</strong></td><td>${escapeHtml(resourceData.Id)}</td></tr>`;
+  html += `<tr><td><strong>Id</strong></td><td>${escape(resourceData.Id)}</td></tr>`;
 
   // FHIR Versions
   const versions = showVersion(resourceData);
   if (versions.includes(',')) {
-    html += `<tr><td><strong>FHIR Versions</strong></td><td>${escapeHtml(versions)}</td></tr>`;
+    html += `<tr><td><strong>FHIR Versions</strong></td><td>${escape(versions)}</td></tr>`;
   } else {
-    html += `<tr><td><strong>FHIR Version</strong></td><td>${escapeHtml(versions)}</td></tr>`;
+    html += `<tr><td><strong>FHIR Version</strong></td><td>${escape(versions)}</td></tr>`;
   }
 
   // Source
   if (resourceData.Web) {
-    html += `<tr><td><strong>Source</strong></td><td><a href="${escapeHtml(resourceData.Web)}" target="_blank">${escapeHtml(resourceData.Web)}</a></td></tr>`;
+    html += `<tr><td><strong>Source</strong></td><td><a href="${escape(resourceData.Web)}" target="_blank">${escape(resourceData.Web)}</a></td></tr>`;
   }
 
   // Add all other non-empty fields
@@ -2555,7 +2775,7 @@ async function buildResourceMetadataTable(packageObj, resourceData) {
         const expValue = value === '1' ? 'True' : 'False';
         html += `<tr><td><strong>${field.label}</strong></td><td>${expValue}</td></tr>`;
       } else {
-        html += `<tr><td><strong>${field.label}</strong></td><td>${escapeHtml(value)}</td></tr>`;
+        html += `<tr><td><strong>${field.label}</strong></td><td>${escape(value)}</td></tr>`;
       }
     }
   });
@@ -2619,7 +2839,7 @@ async function buildResourceDependencies(resourceData, secure = false) {
       html += await buildExtensionExamplesSection(resourceData.Url);
     }
   } catch (error) {
-    html += `<div class="alert alert-warning">Error loading dependencies: ${escapeHtml(error.message)}</div>`;
+    html += `<div class="alert alert-warning">Error loading dependencies: ${escape(error.message)}</div>`;
   }
 
   return html;
@@ -2662,8 +2882,8 @@ async function buildExtensionExamplesSection(resourceUrl) {
         const versionName = example.Version ? (versionMap[example.Version] || example.Version.toString()) : '';
 
         html += '<tr>';
-        html += `<td><a href="${escapeHtml(example.Url || '')}">${escapeHtml(example.Name || '')}</a></td>`;
-        html += `<td>${escapeHtml(versionName)}</td>`;
+        html += `<td><a href="${escape(example.Url || '')}">${escape(example.Name || '')}</a></td>`;
+        html += `<td>${escape(versionName)}</td>`;
         html += '</tr>';
       });
 
@@ -2673,7 +2893,7 @@ async function buildExtensionExamplesSection(resourceUrl) {
 
   } catch (error) {
     xigLog.error(`Error loading extension examples: ${error.message}`);
-    html += `<div class="alert alert-warning">Error loading extension examples: ${escapeHtml(error.message)}</div>`;
+    html += `<div class="alert alert-warning">Error loading extension examples: ${escape(error.message)}</div>`;
   }
 
   return html;
@@ -2690,10 +2910,13 @@ function buildDependencyTable(dependencies) {
       }
       currentType = dep.ResourceType;
       html += '<table class="table table-bordered">';
-      html += `<tr style="background-color: #eeeeee"><td colspan="2"><strong>${escapeHtml(currentType)}</strong></td></tr>`;
+      html += `<tr style="background-color: #eeeeee"><td colspan="3"><strong>${escape(currentType)}</strong></td></tr>`;
     }
 
     html += '<tr>';
+
+    // Package column
+    html += `<td>${escape(dep.PID || '')}</td>`;
 
     // Build the link to the resource detail page
     const packagePid = dep.PID.replace(/#/g, '|'); // Convert # to | for URL
@@ -2708,15 +2931,15 @@ function buildDependencyTable(dependencies) {
         const parts = displayUrl.split('/');
         displayUrl = parts[parts.length - 1];
       }
-      html += `<td><a href="${resourceUrl}">${escapeHtml(displayUrl)}</a></td>`;
+      html += `<td><a href="${resourceUrl}">${escape(displayUrl)}</a></td>`;
     } else {
       const displayId = dep.ResourceType + '/' + dep.Id;
-      html += `<td><a href="${resourceUrl}">${escapeHtml(displayId)}</a></td>`;
+      html += `<td><a href="${resourceUrl}">${escape(displayId)}</a></td>`;
     }
 
     // Title or Name
     const displayName = dep.Title || dep.Name || '';
-    html += `<td>${escapeHtml(displayName)}</td>`;
+    html += `<td>${escape(displayName)}</td>`;
 
     html += '</tr>';
   });
@@ -2784,7 +3007,7 @@ async function buildResourceNarrative(resourceKey, packageObj) {
 
   } catch (error) {
     xigLog.error(`Error loading narrative: ${error.message}`);
-    html += `<div class="alert alert-warning">Error loading narrative: ${escapeHtml(error.message)}</div>`;
+    html += `<div class="alert alert-warning">Error loading narrative: ${escape(error.message)}</div>`;
   }
 
   return html;
@@ -2833,12 +3056,12 @@ async function buildResourceSource(resourceKey) {
     const formattedJson = JSON.stringify(jsonData, null, 2);
 
     html += '<pre>';
-    html += escapeHtml(formattedJson);
+    html += escape(formattedJson);
     html += '</pre>';
 
   } catch (error) {
     xigLog.error(`Error loading source: ${error.message}`);
-    html += `<div class="alert alert-warning">Error loading source: ${escapeHtml(error.message)}</div>`;
+    html += `<div class="alert alert-warning">Error loading source: ${escape(error.message)}</div>`;
   }
 
   return html;
@@ -2868,27 +3091,27 @@ router.get('/status', async (req, res) => {
   const start = Date.now();
   try {
 
-  try {
-    const dbInfo = await getDatabaseInfo();
-    await res.json({
-      status: 'OK',
-      database: dbInfo,
-      databaseAge: getDatabaseAgeInfo(),
-      downloadUrl: XIG_DB_URL,
-      localPath: XIG_DB_PATH,
-      cache: getCacheStats(),
-      updateInProgress: updateInProgress,
-      lastUpdateAttempt: getLastUpdateAttempt(),
-      updateHistory: getUpdateHistory()
-    });
-  } catch (error) {
-    res.status(500).json({
-      status: 'ERROR',
-      error: error.message,
-      cache: getCacheStats(),
-      updateHistory: getUpdateHistory()
-    });
-  }
+    try {
+      const dbInfo = await getDatabaseInfo();
+      await res.json({
+        status: 'OK',
+        database: dbInfo,
+        databaseAge: getDatabaseAgeInfo(),
+        downloadUrl: XIG_DB_URL,
+        localPath: XIG_DB_PATH,
+        cache: getCacheStats(),
+        updateInProgress: updateInProgress,
+        lastUpdateAttempt: getLastUpdateAttempt(),
+        updateHistory: getUpdateHistory()
+      });
+    } catch (error) {
+      res.status(500).json({
+        status: 'ERROR',
+        error: error.message,
+        cache: getCacheStats(),
+        updateHistory: getUpdateHistory()
+      });
+    }
   } finally {
     globalStats.countRequest('stats', Date.now() - start);
   }
@@ -2923,7 +3146,7 @@ router.post('/update', async (req, res) => {
 
 let globalStats;
 // Initialize the XIG module
-async function initializeXigModule(stats) {
+async function initializeXigModule(stats, xigConfig) {
   try {
     globalStats = stats;
     loadTemplate();
@@ -2937,11 +3160,16 @@ async function initializeXigModule(stats) {
       }, 5000);
     }
 
+    if (globalStats) {
+      globalStats.addTask('XIG Download', describeCron('0 2 * * *'));
+    }
     // Check if auto-update is enabled
     // Note: This assumes we're called only when XIG is enabled
-    cron.schedule('0 2 * * *', () => {
-      updateXigDatabase();
-    });
+    if (xigConfig?.autoUpdate !== false) {
+      cron.schedule('0 2 * * *', () => {
+        updateXigDatabase();
+      });
+    }
 
   } catch (error) {
     xigLog.error(`XIG module initialization failed: ${error.message}`);
@@ -2988,7 +3216,7 @@ module.exports = {
   // Template functions
   renderPage,
   buildContentHtml,
-  escapeHtml,
+  escape,
   loadTemplate,
 
   // Control panel functions

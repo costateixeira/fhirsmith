@@ -19,6 +19,7 @@ const GitHubStrategy = require('passport-github2').Strategy;
 const rateLimit = require('express-rate-limit');
 const lusca = require('lusca');
 const folders = require('../library/folder-setup');
+const escape = require('escape-html');
 
 
 const Logger = require('../library/logger');
@@ -325,6 +326,7 @@ class TokenModule {
     this.log.info('OAuth strategies configured:', configuredStrategies);
   }
 
+  // eslint-disable-next-line no-unused-vars
   async handleOAuthCallback(req, provider, profile, tokens) {
     const email = this.extractEmail(profile);
     const name = this.extractName(profile);
@@ -928,6 +930,7 @@ class TokenModule {
     });
   }
 
+  // eslint-disable-next-line no-unused-vars
   async updateKeyLastUsed(keyId, ip = null) {
     return new Promise((resolve, reject) => {
       this.db.run(
@@ -1004,6 +1007,7 @@ class TokenModule {
   }
 
   async logSecurityEvent(userId, eventType, ip, userAgent, details) {
+    // eslint-disable-next-line no-unused-vars
     return new Promise((resolve, reject) => {
       this.db.run(
         'INSERT INTO security_log (user_id, event_type, ip_address, user_agent, details) VALUES (?, ?, ?, ?, ?)',
@@ -1020,14 +1024,15 @@ class TokenModule {
   }
 
   // Content builders
+  // eslint-disable-next-line no-unused-vars
   buildDashboardContent(user, apiKeys, usageStats) {
     let content = `
       <div class="row mb-4">
         <div class="col-12">
           <div class="d-flex justify-content-between align-items-center">
             <div>
-              <h3>Welcome, ${htmlServer.escapeHtml(user.name)}</h3>
-              <p class="text-muted">Email: ${htmlServer.escapeHtml(user.email)} | Provider: ${htmlServer.escapeHtml(user.provider)}</p>
+              <h3>Welcome, ${escape(user.name)}</h3>
+              <p class="text-muted">Email: ${escape(user.email)} | Provider: ${escape(user.provider)}</p>
             </div>
             <form method="POST" action="/token/logout" class="d-inline">
               <button type="submit" class="btn btn-outline-secondary">Logout</button>
@@ -1126,16 +1131,16 @@ class TokenModule {
         
         content += `
           <tr>
-            <td><strong>${htmlServer.escapeHtml(key.name)}</strong></td>
-            <td><code>${htmlServer.escapeHtml(key.key_prefix)}...</code></td>
-            <td><span class="badge bg-secondary">${htmlServer.escapeHtml(scopes)}</span></td>
+            <td><strong>${escape(key.name)}</strong></td>
+            <td><code>${escape(key.key_prefix)}...</code></td>
+            <td><span class="badge bg-secondary">${escape(scopes)}</span></td>
             <td>${new Date(key.created_at).toLocaleDateString()}</td>
             <td>${lastUsed}</td>
             <td>${expires}</td>
             <td><span class="${statusClass}">${status}</span></td>
             <td>
               ${key.is_active ? 
-                `<button class="btn btn-sm btn-danger" onclick="deleteKey(${key.id}, '${htmlServer.escapeHtml(key.name)}')">Delete</button>` :
+                `<button class="btn btn-sm btn-danger" onclick="deleteKey(${key.id}, '${escape(key.name)}')">Delete</button>` :
                 '<span class="text-muted">-</span>'
               }
             </td>
@@ -1176,7 +1181,7 @@ class TokenModule {
       
       content += `
         <div class="alert alert-danger" role="alert">
-          <strong>Error:</strong> ${htmlServer.escapeHtml(errorMessage)}
+          <strong>Error:</strong> ${escape(errorMessage)}
         </div>
       `;
     }
@@ -1252,7 +1257,7 @@ class TokenModule {
       <!DOCTYPE html>
       <html lang="en">
       <head>
-        <title>${htmlServer.escapeHtml(title)} - FHIR Token Server</title>
+        <title>${escape(title)} - FHIR Token Server</title>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -1263,7 +1268,7 @@ class TokenModule {
           <nav class="mb-4">
             <a href="/" class="text-decoration-none">← Back to Server Home</a>
           </nav>
-          <h1 class="mb-4">${htmlServer.escapeHtml(title)}</h1>
+          <h1 class="mb-4">${escape(title)}</h1>
           ${content}
         </div>
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>

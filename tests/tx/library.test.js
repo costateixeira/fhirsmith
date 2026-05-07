@@ -1,6 +1,6 @@
 const {Library} = require("../../tx/library");
 const path = require("path");
-const {OperationContext} = require("../../tx/operation-context");
+const {OperationContext, debugLog} = require("../../tx/operation-context");
 const {Languages} = require("../../library/languages");
 
 const NO_LOAD_TEST = true;
@@ -69,7 +69,7 @@ describe('Provider Test', () => {
         }
 
       } catch (error) {
-        console.log(error);
+        debugLog(error);
         failureCount++;
         failures.push(`${key}: ${error.message}`);
         console.log(`✗ Error creating provider for ${key}: ${error.message}`);

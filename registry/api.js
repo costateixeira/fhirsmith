@@ -1,6 +1,7 @@
 // Enhanced registry-api.js with resolver and HTML rendering functions
 
 const { ServerRegistryUtilities } = require('./model');
+const escape = require('escape-html');
 
 class RegistryAPI {
   constructor(crawler) {
@@ -22,57 +23,52 @@ class RegistryAPI {
     const rows = [];
     const data = this.crawler.getData();
 
-    // Lock for thread safety during read
-    data.lock('buildRowsCS');
-    try {
-      data.registries.forEach(registry => {
-        if (registryCode && registry.code !== registryCode) return;
+    data.registries.forEach(registry => {
+      if (registryCode && registry.code !== registryCode) return;
 
-        registry.servers.forEach(server => {
-          if (serverCode && server.code !== serverCode) return;
+      registry.servers.forEach(server => {
+        if (serverCode && server.code !== serverCode) return;
 
-          // Check if server is authoritative for this code system
-          const isAuth = codeSystem ? ServerRegistryUtilities.hasMatchingCodeSystem(
-            codeSystem,
-            server.authCSList,
-            true // support wildcards
-          ) : false;
+        // Check if server is authoritative for this code system
+        const isAuth = codeSystem ? ServerRegistryUtilities.hasMatchingCodeSystem(
+          codeSystem,
+          server.authCSList,
+          true, // support wildcards,
+            false // allow version matching
+        ) : false;
 
-          server.versions.forEach(versionInfo => {
-            if (version && !ServerRegistryUtilities.versionMatches(version, versionInfo.version)) {
-              return;
-            }
+        server.versions.forEach(versionInfo => {
+          if (version && !ServerRegistryUtilities.versionMatches(version, versionInfo.version)) {
+            return;
+          }
 
-            // Always skip servers with errors - they can't serve requests
-            if (versionInfo.error) {
-              return;
-            }
+          // Always skip servers with errors - they can't serve requests
+          if (versionInfo.error) {
+            return;
+          }
 
-            // Include if:
-            // 1. Authoritative for the requested code system
-            // 2. No filter specified
-            // 3. Has the code system in its list
-            if (isAuth ||
-              !codeSystem ||
-              (codeSystem && ServerRegistryUtilities.hasMatchingCodeSystem(
-                codeSystem,
-                versionInfo.codeSystems,
-                false // no wildcards for actual content
-              ))) {
-              const row = ServerRegistryUtilities.createRow(
-                registry,
-                server,
-                versionInfo,
-                isAuth
-              );
-              rows.push(row);
-            }
-          });
+          // Include if:
+          // 1. Authoritative for the requested code system
+          // 2. No filter specified
+          // 3. Has the code system in its list
+          if (isAuth ||
+            !codeSystem ||
+            (codeSystem && ServerRegistryUtilities.hasMatchingCodeSystem(
+              codeSystem,
+              versionInfo.codeSystems,
+              false // no wildcards for actual content
+            ))) {
+            const row = ServerRegistryUtilities.createRow(
+              registry,
+              server,
+              versionInfo,
+              isAuth
+            );
+            rows.push(row);
+          }
         });
       });
-    } finally {
-      data.unlock();
-    }
+    });
 
     return this._sortAndRankRows(rows);
   }
@@ -92,70 +88,65 @@ class RegistryAPI {
     const rows = [];
     const data = this.crawler.getData();
 
-    data.lock('buildRowsVS');
-    try {
-      data.registries.forEach(registry => {
-        if (registryCode && registry.code !== registryCode) return;
+    data.registries.forEach(registry => {
+      if (registryCode && registry.code !== registryCode) return;
 
-        registry.servers.forEach(server => {
-          if (serverCode && server.code !== serverCode) return;
+      registry.servers.forEach(server => {
+        if (serverCode && server.code !== serverCode) return;
 
-          // Check if server is authoritative for this value set
-          const isAuth = valueSet ? ServerRegistryUtilities.hasMatchingValueSet(
-            valueSet,
-            server.authVSList,
-            true // support wildcards
-          ) : false;
+        // Check if server is authoritative for this value set
+        const isAuth = valueSet ? ServerRegistryUtilities.hasMatchingValueSet(
+          valueSet,
+          server.authVSList,
+          true // support wildcards
+        ) : false;
 
-          server.versions.forEach(versionInfo => {
-            if (version && !ServerRegistryUtilities.versionMatches(version, versionInfo.version)) {
-              return;
-            }
+        server.versions.forEach(versionInfo => {
+          if (version && !ServerRegistryUtilities.versionMatches(version, versionInfo.version)) {
+            return;
+          }
 
-            // Always skip servers with errors - they can't serve requests
-            if (versionInfo.error) {
-              return;
-            }
+          // Always skip servers with errors - they can't serve requests
+          if (versionInfo.error) {
+            return;
+          }
 
-            // Include if:
-            // 1. No filter specified
-            // 2. Authoritative for the value set (even via wildcard)
-            // 3. Has the value set in its list
-            let includeRow = false;
+          // Include if:
+          // 1. No filter specified
+          // 2. Authoritative for the value set (even via wildcard)
+          // 3. Has the value set in its list
+          let includeRow = false;
 
-            if (!valueSet) {
-              // No filter, include all working servers
+          if (!valueSet) {
+            // No filter, include all working servers
+            includeRow = true;
+          } else {
+            // Check if actually has the value set
+            const hasValueSet = ServerRegistryUtilities.hasMatchingValueSet(
+              valueSet,
+              versionInfo.valueSets,
+              false // no wildcards for actual content
+            );
+
+            // Include if authoritative OR has the value set
+            // This matches the Pascal logic: if auth or hasMatchingValueSet
+            if (isAuth || hasValueSet) {
               includeRow = true;
-            } else {
-              // Check if actually has the value set
-              const hasValueSet = ServerRegistryUtilities.hasMatchingValueSet(
-                valueSet,
-                versionInfo.valueSets,
-                false // no wildcards for actual content
-              );
-
-              // Include if authoritative OR has the value set
-              // This matches the Pascal logic: if auth or hasMatchingValueSet
-              if (isAuth || hasValueSet) {
-                includeRow = true;
-              }
             }
+          }
 
-            if (includeRow) {
-              const row = ServerRegistryUtilities.createRow(
-                registry,
-                server,
-                versionInfo,
-                isAuth
-              );
-              rows.push(row);
-            }
-          });
+          if (includeRow) {
+            const row = ServerRegistryUtilities.createRow(
+              registry,
+              server,
+              versionInfo,
+              isAuth
+            );
+            rows.push(row);
+          }
         });
       });
-    } finally {
-      data.unlock();
-    }
+    });
 
     return this._sortAndRankRows(rows);
   }
@@ -253,7 +244,7 @@ class RegistryAPI {
             workingVersions++;
           }
 
-          version.codeSystems.forEach(cs => totalCodeSystems.add(cs));
+          version.codeSystems.forEach(cs => totalCodeSystems.add(cs.uri+(cs.version ? '|'+cs.version : '')));
           version.valueSets.forEach(vs => totalValueSets.add(vs));
         });
       });
@@ -408,19 +399,52 @@ class RegistryAPI {
     const matchedServers = [];
     const data = this.crawler.getData();
 
-    // Extract base code system URL (before any pipe)
-    let baseCodeSystem = codeSystem;
-    if (codeSystem.includes('|')) {
-      baseCodeSystem = codeSystem.substring(0, codeSystem.indexOf('|'));
-    }
+    data.registries.forEach(registry => {
+      registry.servers.forEach(server => {
+        let added = false;
 
-    // Lock for thread safety during read
-    data.lock('resolveCS');
-    try {
+        // Check if server supports the requested usage tag
+        if (server.usageList.length === 0 ||
+          (usage && server.usageList.includes(usage))) {
+
+          // Check if server is authoritative for this code system
+          const isAuth = server.isAuthCS(codeSystem);
+
+          server.versions.forEach(version => {
+            if (ServerRegistryUtilities.versionMatches(normalizedVersion, version.version)) {
+              // Check if the server has the code system
+              // Test against both the full URL and the base URL
+              let content = {};
+              const hasMatchingCS =
+                // ServerRegistryUtilities.hasMatchingCodeSystem(baseCodeSystem, version.codeSystems, false, content) ||
+                // (baseCodeSystem !== codeSystem &&
+                  ServerRegistryUtilities.hasMatchingCodeSystem(codeSystem, version.codeSystems, false, content,
+                      // we don't want cross version matching at this point for SNOMED. If a version is specified, we want a match
+                      // to be decided: what about other code systems?
+                      codeSystem.includes("snomed"));
+
+              if (hasMatchingCS) {
+                if (isAuth) {
+                  result.authoritative.push(this.createServerEntry(server, version));
+                } else if (!authoritativeOnly) {
+                  result.candidates.push(this.createServerEntry(server, version, content.content));
+                }
+                added = true;
+              }
+            }
+          });
+
+          if (added) {
+            matchedServers.push(server.code);
+          }
+        }
+      });
+    });
+
+    // NEW: Fallback - if no matches found, check for authoritative pattern matches
+    if (result.authoritative.length === 0 && result.candidates.length === 0) {
       data.registries.forEach(registry => {
         registry.servers.forEach(server => {
-          let added = false;
-
           // Check if server supports the requested usage tag
           if (server.usageList.length === 0 ||
             (usage && server.usageList.includes(usage))) {
@@ -428,64 +452,23 @@ class RegistryAPI {
             // Check if server is authoritative for this code system
             const isAuth = server.isAuthCS(codeSystem);
 
-            server.versions.forEach(version => {
-              if (ServerRegistryUtilities.versionMatches(normalizedVersion, version.version)) {
-                // Check if the server has the code system
-                // Test against both the full URL and the base URL
-                const hasMatchingCS =
-                  ServerRegistryUtilities.hasMatchingCodeSystem(baseCodeSystem, version.codeSystems, false) ||
-                  (baseCodeSystem !== codeSystem &&
-                    ServerRegistryUtilities.hasMatchingCodeSystem(codeSystem, version.codeSystems, false));
-
-                if (hasMatchingCS) {
-                  if (isAuth) {
-                    result.authoritative.push(this.createServerEntry(server, version));
-                  } else if (!authoritativeOnly) {
-                    result.candidates.push(this.createServerEntry(server, version));
+            if (isAuth) {
+              server.versions.forEach(version => {
+                if (ServerRegistryUtilities.versionMatches(normalizedVersion, version.version)) {
+                  result.authoritative.push(this.createServerEntry(server, version));
+                  if (!matchedServers.includes(server.code)) {
+                    matchedServers.push(server.code);
                   }
-                  added = true;
                 }
-              }
-            });
-
-            if (added) {
-              matchedServers.push(server.code);
+              });
             }
           }
         });
       });
-
-      // NEW: Fallback - if no matches found, check for authoritative pattern matches
-      if (result.authoritative.length === 0 && result.candidates.length === 0) {
-        data.registries.forEach(registry => {
-          registry.servers.forEach(server => {
-            // Check if server supports the requested usage tag
-            if (server.usageList.length === 0 ||
-              (usage && server.usageList.includes(usage))) {
-
-              // Check if server is authoritative for this code system
-              const isAuth = server.isAuthCS(codeSystem);
-
-              if (isAuth) {
-                server.versions.forEach(version => {
-                  if (ServerRegistryUtilities.versionMatches(normalizedVersion, version.version)) {
-                    result.authoritative.push(this.createServerEntry(server, version));
-                    if (!matchedServers.includes(server.code)) {
-                      matchedServers.push(server.code);
-                    }
-                  }
-                });
-              }
-            }
-          });
-        });
-      }
-    } finally {
-      data.unlock();
     }
 
     return {
-      result : this._cleanEmptyArrays(result),
+      result: this._cleanEmptyArrays(result),
       matches: matchedServers.length > 0 ? matchedServers.join(',') : '--'
     };
   }
@@ -521,50 +504,45 @@ class RegistryAPI {
     }
 
     // Lock for thread safety during read
-    data.lock('resolveVS');
-    try {
-      data.registries.forEach(registry => {
-        registry.servers.forEach(server => {
-          let added = false;
+    data.registries.forEach(registry => {
+      registry.servers.forEach(server => {
+        let added = false;
 
-          // Check if server supports the requested usage tag
-          if (server.usageList.length === 0 ||
-            (usage && server.usageList.includes(usage))) {
+        // Check if server supports the requested usage tag
+        if (server.usageList.length === 0 ||
+          (usage && server.usageList.includes(usage))) {
 
-            // Check if server is authoritative for this value set
-            const isAuth = server.isAuthVS(baseValueSet);
+          // Check if server is authoritative for this value set
+          const isAuth = server.isAuthVS(baseValueSet);
 
-              server.versions.forEach(version => {
-                if (ServerRegistryUtilities.versionMatches(normalizedVersion, version.version)) {
-                  // For authoritative servers, we don't need to check if they have the value set
-                  if (isAuth) {
-                    result.authoritative.push(this.createServerEntry(server, version));
-                    added = true;
-                  }
-                  // For non-authoritative servers, check if they have the value set
-                  else if (ServerRegistryUtilities.hasMatchingValueSet(baseValueSet, version.valueSets, false) ||
-                    (baseValueSet !== valueSet &&
-                      ServerRegistryUtilities.hasMatchingValueSet(valueSet, version.valueSets, false))) {
-                    if (!authoritativeOnly) {
-                      result.candidates.push(this.createServerEntry(server, version));
-                    }
-                    added = true;
-                  }
+          server.versions.forEach(version => {
+            if (ServerRegistryUtilities.versionMatches(normalizedVersion, version.version)) {
+              // For authoritative servers, we don't need to check if they have the value set
+              if (isAuth) {
+                result.authoritative.push(this.createServerEntry(server, version));
+                added = true;
+              }
+              // For non-authoritative servers, check if they have the value set
+              else if (ServerRegistryUtilities.hasMatchingValueSet(baseValueSet, version.valueSets, false) ||
+                (baseValueSet !== valueSet &&
+                  ServerRegistryUtilities.hasMatchingValueSet(valueSet, version.valueSets, false))) {
+                if (!authoritativeOnly) {
+                  result.candidates.push(this.createServerEntry(server, version));
                 }
-              });
-
-            if (added) {
-              matchedServers.push(server.code);
+                added = true;
+              }
             }
+          });
+
+          if (added) {
+            matchedServers.push(server.code);
           }
-        });
+        }
       });
-    } finally {
-      data.unlock();
-    }
+    });
 
     return {
-      result : this._cleanEmptyArrays(result),
+      result: this._cleanEmptyArrays(result),
       matches: matchedServers.length > 0 ? matchedServers.join(',') : '--'
     };
   }
@@ -596,6 +574,9 @@ class RegistryAPI {
     }
     if (server.accessInfo) {
       entry.access_info = server.accessInfo;
+    }
+    if (version.content) {
+      entry.content = version.content;
     }
 
     return entry;
@@ -631,19 +612,19 @@ class RegistryAPI {
       html += '<tr>\n';
       
       if (!regCode) {
-        html += `<td><a href="${path}&registry=${row['registry-code']}">${this._escapeHtml(row['registry-name'])}</a></td>\n`;
+        html += `<td><a href="${path}&registry=${row['registry-code']}">${escape(row['registry-name'])}</a></td>\n`;
       }
       if (!serverCode) {
-        html += `<td><a href="${path}&server=${row['server-code']}">${this._escapeHtml(row['server-name'])}</a></td>\n`;
+        html += `<td><a href="${path}&server=${row['server-code']}">${escape(row['server-name'])}</a></td>\n`;
       }
       if (!versionCode) {
         html += `<td><a href="${path}&fhirVersion=${row.fhirVersion}">${row.fhirVersion}</a></td>\n`;
       }
       
-      html += `<td><a href="${this._escapeHtml(row.url)}">${this._escapeHtml(row.url)}</a></td>\n`;
+      html += `<td><a href="${escape(row.url)}">${escape(row.url)}</a></td>\n`;
       
       if (row.error) {
-        html += `<td><span style="color: maroon">Error: ${this._escapeHtml(row.error)}</span> Last OK ${this._formatDuration(row['last-success'])} ago</td>\n`;
+        html += `<td><span style="color: maroon">Error: ${escape(row.error)}</span> Last OK ${this._formatDuration(row['last-success'])} ago</td>\n`;
       } else {
         html += `<td>Last OK ${this._formatDuration(row['last-success'])} ago</td>\n`;
       }
@@ -673,20 +654,20 @@ class RegistryAPI {
     const data = this.crawler.getData();
     let html = '<table class="grid">';
     
-    html += `<tr><td width="130px"><img src="/assets/images/tx-registry-root.gif">&nbsp;Registries</td><td>${data.address} (${this._escapeHtml(data.outcome)})</td></tr>`;
+    html += `<tr><td width="130px"><img src="/assets/images/tx-registry-root.gif">&nbsp;Registries</td><td>${data.address} (${escape(data.outcome)})</td></tr>`;
     
     data.registries.forEach(registry => {
       if (registry.error) {
-        html += `<tr><td title="${this._escapeHtml(registry.name)}">&nbsp;<img src="/assets/images/tx-registry.png">&nbsp;${registry.code}</td><td><a href="${this._escapeHtml(registry.address)}">${this._escapeHtml(registry.address)}</a>. Error: ${this._escapeHtml(registry.error)}</td></tr>`;
+        html += `<tr><td title="${escape(registry.name)}">&nbsp;<img src="/assets/images/tx-registry.png">&nbsp;${registry.code}</td><td><a href="${escape(registry.address)}">${escape(registry.address)}</a>. Error: ${escape(registry.error)}</td></tr>`;
       } else {
-        html += `<tr><td title="${this._escapeHtml(registry.name)}">&nbsp;&nbsp;<img src="/assets/images/tx-registry.png">&nbsp;${registry.code}</td><td><a href="${this._escapeHtml(registry.address)}">${this._escapeHtml(registry.address)}</a></td></tr>`;
+        html += `<tr><td title="${escape(registry.name)}">&nbsp;&nbsp;<img src="/assets/images/tx-registry.png">&nbsp;${registry.code}</td><td><a href="${escape(registry.address)}">${escape(registry.address)}</a></td></tr>`;
       }
       
       registry.servers.forEach(server => {
         if (server.authCSList.length > 0 || server.authVSList.length > 0 || server.usageList.length > 0) {
-          html += `<tr><td title="${this._escapeHtml(server.name)}">&nbsp;&nbsp;&nbsp;&nbsp;<img src="/assets/images/tx-server.png">&nbsp;${server.code}</td><td><a href="${this._escapeHtml(server.address)}">${this._escapeHtml(server.address)}</a>. ${server.description}</td></tr>`;
+          html += `<tr><td title="${escape(server.name)}">&nbsp;&nbsp;&nbsp;&nbsp;<img src="/assets/images/tx-server.png">&nbsp;${server.code}</td><td><a href="${escape(server.address)}">${escape(server.address)}</a>. ${server.description}</td></tr>`;
         } else {
-          html += `<tr><td title="${this._escapeHtml(server.name)}">&nbsp;&nbsp;&nbsp;&nbsp;<img src="/assets/images/tx-server.png">&nbsp;${server.code}</td><td><a href="${this._escapeHtml(server.address)}">${this._escapeHtml(server.address)}</a></td></tr>`;
+          html += `<tr><td title="${escape(server.name)}">&nbsp;&nbsp;&nbsp;&nbsp;<img src="/assets/images/tx-server.png">&nbsp;${server.code}</td><td><a href="${escape(server.address)}">${escape(server.address)}</a></td></tr>`;
         }
         
         server.versions.forEach(version => {
@@ -694,7 +675,7 @@ class RegistryAPI {
           const versionParts = version.version.split('.');
           const majorMinor = versionParts.slice(0, 2).join('.');
           
-          html += `<tr><td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/assets/images/tx-version.png">&nbsp;v${majorMinor}</td><td><a href="${this._escapeHtml(version.address)}">${this._escapeHtml(version.address)}</a>. Status: ${this._escapeHtml(version.details)}. ${version.codeSystems.length} CodeSystems, ${version.valueSets.length} ValueSets</td></tr>`;
+          html += `<tr><td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<img src="/assets/images/tx-version.png">&nbsp;v${majorMinor}</td><td><a href="${escape(version.address)}">${escape(version.address)}</a>. Status: ${escape(version.details)}. ${version.codeSystems.length} CodeSystems, ${version.valueSets.length} ValueSets</td></tr>`;
         });
       });
     });

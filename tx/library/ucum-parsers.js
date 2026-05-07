@@ -10,6 +10,7 @@ const {
   BaseUnit, DefinedUnit, Prefix, Value, Term, Symbol, Factor, Canonical, CanonicalUnit,
   Registry
 } = require('./ucum-types.js');
+const regexUtilities = require("../../library/regex-utilities");
 
 // Lexer for tokenizing UCUM expressions (port of Lexer.java)
 class Lexer {
@@ -763,7 +764,7 @@ class Search {
 
     if (isRegex) {
       try {
-        const regex = new RegExp(text);
+        const regex = regexUtilities.compile(text);
         return regex.test(value);
       } catch (e) {
         this.log.error(e);

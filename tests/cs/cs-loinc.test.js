@@ -5,12 +5,13 @@ const { LoincDataMigrator } = require('../../tx/importers/import-loinc.module');
 const { LoincServices, LoincServicesFactory, LoincProviderContext } = require('../../tx/cs/cs-loinc');
 const { OperationContext } = require('../../tx/operation-context');
 const {validateParameter} = require("../../library/utilities");
-const {Designations} = require("../../tx/library/designations");
+const {Designations, SearchFilterText} = require("../../tx/library/designations");
 const {TestUtilities} = require("../test-utilities");
+const folders = require('../../library/folder-setup');
 
 describe('LOINC Module Import', () => {
   const testSourceDir = path.resolve(__dirname, '../../tx/data/loinc');
-  const testDbPath = path.resolve(__dirname, '../../data/loinc-testing.db');
+  const testDbPath = folders.ensureFilePath('loinc-testing.db');
 
   beforeAll(() => {
     // Ensure data directory exists
@@ -525,6 +526,18 @@ describe('LOINC Provider', () => {
       }
     });
 
+    test('should not throw when display lookup runs with non-English context', async () => {
+      const ptContext = new OperationContext('pt-BR', opContext.i18n);
+      const ptProvider = await factory.build(ptContext, []);
+
+      try {
+        const testCode = expectedResults.basic.knownCodes[0];
+        await expect(ptProvider.display(testCode)).resolves.toBeDefined();
+      } finally {
+        ptProvider.close();
+      }
+    });
+
     test('should return correct code for context', async () => {
       const testCode = expectedResults.basic.knownCodes[0];
       const result = await provider.locate(testCode);
@@ -605,6 +618,7 @@ describe('LOINC Provider', () => {
         const filterContext = await provider.getPrepContext(true);
         await provider.filter(
           filterContext,
+          true,
           testCase.property,
           testCase.operator,
           testCase.value
@@ -644,6 +658,7 @@ describe('LOINC Provider', () => {
         const filterContext = await provider.getPrepContext(true);
         await provider.filter(
           filterContext,
+          true,
           testCase.property,
           testCase.operator,
           testCase.value
@@ -681,6 +696,7 @@ describe('LOINC Provider', () => {
         const filterContext = await provider.getPrepContext(true);
         await provider.filter(
           filterContext,
+          true,
           testCase.property,
           testCase.operator,
           testCase.value
@@ -716,6 +732,7 @@ describe('LOINC Provider', () => {
         const filterContext = await provider.getPrepContext(true);
         await provider.filter(
           filterContext,
+          true,
           'CLASSTYPE',
           '=',
           testCase.value
@@ -740,6 +757,7 @@ describe('LOINC Provider', () => {
         const filterContext = await provider.getPrepContext(true);
         await provider.filter(
           filterContext,
+          true,
           'concept',
           testCase.operator,
           testCase.value
@@ -766,6 +784,7 @@ describe('LOINC Provider', () => {
         const filterContext = await provider.getPrepContext(true);
         await provider.filter(
           filterContext,
+          true,
           'STATUS',
           '=',
           testCase.value
@@ -787,6 +806,7 @@ describe('LOINC Provider', () => {
         const filterContext = await provider.getPrepContext(true);
         await provider.filter(
           filterContext,
+          true,
           'copyright',
           '=',
           testCase.value
@@ -800,6 +820,15 @@ describe('LOINC Provider', () => {
         // console.log(`✓ Copyright filter "${testCase.value}": ${size} results`);
       }
     });
+
+    test('should support text filtering', async () => {
+      const filterContext = await provider.getPrepContext(true);
+      await provider.searchFilter(filterContext, new SearchFilterText('Bilirubin'), true);
+      const filters = await provider.executeFilters(filterContext);
+      const filter = filters[0];
+      const size = await provider.filterSize(filterContext, filter);
+      expect(size).toBeGreaterThanOrEqual(0);
+    });
   });
 
   describe('Filter Operations', () => {
@@ -808,6 +837,7 @@ describe('LOINC Provider', () => {
       const filterContext = await provider.getPrepContext(false);
       await provider.filter(
         filterContext,
+        true,
         testCase.property,
         testCase.operator,
         testCase.value
@@ -831,6 +861,7 @@ describe('LOINC Provider', () => {
       const filterContext = await provider.getPrepContext(true);
       await provider.filter(
         filterContext,
+        true,
         testCase.property,
         testCase.operator,
         testCase.value
@@ -854,6 +885,7 @@ describe('LOINC Provider', () => {
       const filterContext = await provider.getPrepContext(true);
       await provider.filter(
         filterContext,
+        true,
         testCase.property,
         testCase.operator,
         testCase.value
@@ -932,7 +964,7 @@ describe('LOINC Provider', () => {
       const filterContext = await provider.getPrepContext(true);
 
       await expect(
-        provider.filter(filterContext, 'unsupported', '=', 'value')
+        provider.filter(filterContext, true, 'unsupported', '=', 'value')
       ).rejects.toThrow('not supported');
     });
 

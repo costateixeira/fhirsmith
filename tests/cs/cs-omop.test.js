@@ -312,7 +312,7 @@ describe('OMOP Provider', () => {
         const testDomain = testData.domains[0];
         const filterContext = await provider.getPrepContext(true);
 
-        await provider.filter(filterContext, 'domain', '=', testDomain);
+        await provider.filter(filterContext, true, 'domain', '=', testDomain);
         const filters = await provider.executeFilters(filterContext);
         const filter = filters[0];
 
@@ -348,7 +348,7 @@ describe('OMOP Provider', () => {
         const filterContext = await provider.getPrepContext(true);
 
         try {
-          await provider.filter(filterContext, 'domain', '=', domain);
+          await provider.filter(filterContext, true, 'domain', '=', domain);
           const filters = await provider.executeFilters(filterContext);
           const filter = filters[0];
 
@@ -372,7 +372,7 @@ describe('OMOP Provider', () => {
 
         if (concept && concept.domain) {
           const filterContext = await provider.getPrepContext(true);
-          await provider.filter(filterContext, 'domain', '=', concept.domain);
+          await provider.filter(filterContext, true, 'domain', '=', concept.domain);
           const filters = await provider.executeFilters(filterContext);
           const filter = filters[0];
 
@@ -389,7 +389,7 @@ describe('OMOP Provider', () => {
     test('should have closed filters', async () => {
       if (testData.domains.length > 0) {
         const filterContext = await provider.getPrepContext(true);
-        await provider.filter(filterContext, 'domain', '=', testData.domains[0]);
+        await provider.filter(filterContext, true, 'domain', '=', testData.domains[0]);
 
         const notClosed = await provider.filtersNotClosed(filterContext);
         expect(notClosed).toBe(false);
@@ -483,7 +483,7 @@ describe('OMOP Provider', () => {
       const filterContext = await provider.getPrepContext(true);
 
       await expect(
-        provider.filter(filterContext, 'unsupported', '=', 'value')
+        provider.filter(filterContext, true, 'unsupported', '=', 'value')
       ).rejects.toThrow('not understood');
     });
 
@@ -506,7 +506,7 @@ describe('OMOP Provider', () => {
 
       await expect(
         provider.searchFilter(filterContext, 'test', false)
-      ).rejects.toThrow('not implemented');
+      ).rejects.toThrow('Text Search is not supported');
     });
   });
 
@@ -538,7 +538,7 @@ describe('OMOP Provider', () => {
 
       for (const domain of testData.domains.slice(0, 3)) {
         const filterContext = await provider.getPrepContext(true);
-        await provider.filter(filterContext, 'domain', '=', domain);
+        await provider.filter(filterContext, true, 'domain', '=', domain);
         const filters = await provider.executeFilters(filterContext);
         const filter = filters[0];
 

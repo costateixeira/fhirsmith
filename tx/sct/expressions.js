@@ -770,7 +770,7 @@ class SnomedExpressionParser {
    */
   rule(test, message) {
     if (!test) {
-      throw new Error(message + ' at character ' + this.cursor);
+      throw new Error(message + ' at character ' + (this.cursor+1));
     }
   }
 
@@ -1469,7 +1469,7 @@ class SnomedExpressionServices {
   /**
    * Validate concept reference
    */
-  checkConcept(concept) {
+  checkConcept(concept, limits) {
     if (concept.code) {
       const conceptId = BigInt(concept.code);
       const result = this.concepts.findConcept(conceptId);
@@ -1478,6 +1478,26 @@ class SnomedExpressionServices {
         concept.reference = result.index;
       } else if (concept.code !== '111115') { // Special case for some SNOMED extensions
         throw new Error(`Concept ${concept.code} not found`);
+      }
+    }
+    if (limits && concept.reference) {
+      // if a limit is specified, then the concept has to be a specialization of one of them.
+      let ok = false;
+      for (const limit of limits) {
+        let parentRef = this.concepts.findConcept(limit);
+        let descendentsRef = this.concepts.getAllDesc(parentRef.index);
+        const descendants = this.refs.getReferences(descendentsRef);
+        if (descendants && descendants.includes(concept.reference)) {
+          ok = true;
+          break;
+        }
+      }
+      if (!ok) {
+        if (limits.length == 1) {
+          throw new Error(`Concept ${concept.code} is not valid in this context (must be a ${limits[0]})`);
+        } else {
+          throw new Error(`Concept ${concept.code} is not valid in this context (must be a descendent of one of ${limits})`);
+        }
       }
     }
 
@@ -1606,7 +1626,7 @@ class SnomedExpressionServices {
    * Validate refinement
    */
   checkRefinement(refinement) {
-    this.checkConcept(refinement.name);
+    this.checkConcept(refinement.name, ['410662002', '106237007']);
     this.checkExpression(refinement.value);
   }
 
