@@ -119,6 +119,7 @@ class SnomedModule extends BaseTerminologyModule {
         "900000000000207008": "International",
         "731000124108": "US Edition",
         "32506021000036107": "Australian Edition",
+        "890195008": "Global Patient Set (GPS)",
         // ... other editions
       };
       const editionName = editions[config.edition] || `Edition ${config.edition}`;
@@ -195,7 +196,8 @@ class SnomedModule extends BaseTerminologyModule {
       "999000021000000109": "UK Clinical Edition",
       "5631000179106": "Uruguayan Edition",
       "21000325107": "Chilean Edition",
-      "5991000124107": "US Edition + ICD10CM"
+      "5991000124107": "US Edition + ICD10CM",
+      "890195008": "Global Patient Set (GPS)"
     };
 
     // Filename patterns for edition codes (2-letter country codes in filenames)
@@ -447,7 +449,8 @@ class SnomedModule extends BaseTerminologyModule {
       "999000021000000109": { name: "UK Clinical Edition", needsBase: true, lang: "en-GB" },
       "5631000179106": { name: "Uruguayan Edition", needsBase: true, lang: "es-UY" },
       "21000325107": { name: "Chilean Edition", needsBase: false, lang: "es-CL" },
-      "5991000124107": { name: "US Edition + ICD10CM", needsBase: true, lang: "en-US" }
+      "5991000124107": { name: "US Edition + ICD10CM", needsBase: true, lang: "en-US" },
+      "890195008": { name: "Global Patient Set (GPS)", needsBase: true, lang: "en-US" }
     };
 
     const questions = [];
