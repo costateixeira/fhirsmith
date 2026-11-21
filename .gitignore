@@ -60,3 +60,6 @@ coverage/
 private/
 
 .vscode/
+
+# local Ontoserver credentials and captured responses - never commit
+ontoserver_info/
