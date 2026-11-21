@@ -3,6 +3,7 @@ const path = require('path');
 const crypto = require('crypto');
 const yaml = require('yaml'); // npm install yaml
 const { PackageManager, PackageContentLoader } = require('../library/package-manager');
+const AtomConsumer = require('../library/atom-consumer');
 const { FolderContentLoader, FileContentLoader } = require('../library/folder-content-loader');
 const { CodeSystem } = require("./library/codesystem");
 const { assertNoActiveContent } = require('../library/narrative-check');
@@ -513,6 +514,8 @@ class Library {
         await this.loadOcl(details, isDefault, mode);
         break;
 
+      case 'atom':
+        await this.loadAtom(details, isDefault, mode);
       case 'folder':
         await this.loadFolder(details, isDefault, mode);
         break;
@@ -987,6 +990,42 @@ class Library {
     this.#logPackage(contentLoader.id(), contentLoader.version(), csc, vs ? vs.vsCount() : 0);
   }
 
+  // ---------- Atom syndication consumer (Phase 2) ----------
+  //
+  // An `atom:<feed-url>` source expands at startup into one virtual sub-source
+  // per Atom <entry>, then defers to the existing per-type loaders (`npm:`,
+  // `loinc:`, `snomed:`, …). All enclosures land in the same terminology-cache
+  // folder as the rest, so subsequent runs find them cached.
+  //
+  // The expansion happens on the first pass (mode=='fetch'); the result is
+  // memoised on `this._atomFeedCache` so the cs/npm passes don't refetch.
+  async loadAtom(feedUrl, _isDefault, mode) {
+    if (!this._atomFeedCache) this._atomFeedCache = new Map();
+    let subSources = this._atomFeedCache.get(feedUrl);
+
+    if (!subSources) {
+      if (mode !== 'fetch') {
+        // load() always runs the fetch pass first, so we shouldn't get here.
+        throw new Error(`Atom feed not pre-fetched: ${feedUrl}`);
+      }
+      if (!this._atomConsumer) {
+        this._atomConsumer = new AtomConsumer(this.cacheFolder, this.log);
+      }
+      subSources = await this._atomConsumer.expand(feedUrl);
+      this._atomFeedCache.set(feedUrl, subSources);
+      this.log.info(`Atom feed expanded to ${subSources.length} source(s)`);
+    }
+
+    // Recursively process expanded sources for whichever mode we're in.
+    // isDefault is intentionally not propagated to children — feed-level
+    // default makes no sense when entries are different code systems.
+    for (const sub of subSources) {
+      await this.processSource(sub, this.packageManager, mode);
+    }
+  }
+
+  async loadUrl(packageManager, url, isDefault, mode, csOnly) {
+    const packagePath = await packageManager.fetchUrl(url);
   /**
    * Loads CodeSystem / ValueSet / ConceptMap resources from any *.json file in a folder.
    * The folder is scanned (top level only); each JSON file is read and routed to the

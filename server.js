@@ -158,6 +158,7 @@ const RegistryModule = require('./registry/registry.js');
 const PublisherModule = require('./publisher/publisher.js');
 const NpmProjectorModule = require('./npmprojector/npmprojector.js');
 const TXModule = require('./tx/tx.js');
+const FeedModule = require('./feed/feed.js');
 const TestingModule = require('./testing/testing.js');
 const IpsModule = require('./ips/ips.js');
 
@@ -410,6 +411,19 @@ async function initializeModules() {
       app.use(basePath, modules.npmprojector.router);
     } catch (error) {
       serverLog.error('Failed to initialize NpmProjector module:', error);
+      throw error;
+    }
+  }
+
+  // Initialize Feed module (Atom syndication producer)
+  if (config.modules?.feed?.enabled) {
+    try {
+      serverLog.info('Initializing module: feed...');
+      modules.feed = new FeedModule(stats);
+      await modules.feed.initialize(config.modules.feed);
+      app.use('/feed', modules.feed.router);
+    } catch (error) {
+      serverLog.error('Failed to initialize Feed module:', error);
       throw error;
     }
   }

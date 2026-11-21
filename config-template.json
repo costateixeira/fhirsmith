@@ -322,6 +322,52 @@
       "searchParametersPath": null,
       "debounceMs": 500
     },
+    "feed": {
+      "enabled": false,
+      "baseUrl": ""  // optional; if empty, derived from request host. Set when behind a reverse proxy.
+    },
+    "token": {
+      "enabled": true,
+      "database": "/absolute/path/to/token.db",
+      "sessionSecret": "change-this-to-a-secure-random-string-for-token-sessions",
+      "oauth": {
+        "google": {
+          "clientId": "your-google-client-id",
+          "clientSecret": "your-google-client-secret",
+          "redirectUri": "http://localhost:3000/token/callback/google",
+          "scope": ["openid", "profile", "email"]
+        },
+        "facebook": {
+          "clientId": "your-facebook-app-id",
+          "clientSecret": "your-facebook-app-secret",
+          "redirectUri": "http://localhost:3000/token/callback/facebook",
+          "scope": ["email"]
+        },
+        "apple": {
+          "clientId": "your-apple-service-id",
+          "teamId": "your-apple-team-id",
+          "keyId": "your-apple-key-id",
+          "privateKey": "/path/to/apple-private-key.p8",
+          "redirectUri": "http://localhost:3000/token/callback/apple",
+          "scope": ["email", "name"]
+        },
+        "github": {
+          "clientId": "your-github-client-id",
+          "clientSecret": "your-github-client-secret",
+          "redirectUri": "http://localhost:3000/token/callback/github",
+          "scope": ["user:email"]
+        }
+      },
+      "apiKeys": {
+        "defaultAllowedRequests": 50,
+        "maxKeysPerUser": 10,
+        "keyExpiration": null
+      },
+      "rateLimit": {
+        "windowMs": 900000,
+        "max": 100
+      }
+    },
     "tx": {
       "enabled": false,
       "librarySource": "/absolute/path/to/library.yml",
